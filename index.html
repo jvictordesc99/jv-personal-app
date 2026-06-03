@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Joao Victor Personal Trainer - Area do Aluno</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <section class="login-screen" id="login-screen">
+      <div class="login-card">
+        <img class="login-logo" src="assets/joao-victor-logo.jpeg" alt="Logo Joao Victor Personal Trainer" />
+        <p class="eyebrow">Acesso de teste</p>
+        <h1>Joao Victor Personal Trainer</h1>
+        <p>Escolha como deseja entrar no app.</p>
+        <div class="login-actions">
+          <button type="button" class="primary" data-login-role="admin">Entrar como Personal</button>
+          <div class="login-student-picker">
+            <label>Aluno
+              <select id="login-student-select"></select>
+            </label>
+            <button type="button" class="secondary" id="login-student-button">Entrar como Aluno</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="app-shell" id="app-shell" hidden>
+      <aside class="sidebar">
+        <div class="brand">
+          <img class="brand-logo" src="assets/joao-victor-logo.jpeg" alt="Logo Joao Victor Personal Trainer" />
+          <div>
+            <strong>Joao Victor</strong>
+            <span>Personal Trainer</span>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Navegação principal">
+          <button class="nav-item active" data-view="treino" data-student-only>Treino</button>
+          <button class="nav-item" data-view="agenda" data-student-only>Agendamento</button>
+          <button class="nav-item" data-view="avaliacao" data-student-only>Avaliacao</button>
+          <button class="nav-item" data-view="evolucao" data-student-only>Evolucao</button>
+          <button class="nav-item" data-view="perfil" data-student-only>Perfil</button>
+          <button class="nav-item" data-view="admin" data-admin-only>Administrativo</button>
+        </nav>
+
+        <a class="whatsapp" href="https://wa.me/5519992782696" target="_blank" rel="noreferrer">
+          WhatsApp direto
+        </a>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Joao Victor Personal Trainer</p>
+            <h1 id="page-title">Painel inicial</h1>
+            <p id="user-mode">Modo aluno</p>
+            <div class="mode-switch">
+              <button id="logout-button" class="secondary">Trocar usuario</button>
+            </div>
+          </div>
+          <div class="student-card">
+            <img src="assets/student-avatar.png" alt="Avatar do aluno" />
+            <div>
+              <strong>Aluno</strong>
+              <span>Plano</span>
+            </div>
+          </div>
+        </header>
+
+        <section class="view active" id="home">
+          <div class="hero">
+            <div>
+              <p class="eyebrow">Hoje, 22 de maio</p>
+              <h2>Seu treino, sua evolucao e sua agenda em um so lugar.</h2>
+              <p>
+                Um painel direto para acompanhar treino, aulas, pagamentos, beach tennis e resultado corporal.
+              </p>
+              <div class="actions">
+                <button class="primary" data-jump="treino">Ver treino</button>
+                <button class="secondary" data-jump="agenda">Abrir agenda</button>
+              </div>
+            </div>
+            <img src="assets/training-preview.png" alt="Pessoa treinando com halteres" />
+          </div>
+
+          <div class="metrics-grid">
+            <article class="metric">
+              <span>Frequencia</span>
+              <strong>86%</strong>
+              <small>+12% no mes</small>
+            </article>
+            <article class="metric">
+              <span>Treinos concluidos</span>
+              <strong>18</strong>
+              <small>Meta: 22</small>
+            </article>
+            <article class="metric">
+              <span>Pagamento</span>
+              <strong>Em dia</strong>
+              <small>Proximo: 05/06</small>
+            </article>
+            <article class="metric">
+              <span>Beach ranking</span>
+              <strong>#4</strong>
+              <small>Categoria B</small>
+            </article>
+          </div>
+
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Proximas atividades</h3>
+                <button class="icon-button" data-jump="agenda" aria-label="Ver agenda">+</button>
+              </div>
+              <ul class="timeline">
+                <li><strong>Funcional</strong><span>Hoje, 18:00</span></li>
+                <li><strong>Beach tennis</strong><span>Amanha, 07:30</span></li>
+                <li><strong>Avaliacao fisica</strong><span>Segunda, 16:00</span></li>
+              </ul>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Resumo administrativo</h3>
+                <button class="icon-button" data-jump="admin" aria-label="Ver administracao">+</button>
+              </div>
+              <div class="admin-summary">
+                <span><strong id="student-count">3</strong> alunos cadastrados</span>
+                <span>31 treinos enviados hoje</span>
+                <span><strong id="pending-count">1</strong> pagamentos pendentes</span>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="treino">
+          <div class="section-title">
+            <p class="eyebrow">Treino</p>
+            <h2>Treino do aluno</h2>
+          </div>
+          <select id="workout-view-student" hidden></select>
+
+          <section class="student-training-layout">
+            <div class="workout-block workout-summary-block">
+              <p class="eyebrow">Ficha atual</p>
+              <h3>Resumo da ficha</h3>
+              <div class="workout-summary" id="workout-summary"></div>
+            </div>
+
+            <div class="workout-block workout-tabs-block">
+              <p class="eyebrow">Fichas disponiveis</p>
+              <h3>Escolha o treino</h3>
+              <div class="workout-tabs" id="workout-tabs"></div>
+            </div>
+
+            <div class="workout-block exercise-result-block">
+              <p class="eyebrow">Treinos e exercicios</p>
+              <h3>Exercicios da ficha</h3>
+              <div class="saved-workout" id="current-workout"></div>
+            </div>
+          </section>
+
+        </section>
+
+        <section class="view" id="videos">
+          <div class="section-title">
+            <p class="eyebrow">Biblioteca</p>
+            <h2>Videos dos exercicios</h2>
+          </div>
+          <div class="video-grid">
+            <article><img src="assets/video-squat.png" alt="Video de agachamento" /><strong>Agachamento</strong><span>Tecnica e seguranca</span></article>
+            <article><img src="assets/video-core.png" alt="Video de core" /><strong>Core</strong><span>Postura e respiracao</span></article>
+            <article><img src="assets/video-beach.png" alt="Video de beach tennis" /><strong>Saque beach</strong><span>Movimento completo</span></article>
+          </div>
+        </section>
+
+        <section class="view" id="avaliacao">
+          <div class="section-title">
+            <p class="eyebrow">Avaliacao fisica</p>
+            <h2>Bioimpedancia e evolucao corporal</h2>
+          </div>
+          <div class="assessment-student-panel">
+            <div class="assessment-summary-grid" id="student-assessment-summary"></div>
+            <div class="load-history-list" id="student-assessment-history"></div>
+          </div>
+        </section>
+
+        <section class="view" id="evolucao">
+          <div class="section-title">
+            <p class="eyebrow">Evolucao de carga</p>
+            <h2>Historico por exercicio</h2>
+          </div>
+          <div class="student-evolution-panel" id="student-load-history">
+            <div class="evolution-toolbar">
+              <div>
+                <p class="eyebrow">Exercicio</p>
+                <h3>Escolha o movimento</h3>
+              </div>
+              <label>Exercicio
+                <select id="student-load-exercise"></select>
+              </label>
+            </div>
+            <div class="evolution-chart-card">
+              <div class="load-history-head">
+                <div>
+                  <strong id="student-load-chart-title">Evolucao</strong>
+                  <small id="student-load-chart-subtitle">Selecione um exercicio para visualizar.</small>
+                </div>
+                <span id="student-load-chart-badge"></span>
+              </div>
+              <div class="load-chart" id="student-load-chart"></div>
+            </div>
+            <div class="load-history-list" id="student-load-list"></div>
+          </div>
+        </section>
+
+        <section class="view" id="perfil">
+          <div class="section-title">
+            <p class="eyebrow">Perfil</p>
+            <h2>Meu perfil</h2>
+          </div>
+          <div class="checkin-card">
+            <div>
+              <p class="eyebrow">Presenca</p>
+              <h3>Check-in de hoje</h3>
+              <span id="student-checkin-status">Registre sua presenca na aula presencial.</span>
+            </div>
+            <button type="button" class="primary" id="student-checkin-button">Fazer check-in de hoje</button>
+          </div>
+          <div class="profile-panel" id="student-profile-panel"></div>
+        </section>
+
+        <section class="view" id="agenda">
+          <div class="section-title">
+            <p class="eyebrow">Agendamento</p>
+            <h2>Pacote de aulas</h2>
+          </div>
+          <div class="package-student-panel" id="student-package-panel"></div>
+        </section>
+
+        <section class="view" id="beach">
+          <div class="section-title">
+            <p class="eyebrow">Area beach tennis</p>
+            <h2>Ranking, desafios e eventos</h2>
+          </div>
+          <div class="split">
+            <section class="panel">
+              <h3>Ranking</h3>
+              <ol class="ranking">
+                <li><span>1</span> Pedro Alves <strong>980 pts</strong></li>
+                <li><span>2</span> Ana Lima <strong>910 pts</strong></li>
+                <li><span>3</span> Joao Reis <strong>870 pts</strong></li>
+                <li><span>4</span> Marina Costa <strong>830 pts</strong></li>
+              </ol>
+            </section>
+            <section class="panel">
+              <h3>Eventos e torneios</h3>
+              <div class="event-card">
+                <strong>Torneio Sunset</strong>
+                <span>08/06 - Categorias B e C</span>
+                <button>Inscrever</button>
+              </div>
+              <div class="event-card">
+                <strong>Desafio dupla mista</strong>
+                <span>15/06 - Pontos para ranking</span>
+                <button>Participar</button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="admin">
+          <div class="section-title">
+            <p class="eyebrow">Area administrativa</p>
+            <h2>Gestao do studio</h2>
+          </div>
+          <div class="admin-grid" id="admin-dashboard">
+            <article><strong>Alunos</strong><span>Cadastro, plano, valor manual e status.</span><button data-admin-target="students">Abrir</button></article>
+            <article><strong>Fichas de treino</strong><span>Criar, copiar, editar e remover fichas.</span><button data-admin-target="workouts">Abrir</button></article>
+            <article><strong>Exercicios</strong><span>Nome, peso, repeticoes, series e descanso.</span><button data-admin-target="workouts">Abrir</button></article>
+            <article><strong>Avaliacoes</strong><span>Registrar medidas e fotos de evolucao.</span><button data-admin-target="assessments">Abrir</button></article>
+            <article><strong>Pacotes e Check-ins</strong><span>Pacotes de aulas, agenda e presencas.</span><button data-admin-target="checkins">Abrir</button></article>
+            <article><strong>Financeiro</strong><span>Mensalidades, vencimentos e pagamentos.</span><button data-admin-target="finance">Abrir</button></article>
+            <article class="payment-blocked-panel" id="payment-blocked-panel"></article>
+          </div>
+          <section class="admin-module" id="admin-module-workouts" hidden>
+          <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
+          <div class="teacher-workout-area">
+            <div class="section-title compact-title">
+              <p class="eyebrow">Fichas de treino</p>
+              <h2>Montar fichas</h2>
+            </div>
+            <div class="workout-student-search">
+              <div>
+                <p class="eyebrow">Selecionar aluno</p>
+                <h3>Buscar aluno</h3>
+                <span>Digite o nome para abrir as fichas desse aluno.</span>
+              </div>
+              <label>Nome do aluno
+                <input id="workout-student-search" placeholder="Ex: Marina" />
+              </label>
+            </div>
+            <div class="workout-student-directory" id="workout-student-directory"></div>
+            <div class="workout-student-workspace" id="workout-student-workspace" hidden>
+              <div class="workout-student-header">
+                <div>
+                  <p class="eyebrow">Aluno selecionado</p>
+                  <h3 id="workout-selected-student-name">Aluno</h3>
+                  <span id="workout-selected-student-details"></span>
+                </div>
+                <div class="student-actions">
+                  <button type="button" class="secondary" id="back-to-workout-students">Trocar aluno</button>
+                  <button type="button" class="primary" id="create-workout-for-student">Criar nova ficha</button>
+                </div>
+              </div>
+            </div>
+            <form class="workout-admin" id="workout-form" hidden>
+              <div class="workout-form-block workout-form-intro">
+                <div>
+                  <p class="eyebrow">Dados da ficha</p>
+                  <h3>1. Informacoes gerais</h3>
+                  <span>Defina o nome, objetivo e validade da ficha.</span>
+                </div>
+                <label class="workout-student-field">Aluno
+                  <select id="workout-student"></select>
+                </label>
+                <div class="workout-copy-tools">
+                  <label>Usar ficha salva
+                    <select id="workout-template-source"></select>
+                  </label>
+                  <button type="button" class="secondary" id="load-workout-button">Carregar ficha</button>
+                </div>
+              </div>
+              <div class="workout-form-block workout-form-details">
+                <div>
+                  <p class="eyebrow">Treinos da ficha</p>
+                  <h3>2. Estrutura</h3>
+                </div>
+                <label>Nome da ficha<input id="workout-title" required placeholder="Ex: Treino A - Inferiores" /></label>
+                <label>Objetivo<input id="workout-goal" required placeholder="Ex: hipertrofia, emagrecimento" /></label>
+                <label>Frequencia semanal<input id="workout-frequency" required placeholder="Ex: 3x por semana" /></label>
+                <label>Data de inicio<input id="workout-start-date" required placeholder="Ex: 01/05" /></label>
+                <label>Data de validade<input id="workout-due-date" required placeholder="Ex: 30/06" /></label>
+              </div>
+              <div class="workout-form-block exercise-builder">
+                <div>
+                  <p class="eyebrow">Treinos da ficha</p>
+                  <h3>3. Treinos e exercicios</h3>
+                </div>
+                <div id="workout-exercises"></div>
+                <button type="button" class="secondary" id="add-exercise-button">Adicionar treino</button>
+              </div>
+              <div class="workout-form-block workout-notes-block">
+                <div>
+                  <p class="eyebrow">Observacoes</p>
+                  <h3>4. Orientacoes gerais</h3>
+                </div>
+                <label>Observacoes do personal<textarea id="workout-notes" placeholder="Orientacoes, cuidados ou ajustes para o aluno"></textarea></label>
+              </div>
+              <div class="workout-actions">
+                <button type="submit" id="save-workout-button">Salvar ficha</button>
+                <button type="button" class="secondary" id="cancel-workout-edit-button" hidden>Cancelar</button>
+              </div>
+            </form>
+            <p class="save-message" id="workout-message" role="status"></p>
+            <div class="workout-expiration-panel" id="workout-expiration-panel"></div>
+            <div class="table-panel" id="workout-table-panel" hidden>
+              <div class="table-row workout-head"><span>Aluno</span><span>Ficha salva</span><span>Validade</span><span>Status</span><span>Exercicios</span><span>Acoes</span></div>
+              <div id="workout-list"></div>
+            </div>
+          </div>
+          </section>
+          <section class="admin-module" id="admin-module-students" hidden>
+          <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
+          <form class="manual-payment" id="student-form">
+            <div>
+              <p class="eyebrow">Valores flexiveis</p>
+              <h3>Cadastrar aluno e mensalidade</h3>
+              <span>Use valor manual enquanto seus planos ainda nao tem preco padrao.</span>
+            </div>
+            <label>Aluno<input id="student-name" required placeholder="Nome do aluno" /></label>
+            <label>Telefone WhatsApp<input id="student-phone" placeholder="Ex: 19992782696" /></label>
+            <label>Plano<input id="student-plan" required placeholder="Ex: Personal, Beach" /></label>
+            <label>Valor mensal<input id="student-value" required placeholder="R$ 250,00" /></label>
+            <label>Vencimento<input id="student-due" required placeholder="05/06" /></label>
+            <label>Status
+              <select id="student-payment">
+                <option>Em dia</option>
+                <option>Pendente</option>
+                <option>Atrasado</option>
+              </select>
+            </label>
+            <button type="submit" id="save-student-button">Salvar aluno</button>
+            <button type="button" class="secondary" id="cancel-edit-button" hidden>Cancelar</button>
+          </form>
+          <p class="save-message" id="save-message" role="status"></p>
+          <section class="student-admin-profile" id="student-admin-profile" hidden></section>
+          <div class="table-panel">
+            <div class="table-row head"><span>Aluno</span><span>Plano</span><span>Valor manual</span><span>Status</span><span>Pagamento</span><span>Acoes</span></div>
+            <div id="student-list"></div>
+          </div>
+          </section>
+          <section class="admin-module" id="admin-module-assessments" hidden>
+            <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
+            <form class="assessment-form" id="assessment-form">
+              <div class="assessment-form-head">
+                <div>
+                  <p class="eyebrow">Avaliacao fisica</p>
+                  <h3>Registrar bioimpedancia</h3>
+                  <span>Salve peso, gordura, massa muscular, IMC e anexo do exame.</span>
+                </div>
+                <label>Aluno
+                  <select id="assessment-student"></select>
+                </label>
+              </div>
+              <div class="assessment-fields">
+                <label>Data da avaliacao<input id="assessment-date" required placeholder="Ex: 28/05/2026" /></label>
+                <label>Peso<input id="assessment-weight" required placeholder="Ex: 82,4 kg" /></label>
+                <label>Gordura corporal<input id="assessment-fat" required placeholder="Ex: 18%" /></label>
+                <label>Massa muscular<input id="assessment-muscle" required placeholder="Ex: 39 kg" /></label>
+                <label>IMC<input id="assessment-imc" required placeholder="Ex: 24,8" /></label>
+                <label>Anexo bioimpedancia<input id="assessment-file" type="file" accept="image/*,.pdf" /></label>
+                <label class="assessment-notes">Observacoes<textarea id="assessment-notes" placeholder="Resumo, orientacoes ou pontos de atencao"></textarea></label>
+              </div>
+              <button type="submit" class="primary">Salvar avaliacao</button>
+            </form>
+            <p class="save-message" id="assessment-message" role="status"></p>
+            <div class="load-history-list" id="admin-assessment-history"></div>
+            <div class="empty-module load-admin-panel">
+              <p class="eyebrow">Evolucao de carga</p>
+              <h3>Historico dos alunos</h3>
+              <label>Aluno
+                <select id="admin-load-student"></select>
+              </label>
+              <div class="load-history-list" id="admin-load-history"></div>
+            </div>
+          </section>
+          <section class="admin-module" id="admin-module-checkins" hidden>
+            <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
+            <div class="checkin-admin-panel">
+              <div>
+                <p class="eyebrow">Pacotes e Check-ins</p>
+                <h3>Pacotes de aulas presenciais</h3>
+                <span>Selecione um aluno para gerenciar pacotes e presencas.</span>
+              </div>
+              <div class="package-student-selector">
+                <label>Aluno
+                  <select id="package-view-student"></select>
+                </label>
+                <button type="button" class="primary" id="new-package-button">Novo pacote</button>
+              </div>
+              <div class="package-empty-state" id="package-empty-state">Selecione um aluno para visualizar os check-ins e pacotes.</div>
+              <form class="package-form" id="package-form" hidden>
+                <label>Aluno
+                  <select id="package-student"></select>
+                </label>
+                <label>Nome do pacote
+                  <input id="package-name" required placeholder="Ex: Personal 12 aulas" />
+                </label>
+                <label>Total de aulas
+                  <input id="package-total" required inputmode="numeric" placeholder="Ex: 12" />
+                </label>
+                <label>Data de inicio
+                  <input id="package-start" required placeholder="Ex: 01/06" />
+                </label>
+                <label>Data de termino
+                  <input id="package-end" required placeholder="Ex: 30/06" />
+                </label>
+                <label>Dias da semana
+                  <input id="package-days" required placeholder="Ex: segunda, quarta e sexta" />
+                </label>
+                <label>Horario
+                  <input id="package-time" required placeholder="Ex: 9h" />
+                </label>
+                <label class="package-notes">Observacoes
+                  <textarea id="package-notes" placeholder="Orientacoes ou combinados do pacote"></textarea>
+                </label>
+                <button type="submit" class="primary">Salvar pacote</button>
+              </form>
+              <div class="package-admin-list" id="package-admin-list"></div>
+              <form class="checkin-admin-form checkin-legacy-tools" id="manual-checkin-form" hidden>
+                <label>Aluno
+                  <select id="manual-checkin-student"></select>
+                </label>
+                <label>Pacote
+                  <select id="manual-checkin-package"></select>
+                </label>
+                <button type="submit" class="primary">Marcar presenca manual</button>
+              </form>
+              <div class="checkin-filters checkin-legacy-tools" hidden>
+                <label>Filtrar por aluno
+                  <select id="checkin-filter-student"></select>
+                </label>
+                <label>Filtrar por data
+                  <input id="checkin-filter-date" placeholder="Ex: 31/05/2026" />
+                </label>
+              </div>
+              <div class="checkin-month-total checkin-legacy-tools" id="checkin-month-total" hidden></div>
+              <div class="load-history-list checkin-legacy-tools" id="checkin-history" hidden></div>
+            </div>
+          </section>
+          <section class="admin-module" id="admin-module-finance" hidden>
+            <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
+            <div class="finance-panel">
+              <form class="billing-settings" id="billing-settings-form">
+                <div>
+                  <p class="eyebrow">Configuracoes de cobranca</p>
+                  <h3>WhatsApp e Pix</h3>
+                  <span>Configure a mensagem padrao enviada manualmente pelo WhatsApp.</span>
+                </div>
+                <label>Chave Pix<input id="billing-pix-key" placeholder="CPF, telefone, e-mail ou chave aleatoria" /></label>
+                <label>Identificacao<input id="billing-sender-name" placeholder="Ex: Personal Joao Victor" /></label>
+                <label class="billing-message-field">Mensagem padrao<textarea id="billing-default-message" placeholder="Ex: Para manter seu acesso aos treinos e acompanhamento..."></textarea></label>
+                <button type="submit">Salvar configuracoes</button>
+                <p class="save-message" id="billing-settings-message" role="status"></p>
+              </form>
+              <section class="billing-list-panel">
+                <div class="section-title compact-title">
+                  <p class="eyebrow">Cobrancas proximas</p>
+                  <h3>Alunos vencendo ou vencidos</h3>
+                </div>
+                <div class="billing-list" id="billing-list"></div>
+              </section>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
