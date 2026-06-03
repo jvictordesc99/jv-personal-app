@@ -19,8 +19,15 @@ const appShell = document.querySelector("#app-shell");
 const loginButtons = document.querySelectorAll("[data-login-role]");
 const loginStudentSelect = document.querySelector("#login-student-select");
 const loginStudentButton = document.querySelector("#login-student-button");
+const supabaseLoginForm = document.querySelector("#supabase-login-form");
+const supabaseLoginEmail = document.querySelector("#supabase-login-email");
+const supabaseLoginPassword = document.querySelector("#supabase-login-password");
+const supabaseForgotPasswordButton = document.querySelector("#supabase-forgot-password-button");
+const supabaseLoginMessage = document.querySelector("#supabase-login-message");
 let currentUserType = null;
 let selectedStudentProfile = "";
+let supabaseClient = null;
+let currentSupabaseUser = null;
 try {
   selectedStudentProfile = localStorage.getItem("student-profile") || "";
 } catch {
@@ -79,10 +86,21 @@ const checkinStorageKey = "joao-victor-checkins";
 const packageStorageKey = "joao-victor-class-packages";
 const appDataStorageKey = "joao-victor-app-data";
 const billingSettingsStorageKey = "joao-victor-billing-settings";
+const supabaseTables = {
+  profiles: "profiles",
+  students: "students",
+  workouts: "workouts",
+  assessments: "assessments",
+  loadProgress: "load_progress",
+  classPackages: "class_packages",
+  checkins: "checkins",
+  billingSettings: "billing_settings",
+};
+const personalAdminEmail = "jvictordesc99@gmail.com";
 const defaultStudents = [
-  { name: "Marina Costa", plan: "Performance", value: "R$ 250,00", due: "05/06", payment: "Em dia" },
-  { name: "Pedro Alves", plan: "Beach", value: "R$ 180,00", due: "10/06", payment: "Pendente" },
-  { name: "Ana Lima", plan: "Completo", value: "R$ 320,00", due: "15/06", payment: "Em dia" },
+  { name: "Marina Costa", email: "", plan: "Performance", value: "R$ 250,00", due: "05/06", payment: "Em dia" },
+  { name: "Pedro Alves", email: "", plan: "Beach", value: "R$ 180,00", due: "10/06", payment: "Pendente" },
+  { name: "Ana Lima", email: "", plan: "Completo", value: "R$ 320,00", due: "15/06", payment: "Em dia" },
 ];
 const whatsappUrl = "https://wa.me/5519992782696";
 
@@ -91,7 +109,10 @@ const studentList = document.querySelector("#student-list");
 const studentCount = document.querySelector("#student-count");
 const pendingCount = document.querySelector("#pending-count");
 const nameInput = document.querySelector("#student-name");
+const emailInput = document.querySelector("#student-email");
+const tempPasswordInput = document.querySelector("#student-temp-password");
 const phoneInput = document.querySelector("#student-phone");
+const birthDateInput = document.querySelector("#student-birth-date");
 const planInput = document.querySelector("#student-plan");
 const valueInput = document.querySelector("#student-value");
 const dueInput = document.querySelector("#student-due");
@@ -216,6 +237,199 @@ function safeSetText(element, text = "") {
   if (element) element.textContent = text;
 }
 
+function getSupabaseConfig() {
+  const config = window.SUPABASE_CONFIG || {};
+  return {
+    url: String(config.url || "").trim(),
+    anonKey: String(config.anonKey || "").trim(),
+  };
+}
+
+function isSupabaseConfigured() {
+  const config = getSupabaseConfig();
+  return Boolean(config.url && config.anonKey && window.supabase?.createClient);
+}
+
+function getSupabaseClient() {
+  if (supabaseClient || !isSupabaseConfigured()) return supabaseClient;
+
+  const config = getSupabaseConfig();
+  supabaseClient = window.supabase.createClient(config.url, config.anonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  });
+  return supabaseClient;
+}
+
+function getSupabaseUserRole(user) {
+  const email = String(user?.email || "").trim().toLowerCase();
+  if (email === personalAdminEmail) return "admin";
+
+  const role = String(user?.user_metadata?.role || user?.app_metadata?.role || "").toLowerCase();
+  return role === "admin" || role === "personal" ? "admin" : "student";
+}
+
+async function getSupabaseProfile(user) {
+  const client = getSupabaseClient();
+  if (!client || !user?.id) return null;
+
+  try {
+    const { data, error } = await client
+      .from(supabaseTables.profiles)
+      .select("id,email,role,student_id")
+      .eq("id", user.id)
+      .maybeSingle();
+    return error ? null : data;
+  } catch {
+    return null;
+  }
+}
+
+async function saveSupabaseProfile(profile) {
+  const client = getSupabaseClient();
+  if (!client || !profile?.id) return;
+
+  try {
+    await client.from(supabaseTables.profiles).upsert({
+      id: profile.id,
+      email: profile.email || "",
+      role: profile.role || "student",
+      student_id: profile.student_id || null,
+      created_at: profile.created_at || new Date().toISOString(),
+    });
+  } catch {
+    // A tabela profiles e as policies serao configuradas na etapa do banco.
+  }
+}
+
+async function getStudentNameFromSupabaseUser(user) {
+  const profile = await getSupabaseProfile(user);
+  const metadataName = user?.user_metadata?.student_name || user?.user_metadata?.studentName || user?.user_metadata?.name || "";
+  const email = String(user?.email || "").toLowerCase();
+  const students = loadStudents();
+  if (profile?.student_id) {
+    const byId = students.find((student) => student.id === profile.student_id || student.supabaseUserId === profile.student_id);
+    if (byId) return byId.name;
+  }
+
+  return students.find((student) => student.name === metadataName)?.name
+    || students.find((student) => student.supabaseUserId && student.supabaseUserId === user?.id)?.name
+    || students.find((student) => student.email && student.email === email)?.name
+    || "";
+}
+
+function saveSupabaseStudentLink(studentName, user) {
+  if (!studentName || !user?.id) return;
+
+  const students = loadStudents();
+  const index = students.findIndex((student) => student.name === studentName);
+  if (index < 0) return;
+
+  const email = String(user.email || "").toLowerCase();
+  if (students[index].supabaseUserId === user.id && (!email || students[index].email === email)) return;
+
+  students[index] = {
+    ...students[index],
+    email: students[index].email || email,
+    supabaseUserId: user.id,
+  };
+  saveStudents(students);
+}
+
+async function createStudentAuthUser(email, password, studentName) {
+  if (!email || !password || !isSupabaseConfigured()) return { userId: "", error: null };
+
+  try {
+    const config = getSupabaseConfig();
+    const signupClient = window.supabase.createClient(config.url, config.anonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        storageKey: `signup-${Date.now()}`,
+      },
+    });
+
+    const { data, error } = await signupClient.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          role: "student",
+          student_name: studentName,
+        },
+      },
+    });
+
+    return { userId: data?.user?.id || "", error };
+  } catch (error) {
+    console.error("Erro ao criar usuario do aluno no Supabase Auth.", {
+      message: error?.message,
+      name: error?.name,
+      stack: error?.stack,
+      supabaseConfigured: isSupabaseConfigured(),
+      supabaseUrl: getSupabaseConfig().url,
+      hint: "Verifique conexao, CORS/Live Server, CDN do Supabase, URL e anon key.",
+    });
+    return { userId: "", error };
+  }
+}
+
+function showSupabaseLoginMessage(text, type = "success") {
+  if (!supabaseLoginMessage) return;
+  supabaseLoginMessage.textContent = text;
+  supabaseLoginMessage.classList.toggle("error", type === "error");
+}
+
+async function applySupabaseUser(user) {
+  currentSupabaseUser = user || null;
+  if (!user) return false;
+
+  const userEmail = String(user.email || "").trim().toLowerCase();
+  const profile = await getSupabaseProfile(user);
+  const profileRole = String(profile?.role || "").trim().toLowerCase();
+  const role = userEmail === personalAdminEmail || profileRole === "admin" || profileRole === "personal"
+    ? "admin"
+    : getSupabaseUserRole(user);
+  if (role === "admin") {
+    saveSupabaseProfile({ id: user.id, email: user.email, role: "admin" });
+    enterTestMode("admin");
+    safeSetText(document.querySelector("#user-mode"), `Personal | ${user.email || "Supabase"}`);
+    return true;
+  }
+
+  const studentName = await getStudentNameFromSupabaseUser(user);
+  if (!studentName) {
+    showSupabaseLoginMessage("Login feito, mas este usuario ainda nao esta vinculado a um aluno.", "error");
+    return false;
+  }
+
+  saveSupabaseStudentLink(studentName, user);
+  enterTestMode("student", studentName);
+  safeSetText(document.querySelector("#user-mode"), `Aluno | ${user.email || studentName}`);
+  return true;
+}
+
+async function restoreSupabaseSession() {
+  const client = getSupabaseClient();
+  if (!client) {
+    showSupabaseLoginMessage("Supabase ainda nao configurado. Use o acesso local temporario.");
+    return;
+  }
+
+  const { data } = await client.auth.getSession();
+  if (data?.session?.user) {
+    await applySupabaseUser(data.session.user);
+  }
+
+  client.auth.onAuthStateChange(async (_event, session) => {
+    if (session?.user) await applySupabaseUser(session.user);
+  });
+}
+
 function normalizeStudentsData(students) {
   if (!Array.isArray(students)) return normalizeStudentsData(defaultStudents);
   const validPayments = ["Em dia", "Pendente", "Atrasado"];
@@ -224,8 +438,11 @@ function normalizeStudentsData(students) {
     .filter((student) => student && typeof student === "object")
     .map((student) => ({
       id: student.id || createId(),
+      supabaseUserId: String(student.supabaseUserId || student.authUserId || "").trim(),
       name: String(student.name || "").trim(),
+      email: String(student.email || "").trim().toLowerCase(),
       phone: String(student.phone || student.whatsapp || "").trim(),
+      birthDate: String(student.birthDate || student.birth_date || "").trim(),
       plan: String(student.plan || "Plano nao informado").trim(),
       value: String(student.value || "").trim(),
       due: String(student.due || "").trim(),
@@ -391,7 +608,8 @@ function persistAppDataMeta() {
     const workouts = loadWorkouts();
     const meta = {
       schemaVersion: 2,
-      storageMode: "localStorage",
+      storageMode: isSupabaseConfigured() ? "supabase-auth-localstorage-data" : "localStorage",
+      supabaseTables,
       updatedAt: new Date().toISOString(),
       collections: {
         students: loadStudents().length,
@@ -805,7 +1023,7 @@ function normalizeWorkoutsData(workouts) {
 }
 
 function fillStudentSelects() {
-  if (!workoutStudent || !workoutViewStudent || !adminLoadStudent || !assessmentStudent || !loginStudentSelect) return;
+  if (!workoutStudent || !workoutViewStudent || !adminLoadStudent || !assessmentStudent) return;
 
   const students = loadStudents();
   if (selectedStudentProfile && !students.some((student) => student.name === selectedStudentProfile)) {
@@ -821,7 +1039,7 @@ function fillStudentSelects() {
   const selectedPackageViewStudent = packageViewStudent?.value;
   const selectedManualCheckinStudent = manualCheckinStudent?.value;
   const selectedCheckinFilterStudent = checkinFilterStudent?.value;
-  const selectedLoginStudent = loginStudentSelect.value || selectedStudentProfile;
+  const selectedLoginStudent = loginStudentSelect?.value || selectedStudentProfile;
   const studentNames = students.map((student) => student.name);
   const firstStudentName = students[0]?.name || "";
   const validName = (name, fallback = firstStudentName) => (studentNames.includes(name) ? name : fallback);
@@ -838,7 +1056,7 @@ function fillStudentSelects() {
   packageStudent?.replaceChildren();
   manualCheckinStudent?.replaceChildren();
   checkinFilterStudent?.replaceChildren();
-  loginStudentSelect.replaceChildren();
+  loginStudentSelect?.replaceChildren();
 
   if (checkinFilterStudent) {
     const allOption = document.createElement("option");
@@ -894,7 +1112,7 @@ function fillStudentSelects() {
     packageStudent?.appendChild(packageOption);
     manualCheckinStudent?.appendChild(manualCheckinOption);
     checkinFilterStudent?.appendChild(checkinFilterOption);
-    loginStudentSelect.appendChild(loginOption);
+    loginStudentSelect?.appendChild(loginOption);
   });
 
   visibleStudentOptions.forEach((student) => {
@@ -915,7 +1133,7 @@ function fillStudentSelects() {
   if (packageStudent) packageStudent.value = validName(selectedPackageStudent);
   if (manualCheckinStudent) manualCheckinStudent.value = validName(selectedManualCheckinStudent);
   if (checkinFilterStudent) checkinFilterStudent.value = selectedCheckinFilterStudent && studentNames.includes(selectedCheckinFilterStudent) ? selectedCheckinFilterStudent : "";
-  loginStudentSelect.value = validName(selectedLoginStudent);
+  if (loginStudentSelect) loginStudentSelect.value = validName(selectedLoginStudent);
   updateStudentHeader();
   fillManualCheckinPackageSelect();
 }
@@ -1360,6 +1578,8 @@ function renderAdminStudentProfile(studentName) {
     createAdminProfileCard("Dados do aluno", "Cadastro", [
       createAdminMetric("Plano", student.plan),
       createAdminMetric("WhatsApp", student.phone || "Nao cadastrado"),
+      createAdminMetric("Nascimento", student.birthDate || "Nao informado"),
+      createAdminMetric("Login", student.supabaseUserId ? "Vinculado" : "Sem userId"),
       createAdminMetric("Valor", student.value),
       createAdminMetric("Vencimento", student.due),
       createAdminMetric("Pagamento", student.payment),
@@ -3402,7 +3622,10 @@ function resetStudentForm() {
   if (!studentForm) return;
   studentForm.reset();
   if (paymentInput) paymentInput.value = "Em dia";
+  if (emailInput) emailInput.value = "";
+  if (tempPasswordInput) tempPasswordInput.value = "";
   if (phoneInput) phoneInput.value = "";
+  if (birthDateInput) birthDateInput.value = "";
   editingStudentIndex = null;
   safeSetText(saveStudentButton, "Salvar aluno");
   if (cancelEditButton) cancelEditButton.hidden = true;
@@ -3416,7 +3639,9 @@ function startEditingStudent(index, message = "Editando aluno. Altere os campos 
 
   editingStudentIndex = index;
   nameInput.value = student.name;
+  if (emailInput) emailInput.value = student.email || "";
   if (phoneInput) phoneInput.value = student.phone || "";
+  if (birthDateInput) birthDateInput.value = student.birthDate || "";
   planInput.value = student.plan;
   valueInput.value = student.value;
   dueInput.value = student.due;
@@ -3428,15 +3653,19 @@ function startEditingStudent(index, message = "Editando aluno. Altere os campos 
   return true;
 }
 
-studentForm?.addEventListener("submit", (event) => {
+studentForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const students = loadStudents();
   const previousName = editingStudentIndex === null ? "" : students[editingStudentIndex]?.name;
+  const provisionalPassword = tempPasswordInput?.value || "";
   const student = {
     id: editingStudentIndex === null ? createId() : students[editingStudentIndex]?.id || createId(),
+    supabaseUserId: students[editingStudentIndex]?.supabaseUserId || "",
     name: nameInput.value.trim(),
+    email: emailInput?.value.trim().toLowerCase() || "",
     phone: phoneInput?.value.trim() || "",
+    birthDate: birthDateInput?.value.trim() || "",
     plan: planInput.value.trim(),
     value: valueInput.value.trim(),
     due: dueInput.value.trim(),
@@ -3448,6 +3677,30 @@ studentForm?.addEventListener("submit", (event) => {
     showMessage("Ja existe um aluno com este nome. Use um nome diferente para evitar misturar historicos.", "error");
     nameInput.focus();
     return;
+  }
+
+  if (student.email && provisionalPassword) {
+    showMessage("Criando login do aluno no Supabase...");
+    const { userId, error } = await createStudentAuthUser(student.email, provisionalPassword, student.name);
+    if (error) {
+      console.error("Supabase indisponivel ao cadastrar aluno. Salvando fallback local.", {
+        message: error?.message,
+        name: error?.name,
+        studentEmail: student.email,
+        supabaseUrl: getSupabaseConfig().url,
+      });
+      showMessage("Aluno salvo localmente. Supabase indisponivel no momento.", "error");
+    } else {
+      student.supabaseUserId = userId;
+      if (userId) {
+        await saveSupabaseProfile({
+          id: userId,
+          email: student.email,
+          role: "student",
+          student_id: student.id,
+        });
+      }
+    }
   }
 
   if (editingStudentIndex === null) {
@@ -3464,6 +3717,9 @@ studentForm?.addEventListener("submit", (event) => {
 
   renderStudents();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
+  if (student.email && provisionalPassword && !student.supabaseUserId) {
+    showMessage("Aluno salvo localmente. Supabase indisponivel no momento.", "error");
+  }
   resetStudentForm();
 });
 
@@ -4055,7 +4311,9 @@ studentAdminProfile?.addEventListener("click", (event) => {
     const student = students[studentIndex];
     editingStudentIndex = studentIndex;
     nameInput.value = student.name;
+    if (emailInput) emailInput.value = student.email || "";
     if (phoneInput) phoneInput.value = student.phone || "";
+    if (birthDateInput) birthDateInput.value = student.birthDate || "";
     planInput.value = student.plan;
     valueInput.value = student.value;
     dueInput.value = student.due;
@@ -4269,7 +4527,66 @@ loginStudentButton?.addEventListener("click", () => {
   enterTestMode("student", loginStudentSelect?.value);
 });
 
-logoutButton?.addEventListener("click", () => {
+supabaseLoginForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const client = getSupabaseClient();
+  if (!client) {
+    showSupabaseLoginMessage("Configure a URL e a chave publica do Supabase antes de usar login real.", "error");
+    return;
+  }
+
+  const email = supabaseLoginEmail?.value.trim() || "";
+  const password = supabaseLoginPassword?.value || "";
+  if (!email || !password) {
+    showSupabaseLoginMessage("Informe e-mail e senha.", "error");
+    return;
+  }
+
+  showSupabaseLoginMessage("Entrando...");
+  const { data, error } = await client.auth.signInWithPassword({ email, password });
+  if (error) {
+    showSupabaseLoginMessage("Nao foi possivel entrar. Confira e-mail e senha.", "error");
+    return;
+  }
+
+  if (await applySupabaseUser(data.user)) {
+    supabaseLoginForm.reset();
+    showSupabaseLoginMessage("");
+  }
+});
+
+supabaseForgotPasswordButton?.addEventListener("click", async () => {
+  const client = getSupabaseClient();
+  if (!client) {
+    showSupabaseLoginMessage("Configure o Supabase antes de recuperar senha.", "error");
+    return;
+  }
+
+  const email = supabaseLoginEmail?.value.trim() || "";
+  if (!email) {
+    showSupabaseLoginMessage("Informe seu e-mail para recuperar a senha.", "error");
+    supabaseLoginEmail?.focus();
+    return;
+  }
+
+  const redirectTo = window.location.origin.startsWith("http") ? window.location.origin : undefined;
+  const { error } = await client.auth.resetPasswordForEmail(email, redirectTo ? { redirectTo } : undefined);
+  if (error) {
+    showSupabaseLoginMessage("Nao foi possivel enviar a recuperacao de senha.", "error");
+    return;
+  }
+
+  showSupabaseLoginMessage("Enviamos um link de recuperacao para seu e-mail.");
+});
+
+logoutButton?.addEventListener("click", async () => {
+  const client = getSupabaseClient();
+  if (client && currentSupabaseUser) {
+    await client.auth.signOut();
+    currentSupabaseUser = null;
+  }
+
   currentUserType = null;
   Object.keys(activeWorkoutByStudent).forEach((key) => delete activeWorkoutByStudent[key]);
   Object.keys(activeSessionByWorkout).forEach((key) => delete activeSessionByWorkout[key]);
@@ -4296,6 +4613,7 @@ function initializeApp() {
   renderStudents();
   renderBillingSettings();
   fillStudentSelects();
+  restoreSupabaseSession();
 }
 
 if (document.readyState === "loading") {

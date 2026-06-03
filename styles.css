@@ -26,6 +26,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
 }
 
 button,
@@ -80,6 +81,33 @@ select {
   margin-top: 8px;
 }
 
+.supabase-login-form {
+  display: grid;
+  gap: 12px;
+}
+
+.supabase-login-form label {
+  color: #a8ddea;
+  display: grid;
+  gap: 8px;
+  font-weight: 800;
+}
+
+.supabase-login-form input {
+  background: #071723;
+  border: 1px solid rgba(184, 255, 56, 0.35);
+  border-radius: 8px;
+  color: #f4fff7;
+  min-height: 42px;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.supabase-login-form .save-message {
+  color: #a8ddea;
+  margin: 0;
+}
+
 .login-student-picker {
   display: grid;
   gap: 10px;
@@ -110,6 +138,8 @@ select {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   min-height: 100vh;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .sidebar {
@@ -193,6 +223,8 @@ button {
 .content {
   padding: 28px;
   min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .topbar {
@@ -530,11 +562,15 @@ h3 {
 
 .manual-payment {
   display: grid;
-  grid-template-columns: 1.2fr repeat(6, minmax(120px, 1fr)) auto;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
   align-items: end;
   margin-top: 18px;
   padding: 18px;
+}
+
+.manual-payment > div:first-child {
+  grid-column: 1 / -1;
 }
 
 .manual-payment h3 {
@@ -1102,15 +1138,17 @@ h3 {
 .exercise-display-grid {
   display: grid;
   gap: 8px;
-  overflow: auto;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .exercise-display-row {
   display: grid;
-  grid-template-columns: minmax(170px, 1.2fr) repeat(4, minmax(110px, 0.72fr)) minmax(160px, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 10px;
   align-items: center;
-  min-width: 860px;
+  max-width: 100%;
+  min-width: 0;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1216,7 +1254,7 @@ h3 {
   background:
     linear-gradient(rgba(7, 23, 35, 0.06) 1px, transparent 1px) 0 0 / 100% 25%,
     linear-gradient(180deg, #071723 0%, #0c2a25 100%);
-  overflow-x: auto;
+  overflow-x: hidden;
 }
 
 .load-chart-bar {
@@ -1652,6 +1690,28 @@ h3 {
 .package-card,
 .package-lesson,
 .student-history-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.view,
+.panel,
+.metric,
+.saved-workout,
+.workout-summary,
+.workout-meta,
+.student-exercise-card,
+.load-history-card,
+.assessment-history-card,
+.assessment-metric-card,
+.profile-hero-card,
+.profile-metric-card,
+.checkin-card,
+.package-compact-card,
+.package-expand-panel,
+.billing-card {
+  box-sizing: border-box;
+  max-width: 100%;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -2338,6 +2398,33 @@ h3 {
   .package-form .package-notes,
   .package-form button {
     grid-column: auto;
+  }
+
+  .table-panel,
+  .exercise-display-grid,
+  .load-chart {
+    overflow-x: hidden;
+  }
+
+  .exercise-display-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    min-width: 0;
+  }
+
+  .load-chart {
+    align-items: stretch;
+    display: grid;
+    gap: 8px;
+    min-height: auto;
+  }
+
+  .load-chart-bar {
+    grid-template-columns: 1fr auto auto;
+    grid-template-rows: 1fr;
+    height: auto;
+    min-width: 0;
+    width: 100%;
   }
 
   .load-entry-form {
