@@ -87,6 +87,7 @@ const packageStorageKey = "joao-victor-class-packages";
 const appDataStorageKey = "joao-victor-app-data";
 const billingSettingsStorageKey = "joao-victor-billing-settings";
 const supabaseTables = {
+  appState: "app_state",
   profiles: "profiles",
   students: "students",
   workouts: "workouts",
@@ -226,6 +227,9 @@ let selectedAdminProfileStudent = "";
 const activeWorkoutByStudent = {};
 const activeSessionByWorkout = {};
 let appEventsBound = false;
+let isApplyingRemoteState = false;
+let supabaseSyncTimer = null;
+let lastSupabaseSyncWarning = 0;
 
 function showMessage(text, type = "success") {
   if (!saveMessage) return;
@@ -262,6 +266,116 @@ function getSupabaseClient() {
     },
   });
   return supabaseClient;
+}
+
+function showSupabaseSyncWarning(message) {
+  const now = Date.now();
+  if (now - lastSupabaseSyncWarning < 8000) return;
+
+  lastSupabaseSyncWarning = now;
+  console.warn(message);
+  if (saveMessage) {
+    saveMessage.textContent = message;
+    saveMessage.classList.add("error");
+  }
+}
+
+function getAppStateSnapshot() {
+  return {
+    schemaVersion: 1,
+    savedAt: new Date().toISOString(),
+    students: loadStudents(),
+    workouts: loadWorkouts(),
+    loadProgress: loadProgressRecords(),
+    assessments: loadAssessments(),
+    checkins: loadCheckins(),
+    classPackages: loadClassPackages(),
+    billingSettings: loadBillingSettings(),
+  };
+}
+
+function writeAppStateToLocalStorage(state) {
+  if (!state || typeof state !== "object") return false;
+
+  isApplyingRemoteState = true;
+  try {
+    memoryStudents = normalizeStudentsData(state.students || defaultStudents);
+    memoryWorkouts = normalizeWorkoutsData(state.workouts || {});
+    memoryLoadProgress = normalizeListData(state.loadProgress || []).map(normalizeStudentLinkedRecord);
+    memoryAssessments = normalizeListData(state.assessments || []).map(normalizeStudentLinkedRecord);
+    memoryCheckins = normalizeListData(state.checkins || []).map(normalizeStudentLinkedRecord);
+    memoryPackages = normalizeClassPackages(state.classPackages || []);
+
+    localStorage.setItem(studentStorageKey, JSON.stringify(memoryStudents));
+    localStorage.setItem(workoutStorageKey, JSON.stringify(memoryWorkouts));
+    localStorage.setItem(loadProgressStorageKey, JSON.stringify(memoryLoadProgress));
+    localStorage.setItem(assessmentStorageKey, JSON.stringify(memoryAssessments));
+    localStorage.setItem(checkinStorageKey, JSON.stringify(memoryCheckins));
+    localStorage.setItem(packageStorageKey, JSON.stringify(memoryPackages));
+    if (state.billingSettings) {
+      localStorage.setItem(billingSettingsStorageKey, JSON.stringify(state.billingSettings));
+    }
+    persistAppDataMeta();
+    return true;
+  } catch (error) {
+    console.error("Nao foi possivel aplicar dados do Supabase no localStorage.", error);
+    return false;
+  } finally {
+    isApplyingRemoteState = false;
+  }
+}
+
+async function loadSupabaseAppState() {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { data, error } = await client
+      .from(supabaseTables.appState)
+      .select("data,updated_at")
+      .eq("id", "main")
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Supabase app_state indisponivel. Usando localStorage.", error);
+      return false;
+    }
+
+    if (!data?.data) return false;
+    return writeAppStateToLocalStorage(data.data);
+  } catch (error) {
+    console.warn("Falha ao carregar app_state do Supabase. Usando localStorage.", error);
+    return false;
+  }
+}
+
+async function saveSupabaseAppStateNow() {
+  if (isApplyingRemoteState) return;
+
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  try {
+    const { error } = await client.from(supabaseTables.appState).upsert({
+      id: "main",
+      data: getAppStateSnapshot(),
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      showSupabaseSyncWarning("Dados salvos localmente. Supabase indisponivel no momento.");
+      console.error("Erro ao salvar app_state no Supabase.", error);
+    }
+  } catch (error) {
+    showSupabaseSyncWarning("Dados salvos localmente. Supabase indisponivel no momento.");
+    console.error("Falha de rede/CDN ao salvar app_state no Supabase.", error);
+  }
+}
+
+function queueSupabaseAppStateSync() {
+  if (isApplyingRemoteState) return;
+  window.clearTimeout(supabaseSyncTimer);
+  supabaseSyncTimer = window.setTimeout(saveSupabaseAppStateNow, 700);
 }
 
 function getSupabaseUserRole(user) {
@@ -497,6 +611,7 @@ function loadBillingSettings() {
 function saveBillingSettings(settings) {
   try {
     localStorage.setItem(billingSettingsStorageKey, JSON.stringify(settings));
+    queueSupabaseAppStateSync();
     if (billingSettingsMessage) {
       billingSettingsMessage.textContent = "Configuracoes de cobranca salvas.";
       billingSettingsMessage.classList.remove("error");
@@ -672,6 +787,7 @@ function saveStudents(students) {
   try {
     localStorage.setItem(studentStorageKey, JSON.stringify(memoryStudents));
     persistAppDataMeta();
+    queueSupabaseAppStateSync();
     showMessage("Aluno salvo neste navegador.");
   } catch {
     showMessage("Aluno apareceu na lista, mas este navegador bloqueou salvar ao recarregar.", "error");
@@ -697,6 +813,7 @@ function saveWorkouts(workouts) {
   try {
     localStorage.setItem(workoutStorageKey, JSON.stringify(memoryWorkouts));
     persistAppDataMeta();
+    queueSupabaseAppStateSync();
     if (workoutMessage) {
       workoutMessage.textContent = "Treino salvo para o aluno.";
       workoutMessage.classList.remove("error");
@@ -727,6 +844,7 @@ function saveProgressRecords(records) {
   try {
     localStorage.setItem(loadProgressStorageKey, JSON.stringify(memoryLoadProgress));
     persistAppDataMeta();
+    queueSupabaseAppStateSync();
   } catch {
     showMessage("Carga registrada na tela, mas este navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -751,6 +869,7 @@ function saveAssessments(assessments) {
   try {
     localStorage.setItem(assessmentStorageKey, JSON.stringify(memoryAssessments));
     persistAppDataMeta();
+    queueSupabaseAppStateSync();
     if (assessmentMessage) {
       assessmentMessage.textContent = "Avaliacao salva no historico.";
       assessmentMessage.classList.remove("error");
@@ -782,6 +901,7 @@ function saveCheckins(checkins) {
   try {
     localStorage.setItem(checkinStorageKey, JSON.stringify(memoryCheckins));
     persistAppDataMeta();
+    queueSupabaseAppStateSync();
   } catch {
     showMessage("Check-in registrado na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -826,6 +946,7 @@ function saveClassPackages(packages) {
   try {
     localStorage.setItem(packageStorageKey, JSON.stringify(memoryPackages));
     persistAppDataMeta();
+    queueSupabaseAppStateSync();
   } catch {
     showMessage("Pacote salvo na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -4598,6 +4719,27 @@ logoutButton?.addEventListener("click", async () => {
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
 
+function refreshAppAfterRemoteState() {
+  normalizeStoredAppData();
+  resetExerciseRows();
+  renderStudents();
+  renderBillingSettings();
+  fillStudentSelects();
+  updateStudentHeader();
+  if (currentUserType === "student") {
+    renderCurrentWorkout();
+    renderStudentAssessments();
+    renderStudentLoadEvolution();
+    renderStudentPackagePanel();
+    renderStudentProfile();
+  }
+  if (currentUserType === "admin") {
+    renderWorkouts();
+    renderBillingList();
+    renderPackageAdminList();
+  }
+}
+
 function initializeApp() {
   if (appEventsBound) return;
   appEventsBound = true;
@@ -4613,7 +4755,13 @@ function initializeApp() {
   renderStudents();
   renderBillingSettings();
   fillStudentSelects();
-  restoreSupabaseSession();
+  loadSupabaseAppState()
+    .then((loaded) => {
+      if (loaded) refreshAppAfterRemoteState();
+    })
+    .catch((error) => {
+      console.warn("Supabase app_state nao carregou. App local continua funcionando.", error);
+    });
 }
 
 if (document.readyState === "loading") {
