@@ -274,10 +274,6 @@ function showSupabaseSyncWarning(message) {
 
   lastSupabaseSyncWarning = now;
   console.warn(message);
-  if (saveMessage) {
-    saveMessage.textContent = message;
-    saveMessage.classList.add("error");
-  }
 }
 
 function getAppStateSnapshot() {
@@ -327,7 +323,7 @@ function writeAppStateToLocalStorage(state) {
 
 async function loadSupabaseAppState() {
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) return "unconfigured";
 
   try {
     const { data, error } = await client
@@ -338,14 +334,14 @@ async function loadSupabaseAppState() {
 
     if (error) {
       console.warn("Supabase app_state indisponivel. Usando localStorage.", error);
-      return false;
+      return "failed";
     }
 
-    if (!data?.data) return false;
-    return writeAppStateToLocalStorage(data.data);
+    if (!data?.data) return "missing";
+    return writeAppStateToLocalStorage(data.data) ? "loaded" : "failed";
   } catch (error) {
     console.warn("Falha ao carregar app_state do Supabase. Usando localStorage.", error);
-    return false;
+    return "failed";
   }
 }
 
@@ -4756,8 +4752,14 @@ function initializeApp() {
   renderBillingSettings();
   fillStudentSelects();
   loadSupabaseAppState()
-    .then((loaded) => {
-      if (loaded) refreshAppAfterRemoteState();
+    .then((status) => {
+      if (status === "loaded") {
+        refreshAppAfterRemoteState();
+        return;
+      }
+      if (status === "missing") {
+        queueSupabaseAppStateSync();
+      }
     })
     .catch((error) => {
       console.warn("Supabase app_state nao carregou. App local continua funcionando.", error);

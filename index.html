@@ -17,10 +17,10 @@
     <section class="login-screen" id="login-screen">
       <div class="login-card">
         <img class="login-logo" src="assets/joao-victor-logo.jpeg" alt="Logo Joao Victor Personal Trainer" />
-        <p class="eyebrow">Acesso seguro</p>
+        <p class="eyebrow">Acesso local</p>
         <h1>Joao Victor Personal Trainer</h1>
-        <p>Entre com seu e-mail e senha cadastrados no Supabase.</p>
-        <form class="supabase-login-form" id="supabase-login-form">
+        <p>Escolha como deseja entrar. Os dados serao sincronizados online quando o Supabase estiver disponivel.</p>
+        <form class="supabase-login-form" id="supabase-login-form" hidden>
           <label>E-mail
             <input id="supabase-login-email" type="email" placeholder="seu@email.com" autocomplete="email" />
           </label>
@@ -32,7 +32,7 @@
           <p class="save-message" id="supabase-login-message" role="status"></p>
         </form>
         <div class="login-actions">
-          <p class="eyebrow">Fallback temporario local</p>
+          <p class="eyebrow">Entrada de teste</p>
           <button type="button" class="primary" id="login-personal-button" data-login-role="admin">Entrar como Personal</button>
           <div class="login-student-picker">
             <label>Aluno
