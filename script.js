@@ -27,6 +27,7 @@ const supabaseLoginMessage = document.querySelector("#supabase-login-message");
 let currentUserType = null;
 let selectedStudentProfile = "";
 let supabaseClient = null;
+let supabaseAppStateClient = null;
 let currentSupabaseUser = null;
 try {
   selectedStudentProfile = localStorage.getItem("student-profile") || "";
@@ -255,7 +256,18 @@ function isSupabaseConfigured() {
 }
 
 function getSupabaseClient() {
-  if (supabaseClient || !isSupabaseConfigured()) return supabaseClient;
+  if (supabaseClient) return supabaseClient;
+
+  if (!isSupabaseConfigured()) {
+    const config = getSupabaseConfig();
+    console.error("Supabase nao inicializado para app_state.", {
+      hasUrl: Boolean(config.url),
+      hasAnonKey: Boolean(config.anonKey),
+      hasSupabaseLibrary: Boolean(window.supabase?.createClient),
+      url: config.url,
+    });
+    return null;
+  }
 
   const config = getSupabaseConfig();
   supabaseClient = window.supabase.createClient(config.url, config.anonKey, {
@@ -265,7 +277,44 @@ function getSupabaseClient() {
       detectSessionInUrl: true,
     },
   });
+  console.info("Supabase client inicializado para app_state.", {
+    url: config.url,
+    anonKeyPrefix: config.anonKey.slice(0, 12),
+    anonKeyLength: config.anonKey.length,
+  });
   return supabaseClient;
+}
+
+function getSupabaseAppStateClient() {
+  if (supabaseAppStateClient) return supabaseAppStateClient;
+
+  if (!isSupabaseConfigured()) {
+    const config = getSupabaseConfig();
+    console.error("Supabase app_state nao inicializado.", {
+      hasUrl: Boolean(config.url),
+      hasAnonKey: Boolean(config.anonKey),
+      hasSupabaseLibrary: Boolean(window.supabase?.createClient),
+      url: config.url,
+    });
+    return null;
+  }
+
+  const config = getSupabaseConfig();
+  supabaseAppStateClient = window.supabase.createClient(config.url, config.anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: "joao-victor-app-state-sync",
+    },
+  });
+  console.info(`Supabase app_state client inicializado: ${JSON.stringify({
+    url: config.url,
+    anonKeyPrefix: config.anonKey.slice(0, 12),
+    anonKeyLength: config.anonKey.length,
+    authMode: "anon-sem-login",
+  })}`);
+  return supabaseAppStateClient;
 }
 
 function showSupabaseSyncWarning(message) {
@@ -274,6 +323,29 @@ function showSupabaseSyncWarning(message) {
 
   lastSupabaseSyncWarning = now;
   console.warn(message);
+}
+
+function logSupabaseAppStateError(action, error) {
+  const details = {
+    action,
+    message: error?.message || "",
+    code: error?.code || "",
+    status: error?.status || "",
+    details: error?.details || "",
+    hint: error?.hint || "",
+    supabaseUrl: getSupabaseConfig().url,
+    table: supabaseTables.appState,
+    id: "main",
+  };
+  console.error(`Erro Supabase app_state ao ${action}: ${JSON.stringify(details)}`);
+
+  const text = `${details.message} ${details.code} ${details.details} ${details.hint}`.toLowerCase();
+  if (text.includes("row-level security") || text.includes("rls") || details.code === "42501") {
+    console.error(`RLS provavelmente bloqueou o app_state. Para teste temporario sem login, crie policies:
+create policy "app_state_select_anon" on public.app_state for select to anon using (true);
+create policy "app_state_insert_anon" on public.app_state for insert to anon with check (true);
+create policy "app_state_update_anon" on public.app_state for update to anon using (true) with check (true);`);
+  }
 }
 
 function getAppStateSnapshot() {
@@ -322,7 +394,7 @@ function writeAppStateToLocalStorage(state) {
 }
 
 async function loadSupabaseAppState() {
-  const client = getSupabaseClient();
+  const client = getSupabaseAppStateClient();
   if (!client) return "unconfigured";
 
   try {
@@ -333,45 +405,136 @@ async function loadSupabaseAppState() {
       .maybeSingle();
 
     if (error) {
-      console.warn("Supabase app_state indisponivel. Usando localStorage.", error);
+      logSupabaseAppStateError("carregar", error);
       return "failed";
     }
 
     if (!data?.data) return "missing";
     return writeAppStateToLocalStorage(data.data) ? "loaded" : "failed";
   } catch (error) {
-    console.warn("Falha ao carregar app_state do Supabase. Usando localStorage.", error);
+    logSupabaseAppStateError("carregar por rede/CDN", error);
     return "failed";
   }
 }
 
-async function saveSupabaseAppStateNow() {
+async function upsertAppStateWithRest(payload) {
+  const config = getSupabaseConfig();
+  if (!config.url || !config.anonKey) {
+    return {
+      ok: false,
+      error: {
+        message: "Supabase URL ou anon key ausente.",
+        code: "missing_config",
+      },
+    };
+  }
+
+  const endpoint = `${config.url.replace(/\/$/, "")}/rest/v1/${supabaseTables.appState}?on_conflict=id`;
+  try {
+    console.info(`Tentando fallback REST app_state: ${endpoint}`);
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        apikey: config.anonKey,
+        Authorization: `Bearer ${config.anonKey}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await response.text();
+    const parsed = text ? JSON.parse(text) : null;
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: {
+          message: parsed?.message || response.statusText,
+          code: parsed?.code || String(response.status),
+          details: parsed?.details || text,
+          hint: parsed?.hint || "",
+          status: response.status,
+        },
+      };
+    }
+
+    return { ok: true, data: parsed };
+  } catch (error) {
+    return {
+      ok: false,
+      error: {
+        message: error?.message || "Falha no fetch REST.",
+        code: error?.name || "",
+        details: error?.stack || "",
+        hint: "Verifique bloqueio de rede, CORS, extensoes do navegador ou URL do projeto Supabase.",
+      },
+    };
+  }
+}
+
+async function syncAppStateToSupabase() {
+  console.info("syncAppStateToSupabase chamado.");
   if (isApplyingRemoteState) return;
 
-  const client = getSupabaseClient();
-  if (!client) return;
+  const client = getSupabaseAppStateClient();
+  if (!client) {
+    console.error("syncAppStateToSupabase interrompido: cliente Supabase indisponivel.");
+    return;
+  }
+
+  const appState = getAppStateSnapshot();
+  const payload = {
+    id: "main",
+    data: appState,
+    updated_at: new Date().toISOString(),
+  };
+  console.info(`Enviando app_state para Supabase: ${JSON.stringify({
+    table: supabaseTables.appState,
+    id: payload.id,
+    updated_at: payload.updated_at,
+    data: payload.data,
+  })}`);
 
   try {
-    const { error } = await client.from(supabaseTables.appState).upsert({
-      id: "main",
-      data: getAppStateSnapshot(),
-      updated_at: new Date().toISOString(),
-    });
+    const { data, error } = await client
+      .from(supabaseTables.appState)
+      .upsert(payload, { onConflict: "id" })
+      .select("id,updated_at")
+      .single();
 
     if (error) {
+      console.error(`Erro retornado pelo upsert app_state: ${JSON.stringify(error)}`);
+      logSupabaseAppStateError("salvar", error);
+      const restResult = await upsertAppStateWithRest(payload);
+      if (restResult.ok) {
+        console.info(`Upsert app_state via REST concluido com sucesso: ${JSON.stringify(restResult.data)}`);
+        return;
+      }
       showSupabaseSyncWarning("Dados salvos localmente. Supabase indisponivel no momento.");
-      console.error("Erro ao salvar app_state no Supabase.", error);
+      console.error(`Erro retornado pelo fallback REST app_state: ${JSON.stringify(restResult.error)}`);
+      logSupabaseAppStateError("salvar via REST", restResult.error);
+      return;
     }
+
+    console.info(`Upsert app_state concluido com sucesso: ${JSON.stringify(data)}`);
   } catch (error) {
+    logSupabaseAppStateError("salvar por rede/CDN", error);
+    const restResult = await upsertAppStateWithRest(payload);
+    if (restResult.ok) {
+      console.info(`Upsert app_state via REST concluido com sucesso: ${JSON.stringify(restResult.data)}`);
+      return;
+    }
     showSupabaseSyncWarning("Dados salvos localmente. Supabase indisponivel no momento.");
-    console.error("Falha de rede/CDN ao salvar app_state no Supabase.", error);
+    console.error(`Erro retornado pelo fallback REST app_state: ${JSON.stringify(restResult.error)}`);
+    logSupabaseAppStateError("salvar via REST", restResult.error);
   }
 }
 
 function queueSupabaseAppStateSync() {
   if (isApplyingRemoteState) return;
   window.clearTimeout(supabaseSyncTimer);
-  supabaseSyncTimer = window.setTimeout(saveSupabaseAppStateNow, 700);
+  console.info("Sincronizacao app_state agendada.");
+  supabaseSyncTimer = window.setTimeout(syncAppStateToSupabase, 300);
 }
 
 function getSupabaseUserRole(user) {
@@ -3775,7 +3938,6 @@ studentForm?.addEventListener("submit", async (event) => {
 
   const students = loadStudents();
   const previousName = editingStudentIndex === null ? "" : students[editingStudentIndex]?.name;
-  const provisionalPassword = tempPasswordInput?.value || "";
   const student = {
     id: editingStudentIndex === null ? createId() : students[editingStudentIndex]?.id || createId(),
     supabaseUserId: students[editingStudentIndex]?.supabaseUserId || "",
@@ -3796,30 +3958,6 @@ studentForm?.addEventListener("submit", async (event) => {
     return;
   }
 
-  if (student.email && provisionalPassword) {
-    showMessage("Criando login do aluno no Supabase...");
-    const { userId, error } = await createStudentAuthUser(student.email, provisionalPassword, student.name);
-    if (error) {
-      console.error("Supabase indisponivel ao cadastrar aluno. Salvando fallback local.", {
-        message: error?.message,
-        name: error?.name,
-        studentEmail: student.email,
-        supabaseUrl: getSupabaseConfig().url,
-      });
-      showMessage("Aluno salvo localmente. Supabase indisponivel no momento.", "error");
-    } else {
-      student.supabaseUserId = userId;
-      if (userId) {
-        await saveSupabaseProfile({
-          id: userId,
-          email: student.email,
-          role: "student",
-          student_id: student.id,
-        });
-      }
-    }
-  }
-
   if (editingStudentIndex === null) {
     students.push(student);
   } else {
@@ -3833,10 +3971,9 @@ studentForm?.addEventListener("submit", async (event) => {
   }
 
   renderStudents();
+  fillStudentSelects();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
-  if (student.email && provisionalPassword && !student.supabaseUserId) {
-    showMessage("Aluno salvo localmente. Supabase indisponivel no momento.", "error");
-  }
+  showMessage("Aluno salvo. Sincronizacao online sera tentada em segundo plano.");
   resetStudentForm();
 });
 
@@ -4741,6 +4878,7 @@ function initializeApp() {
   appEventsBound = true;
 
   currentUserType = null;
+  console.info(`Supabase URL utilizada: ${getSupabaseConfig().url}`);
   normalizeStoredAppData();
 
   if (loginScreen) loginScreen.hidden = false;
