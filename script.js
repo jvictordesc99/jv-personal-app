@@ -112,6 +112,14 @@ const defaultStudents = [
   { name: "Ana Lima", email: "", plan: "Completo", value: "R$ 320,00", due: "15/06", payment: "Em dia" },
 ];
 const whatsappUrl = "https://wa.me/5519992782696";
+const loadChartModes = [
+  { value: "last10", label: "Ultimos 10" },
+  { value: "last20", label: "Ultimos 20" },
+  { value: "last50", label: "Ultimos 50" },
+  { value: "all", label: "Tudo" },
+  { value: "monthly-average", label: "Media mensal" },
+  { value: "monthly-best", label: "Melhor carga por mes" },
+];
 
 const studentForm = document.querySelector("#student-form");
 const studentList = document.querySelector("#student-list");
@@ -167,6 +175,7 @@ const workoutSummary = document.querySelector("#workout-summary");
 const workoutTabs = document.querySelector("#workout-tabs");
 const studentLoadHistory = document.querySelector("#student-load-history");
 const studentLoadExercise = document.querySelector("#student-load-exercise");
+const studentLoadChartMode = document.querySelector("#student-load-chart-mode");
 const studentLoadChart = document.querySelector("#student-load-chart");
 const studentLoadChartTitle = document.querySelector("#student-load-chart-title");
 const studentLoadChartSubtitle = document.querySelector("#student-load-chart-subtitle");
@@ -176,6 +185,7 @@ const adminLoadStudent = document.querySelector("#admin-load-student");
 const adminLoadHistory = document.querySelector("#admin-load-history");
 const adminEvolutionStudent = document.querySelector("#admin-evolution-student");
 const adminEvolutionExercise = document.querySelector("#admin-evolution-exercise");
+const adminEvolutionChartMode = document.querySelector("#admin-evolution-chart-mode");
 const adminEvolutionChart = document.querySelector("#admin-evolution-chart");
 const adminEvolutionChartTitle = document.querySelector("#admin-evolution-chart-title");
 const adminEvolutionChartSubtitle = document.querySelector("#admin-evolution-chart-subtitle");
@@ -268,6 +278,17 @@ function updateTodayLabel() {
   const day = String(today.getDate()).padStart(2, "0");
   const month = today.toLocaleDateString("pt-BR", { month: "long" });
   todayLabel.textContent = `Hoje, ${day} de ${month}`;
+}
+
+function fillLoadChartModeSelect(select) {
+  if (!select || select.options.length) return;
+  loadChartModes.forEach((mode) => {
+    const option = document.createElement("option");
+    option.value = mode.value;
+    option.textContent = mode.label;
+    select.appendChild(option);
+  });
+  select.value = "last10";
 }
 
 function onlyDigits(value) {
@@ -1212,6 +1233,7 @@ function normalizeWorkoutFeedbacks(feedbacks) {
       ...item,
       workoutTitle: item.workoutTitle || item.workout || "Treino",
       rating: String(item.rating || "").trim(),
+      difficulty: String(item.difficulty || "").trim(),
       pain: item.pain === true || item.pain === "Sim" || item.pain === "sim",
       painLocation: String(item.painLocation || "").trim(),
       note: String(item.note || item.observation || "").trim(),
@@ -3175,19 +3197,30 @@ function createWorkoutFeedbackPanel(studentName, workout) {
   toggle.textContent = "Concluir treino";
 
   const form = document.createElement("form");
-  form.className = "workout-feedback-form";
+  form.className = "workout-feedback-form workout-feedback-card";
   form.hidden = true;
   form.dataset.studentName = studentName;
   form.dataset.workoutId = workout.id;
   form.dataset.workoutTitle = workout.title;
 
   const title = document.createElement("div");
-  title.innerHTML = "<p class=\"eyebrow\">Feedback</p><h3>Como foi seu treino hoje?</h3>";
+  title.className = "workout-feedback-head";
+  title.innerHTML = `
+    <p class="eyebrow">Feedback</p>
+    <h3>Como foi seu treino hoje?</h3>
+    <small>Seu feedback ajuda o personal a ajustar melhor seus proximos treinos.</small>
+  `;
+
+  const ratingBlock = document.createElement("div");
+  ratingBlock.className = "feedback-block";
+  const ratingTitle = document.createElement("strong");
+  ratingTitle.textContent = "Nota do treino";
 
   const rating = document.createElement("div");
   rating.className = "feedback-rating";
   [1, 2, 3, 4, 5].forEach((value) => {
     const label = document.createElement("label");
+    label.className = "feedback-star";
     const input = document.createElement("input");
     input.type = "radio";
     input.name = "rating";
@@ -3197,39 +3230,80 @@ function createWorkoutFeedbackPanel(studentName, workout) {
     rating.appendChild(label);
   });
 
+  ratingBlock.append(ratingTitle, rating);
+
+  const difficulty = document.createElement("div");
+  difficulty.className = "feedback-choice-row";
+  ["Muito facil", "Na medida", "Muito pesado"].forEach((value) => {
+    const label = document.createElement("label");
+    label.className = "feedback-chip";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "difficulty";
+    input.value = value;
+    label.append(input, document.createTextNode(value));
+    difficulty.appendChild(label);
+  });
+  ratingBlock.appendChild(difficulty);
+
+  const painBlock = document.createElement("div");
+  painBlock.className = "feedback-block";
+  const painTitle = document.createElement("strong");
+  painTitle.textContent = "Dor ou desconforto";
   const pain = document.createElement("div");
   pain.className = "feedback-pain";
   pain.innerHTML = `
-    <span>Sentiu alguma dor?</span>
-    <label><input type="radio" name="pain" value="nao" checked> Nao</label>
-    <label><input type="radio" name="pain" value="sim"> Sim</label>
+    <label class="feedback-chip"><input type="radio" name="pain" value="nao" checked> Nao senti dor</label>
+    <label class="feedback-chip"><input type="radio" name="pain" value="sim"> Senti dor</label>
   `;
 
   const painLocation = document.createElement("label");
-  painLocation.textContent = "Local da dor";
+  painLocation.className = "feedback-pain-location";
+  painLocation.hidden = true;
+  painLocation.textContent = "Onde sentiu dor ou desconforto?";
   const painInput = document.createElement("input");
   painInput.name = "painLocation";
   painInput.placeholder = "Ex: ombro, joelho, lombar";
   painLocation.appendChild(painInput);
+  painBlock.append(painTitle, pain, painLocation);
 
   const note = document.createElement("label");
-  note.textContent = "Observacoes";
+  note.className = "feedback-block";
+  const noteTitle = document.createElement("strong");
+  noteTitle.textContent = "Observacao rapida";
   const textarea = document.createElement("textarea");
   textarea.name = "note";
-  textarea.placeholder = "Ex: Treino excelente, aumentar carga do supino, dor no ombro...";
-  note.appendChild(textarea);
+  textarea.placeholder = "Ex: supino ficou leve, senti dor no joelho, consegui aumentar carga...";
+  note.append(noteTitle, textarea);
+
+  const actions = document.createElement("div");
+  actions.className = "feedback-actions";
 
   const submit = document.createElement("button");
   submit.type = "submit";
   submit.className = "primary";
-  submit.textContent = "Finalizar treino";
+  submit.textContent = "Salvar feedback e concluir treino";
+
+  const skip = document.createElement("button");
+  skip.type = "button";
+  skip.className = "secondary";
+  skip.dataset.skipFeedback = "true";
+  skip.textContent = "Pular feedback";
+
+  actions.append(submit, skip);
+
+  pain.addEventListener("change", () => {
+    const hasPain = pain.querySelector('[name="pain"]:checked')?.value === "sim";
+    painLocation.hidden = !hasPain;
+    if (!hasPain) painInput.value = "";
+  });
 
   toggle.addEventListener("click", () => {
     form.hidden = false;
     toggle.hidden = true;
   });
 
-  form.append(title, rating, pain, painLocation, note, submit);
+  form.append(title, ratingBlock, painBlock, note, actions);
   panel.append(toggle, form);
   return panel;
 }
@@ -3380,7 +3454,7 @@ function renderStudentLoadEvolution() {
   studentLoadChartTitle.textContent = group.exerciseName;
   studentLoadChartSubtitle.textContent = group.workoutTitle;
   studentLoadChartBadge.appendChild(createProgressBadge(progress));
-  renderLoadChart(studentLoadChart, group.records);
+  renderLoadChart(studentLoadChart, group.records, studentLoadChartMode?.value || "last10");
   renderSingleExerciseHistory(studentLoadList, group.records);
 }
 
@@ -3444,7 +3518,7 @@ function renderAdminEvolution() {
     safeSetText(adminEvolutionChartTitle, group.exerciseName);
     safeSetText(adminEvolutionChartSubtitle, group.workoutTitle);
     adminEvolutionChartBadge.appendChild(createProgressBadge(getProgressFromRecords(group.records)));
-    renderLoadChart(adminEvolutionChart, group.records);
+    renderLoadChart(adminEvolutionChart, group.records, adminEvolutionChartMode?.value || "last10");
   }
 
   renderPersonalRecords(studentName, activeKey);
@@ -3569,7 +3643,7 @@ function renderAdminFeedbacks(studentName) {
   feedbacks.forEach((feedback) => {
     const item = document.createElement("article");
     item.className = "feedback-card";
-    item.innerHTML = `<strong>${feedback.date} | ${feedback.workoutTitle}</strong><span>${feedback.studentName} | Nota ${feedback.rating || "-"} | Dor: ${feedback.pain ? feedback.painLocation || "sim" : "nao"}</span><small>${feedback.note || "Sem observacao."}</small>`;
+    item.innerHTML = `<strong>${feedback.date} | ${feedback.workoutTitle}</strong><span>${feedback.studentName} | Nota ${feedback.rating || "-"} | ${feedback.difficulty || "Sem intensidade"} | Dor: ${feedback.pain ? feedback.painLocation || "sim" : "nao"}</span><small>${feedback.note || "Sem observacao."}</small>`;
     adminFeedbackHistory.appendChild(item);
 
     if (feedback.note || feedback.painLocation) {
@@ -3581,12 +3655,91 @@ function renderAdminFeedbacks(studentName) {
   });
 }
 
-function renderLoadChart(container, records) {
+function getRecordMonthKey(record) {
+  const text = String(record?.date || "");
+  const brDate = text.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+  if (brDate) {
+    const year = brDate[3].length === 2 ? `20${brDate[3]}` : brDate[3];
+    return `${year}-${brDate[2].padStart(2, "0")}`;
+  }
+
+  const parsed = new Date(record?.timestamp || text);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 7);
+  return "";
+}
+
+function formatMonthLabel(monthKey) {
+  if (!monthKey) return "-";
+  const [year, month] = monthKey.split("-");
+  const date = new Date(Number(year), Number(month) - 1, 1);
+  const monthName = date.toLocaleDateString("pt-BR", { month: "long" });
+  return `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)}/${year}`;
+}
+
+function prepareChartRecords(records, mode = "last10") {
+  const numericRecords = records
+    .map((record) => ({ record, value: parseLoad(record.load) }))
+    .filter((item) => item.value !== null)
+    .sort((a, b) => (a.record.timestamp || 0) - (b.record.timestamp || 0));
+
+  const prescribed = numericRecords.filter((item) => item.record.prescribed);
+  const executed = numericRecords.filter((item) => !item.record.prescribed);
+
+  if (mode === "monthly-average" || mode === "monthly-best") {
+    const monthly = {};
+    executed.forEach((item) => {
+      const monthKey = getRecordMonthKey(item.record);
+      if (!monthKey) return;
+      monthly[monthKey] ||= [];
+      monthly[monthKey].push(item);
+    });
+
+    return Object.entries(monthly).map(([monthKey, items]) => {
+      const selected =
+        mode === "monthly-best"
+          ? items.reduce((best, item) => (item.value > best.value ? item : best), items[0])
+          : items[items.length - 1];
+      const value =
+        mode === "monthly-best"
+          ? selected.value
+          : items.reduce((total, item) => total + item.value, 0) / items.length;
+      return {
+        record: {
+          ...selected.record,
+          load: `${Number(value.toFixed(1)).toLocaleString("pt-BR")} kg`,
+          date: formatMonthLabel(monthKey),
+          note: mode === "monthly-best" ? "Melhor carga do mes" : "Media mensal",
+        },
+        value,
+      };
+    });
+  }
+
+  if (mode === "all") return numericRecords;
+
+  const limit = Number(mode.replace("last", "")) || 10;
+  const visible = executed.slice(-limit);
+  return prescribed.length && visible.length ? [prescribed[0], ...visible] : visible.length ? visible : numericRecords.slice(-limit);
+}
+
+function getTrendLabel(records) {
+  const numeric = records.map((record) => parseLoad(record.load)).filter((value) => value !== null);
+  if (numeric.length < 2) return "Sem tendencia";
+  const first = numeric[0];
+  const last = numeric[numeric.length - 1];
+  const diff = last - first;
+  if (Math.abs(diff) < 0.5) return "Mantendo";
+  return diff > 0 ? "Subindo" : "Caindo";
+}
+
+function renderLoadChart(container, records, mode = "last10") {
   container.innerHTML = "";
 
   const numericRecords = records
     .map((record) => ({ record, value: parseLoad(record.load) }))
-    .filter((item) => item.value !== null);
+    .filter((item) => item.value !== null)
+    .sort((a, b) => (a.record.timestamp || 0) - (b.record.timestamp || 0));
+  const chartRecords = prepareChartRecords(records, mode);
 
   const values = numericRecords.map((item) => item.value);
   if (!values.length) {
@@ -3594,13 +3747,20 @@ function renderLoadChart(container, records) {
     return;
   }
 
-  const max = Math.max(...values);
-  const min = Math.min(...values);
+  if (!chartRecords.length) {
+    container.textContent = "Nao ha registros suficientes para esta visualizacao.";
+    return;
+  }
+
+  const chartValues = chartRecords.map((item) => item.value);
+  const max = Math.max(...chartValues);
+  const min = Math.min(...chartValues);
   const range = Math.max(max - min, 1);
   const initial = values[0];
   const current = values[values.length - 1];
-  const best = max;
+  const allBest = Math.max(...values);
   const percent = initial ? ((current - initial) / initial) * 100 : 0;
+  const totalExecutions = numericRecords.filter((item) => !item.record.prescribed).length;
 
   const chartArea = document.createElement("div");
   chartArea.className = "load-chart-area";
@@ -3620,11 +3780,10 @@ function renderLoadChart(container, records) {
   tooltip.className = "load-chart-tooltip";
   tooltip.hidden = true;
 
-  records.forEach((record) => {
-    const value = parseLoad(record.load);
+  chartRecords.forEach(({ record, value }) => {
     const bar = document.createElement("div");
     bar.className = "load-chart-bar";
-    const height = value === null ? 12 : 28 + ((value - min) / range) * 68;
+    const height = 28 + ((value - min) / range) * 68;
     bar.style.setProperty("--bar-height", `${height}%`);
 
     const fill = document.createElement("span");
@@ -3644,6 +3803,7 @@ function renderLoadChart(container, records) {
         `Carga: ${record.load}`,
         `Series: ${record.sets || "-"}`,
         `Repeticoes: ${record.reps || "-"}`,
+        `Treino: ${record.workoutTitle || "-"}`,
       ].forEach((text, index) => {
         const item = document.createElement(index === 0 ? "strong" : "span");
         item.textContent = text;
@@ -3666,8 +3826,10 @@ function renderLoadChart(container, records) {
   [
     ["Carga inicial", `${Number(initial.toFixed(1)).toLocaleString("pt-BR")} kg`],
     ["Carga atual", `${Number(current.toFixed(1)).toLocaleString("pt-BR")} kg`],
-    ["Maior carga", `${Number(best.toFixed(1)).toLocaleString("pt-BR")} kg`],
+    ["Maior carga", `${Number(allBest.toFixed(1)).toLocaleString("pt-BR")} kg`],
     ["Evolucao em %", `${percent >= 0 ? "+" : ""}${Number(percent.toFixed(1)).toLocaleString("pt-BR")}%`],
+    ["Total de execucoes", totalExecutions],
+    ["Tendencia", getTrendLabel(numericRecords.map((item) => item.record))],
   ].forEach(([label, value]) => {
     const card = document.createElement("article");
     const small = document.createElement("small");
@@ -4716,6 +4878,16 @@ currentWorkout?.addEventListener("click", (event) => {
     return;
   }
 
+  const skipFeedbackButton = event.target.closest("[data-skip-feedback]");
+  if (skipFeedbackButton) {
+    const form = skipFeedbackButton.closest(".workout-feedback-form");
+    if (form) {
+      form.innerHTML = "<strong>Treino finalizado.</strong><small>Feedback pulado. Suas cargas salvas continuam no historico.</small>";
+      renderStudentProfile();
+    }
+    return;
+  }
+
   const button = event.target.closest("[data-save-load]");
   if (!button) return;
 
@@ -4767,6 +4939,7 @@ currentWorkout?.addEventListener("submit", (event) => {
     workoutId: form.dataset.workoutId,
     workoutTitle: form.dataset.workoutTitle,
     rating: form.querySelector('[name="rating"]:checked')?.value || "",
+    difficulty: form.querySelector('[name="difficulty"]:checked')?.value || "",
     pain,
     painLocation: pain ? form.querySelector('[name="painLocation"]')?.value.trim() || "" : "",
     note: form.querySelector('[name="note"]')?.value.trim() || "",
@@ -4785,8 +4958,10 @@ adminEvolutionStudent?.addEventListener("change", () => {
   renderAdminEvolution();
 });
 adminEvolutionExercise?.addEventListener("change", renderAdminEvolution);
+adminEvolutionChartMode?.addEventListener("change", renderAdminEvolution);
 assessmentStudent?.addEventListener("change", renderAdminAssessments);
 studentLoadExercise?.addEventListener("change", renderStudentLoadEvolution);
+studentLoadChartMode?.addEventListener("change", renderStudentLoadEvolution);
 checkinFilterStudent?.addEventListener("change", renderCheckinHistory);
 checkinFilterDate?.addEventListener("input", renderCheckinHistory);
 manualCheckinStudent?.addEventListener("change", fillManualCheckinPackageSelect);
@@ -5554,6 +5729,8 @@ function initializeApp() {
   currentUserType = null;
   console.info(`Supabase URL utilizada: ${getSupabaseConfig().url}`);
   updateTodayLabel();
+  fillLoadChartModeSelect(studentLoadChartMode);
+  fillLoadChartModeSelect(adminEvolutionChartMode);
   applyInputMasks();
   normalizeStoredAppData();
 
