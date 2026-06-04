@@ -2477,3 +2477,276 @@ h3 {
   background: #e8faff;
   color: #061521;
 }
+
+/* Mobile containment fixes */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.app-shell,
+.content,
+.view,
+.panel,
+.hero,
+.metric,
+.admin-grid article,
+.workout-admin,
+.workout-block,
+.workout-form-block,
+.saved-workout,
+.workout-summary,
+.workout-meta,
+.workout-expiration-alert,
+.student-exercise-card,
+.student-evolution-panel,
+.assessment-student-panel,
+.assessment-admin-panel,
+.student-profile-panel,
+.profile-hero-card,
+.admin-profile-card,
+.package-card,
+.package-admin-card,
+.package-lesson,
+.package-compact-card,
+.package-expand-panel,
+.student-history-card,
+.billing-card,
+.billing-settings,
+.table-panel {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.content *,
+.login-screen * {
+  min-width: 0;
+}
+
+.content p,
+.content span,
+.content strong,
+.content small,
+.content h1,
+.content h2,
+.content h3,
+.content label,
+.content button,
+.content input,
+.content textarea,
+.content select {
+  overflow-wrap: anywhere;
+}
+
+.actions,
+.mode-switch,
+.workout-actions,
+.student-actions,
+.package-actions,
+.package-inline-panel,
+.billing-card,
+.topbar {
+  flex-wrap: wrap;
+}
+
+.table-panel {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px) {
+  .app-shell,
+  .content,
+  .sidebar,
+  .login-screen {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .content,
+  .sidebar,
+  .login-screen {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .topbar,
+  .student-card,
+  .brand {
+    max-width: 100%;
+  }
+
+  .student-card {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .hero,
+  .split,
+  .metrics-grid,
+  .video-grid,
+  .admin-grid,
+  .form-grid,
+  .manual-payment,
+  .workout-student-board,
+  .workout-form-intro,
+  .workout-form-details,
+  .workout-copy-tools,
+  .workout-student-search,
+  .workout-student-directory,
+  .exercise-builder,
+  .exercise-form-row,
+  .exercise-display-grid,
+  .exercise-display-row,
+  .assessment-form-head,
+  .assessment-fields,
+  .assessment-summary-grid,
+  .assessment-mini-grid,
+  .profile-grid,
+  .student-admin-profile-grid,
+  .student-history-grid,
+  .admin-profile-card-body,
+  .evolution-toolbar,
+  .load-entry-form,
+  .checkin-card,
+  .checkin-admin-form,
+  .checkin-filters,
+  .package-student-selector,
+  .package-form,
+  .package-meta,
+  .package-lesson,
+  .package-compact-grid,
+  .package-card-summary,
+  .package-summary-metrics,
+  .package-detail-grid,
+  .billing-settings,
+  .billing-card,
+  .workout-meta,
+  .workout-expiration-alert {
+    grid-template-columns: 1fr !important;
+  }
+
+  .hero img {
+    width: 100%;
+  }
+
+  .actions,
+  .mode-switch,
+  .workout-actions,
+  .student-actions,
+  .package-actions,
+  .package-inline-panel,
+  .billing-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .actions button,
+  .mode-switch button,
+  .workout-actions button,
+  .student-actions button,
+  .package-actions button,
+  .package-inline-panel button,
+  .billing-card button,
+  .billing-card a,
+  .admin-grid button,
+  .workout-admin button,
+  .manual-payment button,
+  .package-form button,
+  .checkin-card button {
+    width: 100%;
+    white-space: normal;
+  }
+
+  .table-panel {
+    overflow-x: hidden;
+  }
+
+  .table-row,
+  .workout-head,
+  .workout-row {
+    display: grid;
+    grid-template-columns: 1fr !important;
+    gap: 8px;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .table-row.head,
+  .workout-head {
+    display: none;
+  }
+
+  .table-row > *,
+  .workout-row > * {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .load-chart {
+    overflow-x: hidden;
+  }
+
+  .load-chart-bar {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .workout-tabs {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
+  .workout-tabs button {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 420px) {
+  .content,
+  .sidebar,
+  .login-screen {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  h1 {
+    font-size: 25px;
+  }
+
+  h2 {
+    font-size: 23px;
+  }
+
+  .login-card,
+  .hero,
+  .panel,
+  .metric,
+  .admin-grid article,
+  .workout-block,
+  .saved-workout,
+  .student-exercise-card,
+  .package-card,
+  .billing-settings {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
