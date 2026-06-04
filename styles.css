@@ -2469,8 +2469,54 @@ h3 {
 }
 
 @media (max-width: 680px) {
-  .content,
+  .app-shell {
+    display: block;
+    padding-bottom: 82px;
+  }
+
   .sidebar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: block;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    background: rgba(6, 21, 33, 0.97);
+    border-top: 1px solid rgba(184, 255, 56, 0.22);
+  }
+
+  .sidebar .brand,
+  .sidebar .whatsapp {
+    display: none;
+  }
+
+  .nav {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-item {
+    flex: 1 0 auto;
+    min-width: 86px;
+    padding: 10px 8px;
+    text-align: center;
+    white-space: normal;
+    font-size: 12px;
+  }
+
+  .nav-item.active {
+    box-shadow: inset 0 -3px 0 var(--lime);
+  }
+
+  .content {
     padding: 18px;
   }
 
@@ -2978,5 +3024,83 @@ textarea {
   .billing-settings {
     padding-left: 16px;
     padding-right: 16px;
+  }
+}
+
+@media (max-width: 680px) {
+  .app-shell {
+    display: block;
+    padding-bottom: 92px;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 20;
+    display: block;
+    width: 100%;
+    max-width: 100vw;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    overflow-x: hidden;
+    background: rgba(6, 21, 33, 0.97);
+    border: 0;
+    border-top: 1px solid rgba(184, 255, 56, 0.22);
+    border-radius: 0;
+  }
+
+  .sidebar .brand,
+  .sidebar .whatsapp {
+    display: none;
+  }
+
+  .nav {
+    display: flex;
+    grid-template-columns: none;
+    gap: 6px;
+    max-width: 100%;
+    padding-bottom: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-item {
+    flex: 1 0 auto;
+    min-width: 86px;
+    max-width: 140px;
+    padding: 10px 8px;
+    text-align: center;
+    white-space: normal;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .content {
+    padding-bottom: 104px;
+  }
+
+  .load-chart {
+    width: 100%;
+    min-height: 300px;
+    overflow-x: hidden;
+  }
+
+  .load-chart-area {
+    min-height: 300px;
+  }
+
+  .load-chart-bars {
+    min-width: 0;
+  }
+
+  .load-chart-summary,
+  .record-metrics-grid,
+  .feedback-grid,
+  .general-notes-list {
+    grid-template-columns: 1fr;
   }
 }

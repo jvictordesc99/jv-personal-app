@@ -14,6 +14,7 @@ const titles = {
 const navButtons = document.querySelectorAll(".nav-item");
 const views = document.querySelectorAll(".view");
 const pageTitle = document.querySelector("#page-title");
+const todayLabel = document.querySelector("#today-label");
 const loginScreen = document.querySelector("#login-screen");
 const appShell = document.querySelector("#app-shell");
 const loginButtons = document.querySelectorAll("[data-login-role]");
@@ -100,6 +101,11 @@ const supabaseTables = {
   billingSettings: "billing_settings",
 };
 const personalAdminEmail = "jvictordesc99@gmail.com";
+const supabaseFallbackConfig = {
+  url: "https://wsvjopplvspjkxjbexkj.supabase.co",
+  anonKey:
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzdmpvcHBsdnNwamt4amJleGtqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0NDI4NjIsImV4cCI6MjA5NjAxODg2Mn0.SndPqwDDBT6xCCqbzkvUOEpmq1_EJCX0uFPPTR2-ZqA",
+};
 const defaultStudents = [
   { name: "Marina Costa", email: "", plan: "Performance", value: "R$ 250,00", due: "05/06", payment: "Em dia" },
   { name: "Pedro Alves", email: "", plan: "Beach", value: "R$ 180,00", due: "10/06", payment: "Pendente" },
@@ -256,6 +262,14 @@ function safeSetText(element, text = "") {
   if (element) element.textContent = text;
 }
 
+function updateTodayLabel() {
+  if (!todayLabel) return;
+  const today = new Date();
+  const day = String(today.getDate()).padStart(2, "0");
+  const month = today.toLocaleDateString("pt-BR", { month: "long" });
+  todayLabel.textContent = `Hoje, ${day} de ${month}`;
+}
+
 function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
@@ -320,8 +334,8 @@ function applyExerciseFieldMask(input) {
 function getSupabaseConfig() {
   const config = window.SUPABASE_CONFIG || {};
   return {
-    url: String(config.url || "").trim(),
-    anonKey: String(config.anonKey || "").trim(),
+    url: String(config.url || supabaseFallbackConfig.url || "").trim(),
+    anonKey: String(config.anonKey || supabaseFallbackConfig.anonKey || "").trim(),
   };
 }
 
@@ -1427,7 +1441,7 @@ function normalizeWorkoutsData(workouts) {
 }
 
 function fillStudentSelects() {
-  if (!workoutStudent || !workoutViewStudent || !adminLoadStudent || !assessmentStudent) return;
+  if (!workoutStudent || !workoutViewStudent || !assessmentStudent) return;
 
   const students = loadStudents();
   if (selectedStudentProfile && !students.some((student) => student.name === selectedStudentProfile)) {
@@ -1437,7 +1451,7 @@ function fillStudentSelects() {
 
   const selectedWorkoutStudent = workoutStudent.value;
   const selectedViewStudent = workoutViewStudent.value;
-  const selectedAdminLoadStudent = adminLoadStudent.value;
+  const selectedAdminLoadStudent = adminLoadStudent?.value || "";
   const selectedAdminEvolutionStudent = adminEvolutionStudent?.value;
   const selectedAssessmentStudent = assessmentStudent.value;
   const selectedPackageStudent = packageStudent?.value;
@@ -1455,7 +1469,7 @@ function fillStudentSelects() {
 
   workoutStudent.replaceChildren();
   workoutViewStudent.replaceChildren();
-  adminLoadStudent.replaceChildren();
+  adminLoadStudent?.replaceChildren();
   adminEvolutionStudent?.replaceChildren();
   assessmentStudent.replaceChildren();
   packageViewStudent?.replaceChildren();
@@ -1516,7 +1530,7 @@ function fillStudentSelects() {
     loginOption.value = student.name;
 
     workoutStudent.appendChild(adminOption);
-    adminLoadStudent.appendChild(loadOption);
+    adminLoadStudent?.appendChild(loadOption);
     adminEvolutionStudent?.appendChild(evolutionOption);
     assessmentStudent.appendChild(assessmentOption);
     packageViewStudent?.appendChild(packageViewOption);
@@ -1538,7 +1552,7 @@ function fillStudentSelects() {
     currentUserType === "student" && selectedStudentProfile
       ? selectedStudentProfile
       : validName(selectedViewStudent, visibleStudentOptions[0]?.name || firstStudentName);
-  adminLoadStudent.value = validName(selectedAdminLoadStudent, workoutViewStudent.value || firstStudentName);
+  if (adminLoadStudent) adminLoadStudent.value = validName(selectedAdminLoadStudent, workoutViewStudent.value || firstStudentName);
   if (adminEvolutionStudent) adminEvolutionStudent.value = validName(selectedAdminEvolutionStudent, workoutViewStudent.value || firstStudentName);
   assessmentStudent.value = validName(selectedAssessmentStudent, workoutViewStudent.value || firstStudentName);
   if (packageViewStudent) packageViewStudent.value = selectedPackageViewStudent && studentNames.includes(selectedPackageViewStudent) ? selectedPackageViewStudent : "";
@@ -1824,7 +1838,7 @@ function createAdminStudentHistorySection(studentName) {
       "Nenhum registro de presenca ainda.",
     ),
     createHistoryGroup(
-      "Evolucao de carga",
+      "Desempenho registrado",
       progressGroups.slice(0, 12).map((group) => {
         const progress = getProgressFromRecords(group.records);
         return createHistoryItem(group.exerciseName, `${group.workoutTitle || "Treino"} | ${progress.detail}`);
@@ -5539,6 +5553,7 @@ function initializeApp() {
 
   currentUserType = null;
   console.info(`Supabase URL utilizada: ${getSupabaseConfig().url}`);
+  updateTodayLabel();
   applyInputMasks();
   normalizeStoredAppData();
 
