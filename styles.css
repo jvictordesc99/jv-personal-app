@@ -1260,8 +1260,10 @@ h3 {
 
 .load-chart {
   min-height: 260px;
+  width: 100%;
   display: flex;
-  align-items: end;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
   padding: 18px 14px 12px;
   border-radius: 8px;
@@ -1271,6 +1273,33 @@ h3 {
   overflow-x: hidden;
 }
 
+.load-chart-area {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  min-height: 220px;
+}
+
+.load-chart-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: #a8ddea;
+  font-size: 11px;
+  white-space: nowrap;
+  padding: 6px 0 40px;
+}
+
+.load-chart-bars {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
 .load-chart-bar {
   min-width: 76px;
   height: 220px;
@@ -1278,6 +1307,50 @@ h3 {
   grid-template-rows: 1fr auto auto;
   justify-items: center;
   gap: 6px;
+  color: #eaffef;
+}
+
+.load-chart-tooltip {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 2;
+  display: grid;
+  gap: 4px;
+  max-width: min(260px, 82%);
+  padding: 10px 12px;
+  border: 1px solid rgba(184, 255, 56, 0.35);
+  border-radius: 8px;
+  color: #eaffef;
+  background: rgba(7, 23, 35, 0.94);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.22);
+  font-size: 12px;
+}
+
+.load-chart-tooltip[hidden] {
+  display: none;
+}
+
+.load-chart-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.load-chart-summary article {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid rgba(184, 255, 56, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.load-chart-summary small {
+  color: #a8ddea;
+}
+
+.load-chart-summary strong {
   color: #eaffef;
 }
 
@@ -1347,6 +1420,99 @@ h3 {
   padding: 10px 12px;
   color: var(--ink);
   background: #fbfeff;
+}
+
+.evolution-admin-panel,
+.evolution-admin-grid,
+.workout-feedback-panel,
+.workout-feedback-form {
+  display: grid;
+  gap: 14px;
+}
+
+.evolution-admin-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.evolution-mini-row,
+.feedback-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.evolution-mini-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.feedback-card:last-child,
+.evolution-mini-row:last-child {
+  border-bottom: 0;
+}
+
+.personal-record-card,
+.record-history-list,
+.record-feedback-note {
+  display: grid;
+  gap: 12px;
+}
+
+.record-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.record-feedback-note {
+  padding: 12px;
+  border: 1px solid rgba(7, 80, 107, 0.12);
+  border-radius: 8px;
+  background: #fbfeff;
+}
+
+.record-feedback-note span {
+  color: var(--muted);
+}
+
+.workout-feedback-panel {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(184, 255, 56, 0.28);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(7, 23, 35, 0.04), rgba(184, 255, 56, 0.08));
+}
+
+.workout-feedback-form label,
+.feedback-pain,
+.feedback-rating {
+  display: grid;
+  gap: 8px;
+}
+
+.feedback-rating,
+.feedback-pain {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+}
+
+.feedback-pain span {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.workout-feedback-form input,
+.workout-feedback-form textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.workout-feedback-form textarea {
+  min-height: 96px;
+  resize: vertical;
 }
 
 .load-history-card ul {
@@ -2434,18 +2600,63 @@ h3 {
     align-items: stretch;
     display: grid;
     gap: 8px;
-    min-height: auto;
+    min-height: 300px;
+    width: 100%;
+    overflow-x: hidden;
+    padding: 14px 10px 12px;
+  }
+
+  .load-chart-area {
+    min-height: 300px;
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .load-chart-axis {
+    font-size: 10px;
+  }
+
+  .load-chart-bars {
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 8px;
   }
 
   .load-chart-bar {
-    grid-template-columns: 1fr auto auto;
-    grid-template-rows: 1fr;
-    height: auto;
-    min-width: 0;
-    width: 100%;
+    height: 250px;
+    min-width: 62px;
+  }
+
+  .load-chart-bar span {
+    width: 34px;
+  }
+
+  .load-chart-bar strong,
+  .load-chart-bar small {
+    font-size: 11px;
+    max-width: 62px;
+    overflow-wrap: anywhere;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .load-chart-tooltip {
+    left: 54px;
+    right: 8px;
+    max-width: none;
+  }
+
+  .load-chart-summary {
+    grid-template-columns: 1fr 1fr;
   }
 
   .load-entry-form {
+    grid-template-columns: 1fr;
+  }
+
+  .evolution-admin-grid,
+  .record-metrics-grid,
+  .feedback-rating,
+  .feedback-pain {
     grid-template-columns: 1fr;
   }
 
@@ -2725,8 +2936,8 @@ textarea {
   }
 
   .load-chart-bar {
-    min-width: 0;
-    width: 100%;
+    min-width: 62px;
+    width: auto;
   }
 
   .workout-tabs {

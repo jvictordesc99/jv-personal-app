@@ -296,7 +296,7 @@
           <div class="admin-grid" id="admin-dashboard">
             <article><strong>Alunos</strong><span>Cadastro, plano, valor manual e status.</span><button data-admin-target="students">Abrir</button></article>
             <article><strong>Fichas de treino</strong><span>Criar, copiar, editar e remover fichas.</span><button data-admin-target="workouts">Abrir</button></article>
-            <article><strong>Exercicios</strong><span>Nome, peso, repeticoes, series e descanso.</span><button data-admin-target="workouts">Abrir</button></article>
+            <article><strong>Evolucao</strong><span>Cargas, recordes, frequencia e feedbacks.</span><button data-admin-target="evolution">Abrir</button></article>
             <article><strong>Avaliacoes</strong><span>Registrar medidas e fotos de evolucao.</span><button data-admin-target="assessments">Abrir</button></article>
             <article><strong>Pacotes e Check-ins</strong><span>Pacotes de aulas, agenda e presencas.</span><button data-admin-target="checkins">Abrir</button></article>
             <article><strong>Financeiro</strong><span>Mensalidades, vencimentos e pagamentos.</span><button data-admin-target="finance">Abrir</button></article>
@@ -466,6 +466,55 @@
                 <select id="admin-load-student"></select>
               </label>
               <div class="load-history-list" id="admin-load-history"></div>
+            </div>
+          </section>
+          <section class="admin-module" id="admin-module-evolution" hidden>
+            <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
+            <div class="evolution-admin-panel">
+              <div class="section-title compact-title">
+                <p class="eyebrow">Evolucao</p>
+                <h2>Desempenho dos alunos</h2>
+              </div>
+              <div class="evolution-toolbar">
+                <div>
+                  <p class="eyebrow">Aluno</p>
+                  <h3>Acompanhamento individual</h3>
+                </div>
+                <label>Aluno
+                  <select id="admin-evolution-student"></select>
+                </label>
+                <label>Exercicio
+                  <select id="admin-evolution-exercise"></select>
+                </label>
+              </div>
+              <div class="evolution-chart-card">
+                <div class="load-history-head">
+                  <div>
+                    <strong id="admin-evolution-chart-title">Evolucao de cargas</strong>
+                    <small id="admin-evolution-chart-subtitle">Selecione aluno e exercicio.</small>
+                  </div>
+                  <span id="admin-evolution-chart-badge"></span>
+                </div>
+                <div class="load-chart" id="admin-evolution-chart"></div>
+              </div>
+              <div class="evolution-admin-grid">
+                <section class="load-history-card">
+                  <div class="load-history-head"><strong>Recordes pessoais</strong></div>
+                  <div id="admin-personal-records"></div>
+                </section>
+                <section class="load-history-card">
+                  <div class="load-history-head"><strong>Frequencia e adesao</strong></div>
+                  <div id="admin-adherence-summary"></div>
+                </section>
+                <section class="load-history-card">
+                  <div class="load-history-head"><strong>Feedbacks dos alunos</strong></div>
+                  <div id="admin-feedback-history"></div>
+                </section>
+                <section class="load-history-card">
+                  <div class="load-history-head"><strong>Observacoes gerais</strong></div>
+                  <div id="admin-feedback-notes"></div>
+                </section>
+              </div>
             </div>
           </section>
           <section class="admin-module" id="admin-module-checkins" hidden>

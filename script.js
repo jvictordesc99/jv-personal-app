@@ -85,6 +85,7 @@ const loadProgressStorageKey = "joao-victor-load-progress";
 const assessmentStorageKey = "joao-victor-assessments";
 const checkinStorageKey = "joao-victor-checkins";
 const packageStorageKey = "joao-victor-class-packages";
+const feedbackStorageKey = "joao-victor-workout-feedbacks";
 const appDataStorageKey = "joao-victor-app-data";
 const billingSettingsStorageKey = "joao-victor-billing-settings";
 const supabaseTables = {
@@ -167,6 +168,16 @@ const studentLoadChartBadge = document.querySelector("#student-load-chart-badge"
 const studentLoadList = document.querySelector("#student-load-list");
 const adminLoadStudent = document.querySelector("#admin-load-student");
 const adminLoadHistory = document.querySelector("#admin-load-history");
+const adminEvolutionStudent = document.querySelector("#admin-evolution-student");
+const adminEvolutionExercise = document.querySelector("#admin-evolution-exercise");
+const adminEvolutionChart = document.querySelector("#admin-evolution-chart");
+const adminEvolutionChartTitle = document.querySelector("#admin-evolution-chart-title");
+const adminEvolutionChartSubtitle = document.querySelector("#admin-evolution-chart-subtitle");
+const adminEvolutionChartBadge = document.querySelector("#admin-evolution-chart-badge");
+const adminPersonalRecords = document.querySelector("#admin-personal-records");
+const adminAdherenceSummary = document.querySelector("#admin-adherence-summary");
+const adminFeedbackHistory = document.querySelector("#admin-feedback-history");
+const adminFeedbackNotes = document.querySelector("#admin-feedback-notes");
 const assessmentForm = document.querySelector("#assessment-form");
 const assessmentStudent = document.querySelector("#assessment-student");
 const assessmentDate = document.querySelector("#assessment-date");
@@ -222,6 +233,7 @@ let memoryLoadProgress = null;
 let memoryAssessments = null;
 let memoryCheckins = null;
 let memoryPackages = null;
+let memoryFeedbacks = null;
 let editingStudentIndex = null;
 let editingWorkout = null;
 let editingPackageId = null;
@@ -421,6 +433,7 @@ function getAppStateSnapshot() {
     assessments: loadAssessments(),
     checkins: loadCheckins(),
     classPackages: loadClassPackages(),
+    workoutFeedbacks: loadWorkoutFeedbacks(),
     billingSettings: loadBillingSettings(),
   };
 }
@@ -436,6 +449,7 @@ function writeAppStateToLocalStorage(state) {
     memoryAssessments = normalizeListData(state.assessments || []).map(normalizeStudentLinkedRecord);
     memoryCheckins = normalizeListData(state.checkins || []).map(normalizeStudentLinkedRecord);
     memoryPackages = normalizeClassPackages(state.classPackages || []);
+    memoryFeedbacks = normalizeListData(state.workoutFeedbacks || []).map(normalizeStudentLinkedRecord);
 
     localStorage.setItem(studentStorageKey, JSON.stringify(memoryStudents));
     localStorage.setItem(workoutStorageKey, JSON.stringify(memoryWorkouts));
@@ -443,6 +457,7 @@ function writeAppStateToLocalStorage(state) {
     localStorage.setItem(assessmentStorageKey, JSON.stringify(memoryAssessments));
     localStorage.setItem(checkinStorageKey, JSON.stringify(memoryCheckins));
     localStorage.setItem(packageStorageKey, JSON.stringify(memoryPackages));
+    localStorage.setItem(feedbackStorageKey, JSON.stringify(memoryFeedbacks));
     if (state.billingSettings) {
       localStorage.setItem(billingSettingsStorageKey, JSON.stringify(state.billingSettings));
     }
@@ -955,6 +970,7 @@ function persistAppDataMeta() {
         assessments: loadAssessments().length,
         packages: loadClassPackages().length,
         checkins: loadCheckins().length,
+        feedbacks: loadWorkoutFeedbacks().length,
       },
     };
     localStorage.setItem(appDataStorageKey, JSON.stringify(meta));
@@ -983,6 +999,7 @@ function normalizeStoredAppData() {
     localStorage.setItem(assessmentStorageKey, JSON.stringify(loadAssessments()));
     localStorage.setItem(checkinStorageKey, JSON.stringify(loadCheckins()));
     localStorage.setItem(packageStorageKey, JSON.stringify(loadClassPackages()));
+    localStorage.setItem(feedbackStorageKey, JSON.stringify(loadWorkoutFeedbacks()));
     persistAppDataMeta();
   } catch {
     showMessage("Alguns dados foram carregados, mas o navegador limitou o salvamento local.", "error");
@@ -1174,6 +1191,45 @@ function saveClassPackages(packages) {
   }
 }
 
+function normalizeWorkoutFeedbacks(feedbacks) {
+  return normalizeListData(feedbacks)
+    .filter((item) => item && typeof item === "object")
+    .map((item) => normalizeStudentLinkedRecord({
+      ...item,
+      workoutTitle: item.workoutTitle || item.workout || "Treino",
+      rating: String(item.rating || "").trim(),
+      pain: item.pain === true || item.pain === "Sim" || item.pain === "sim",
+      painLocation: String(item.painLocation || "").trim(),
+      note: String(item.note || item.observation || "").trim(),
+      date: item.date || formatToday(),
+    }));
+}
+
+function loadWorkoutFeedbacks() {
+  if (memoryFeedbacks) return memoryFeedbacks;
+
+  try {
+    const savedFeedbacks = localStorage.getItem(feedbackStorageKey);
+    memoryFeedbacks = normalizeWorkoutFeedbacks(savedFeedbacks ? JSON.parse(savedFeedbacks) : []);
+  } catch {
+    memoryFeedbacks = [];
+  }
+
+  return memoryFeedbacks;
+}
+
+function saveWorkoutFeedbacks(feedbacks) {
+  memoryFeedbacks = normalizeWorkoutFeedbacks(feedbacks);
+
+  try {
+    localStorage.setItem(feedbackStorageKey, JSON.stringify(memoryFeedbacks));
+    persistAppDataMeta();
+    queueSupabaseAppStateSync();
+  } catch {
+    showMessage("Feedback salvo na tela, mas este navegador bloqueou salvar ao recarregar.", "error");
+  }
+}
+
 function syncStudentNameReferences(previousName, nextName) {
   const nextStudentId = getStudentIdByName(nextName);
   const workouts = loadWorkouts();
@@ -1208,6 +1264,11 @@ function syncStudentNameReferences(previousName, nextName) {
     checkin.studentName === previousName ? { ...checkin, studentName: nextName, studentId: nextStudentId || checkin.studentId || "" } : checkin,
   );
   saveCheckins(checkins);
+
+  const feedbacks = loadWorkoutFeedbacks().map((feedback) =>
+    feedback.studentName === previousName ? { ...feedback, studentName: nextName, studentId: nextStudentId || feedback.studentId || "" } : feedback,
+  );
+  saveWorkoutFeedbacks(feedbacks);
 
   if (selectedStudentProfile === previousName) {
     selectedStudentProfile = nextName;
@@ -1377,6 +1438,7 @@ function fillStudentSelects() {
   const selectedWorkoutStudent = workoutStudent.value;
   const selectedViewStudent = workoutViewStudent.value;
   const selectedAdminLoadStudent = adminLoadStudent.value;
+  const selectedAdminEvolutionStudent = adminEvolutionStudent?.value;
   const selectedAssessmentStudent = assessmentStudent.value;
   const selectedPackageStudent = packageStudent?.value;
   const selectedPackageViewStudent = packageViewStudent?.value;
@@ -1394,6 +1456,7 @@ function fillStudentSelects() {
   workoutStudent.replaceChildren();
   workoutViewStudent.replaceChildren();
   adminLoadStudent.replaceChildren();
+  adminEvolutionStudent?.replaceChildren();
   assessmentStudent.replaceChildren();
   packageViewStudent?.replaceChildren();
   packageStudent?.replaceChildren();
@@ -1428,6 +1491,10 @@ function fillStudentSelects() {
     assessmentOption.textContent = student.name;
     assessmentOption.value = student.name;
 
+    const evolutionOption = document.createElement("option");
+    evolutionOption.textContent = student.name;
+    evolutionOption.value = student.name;
+
     const manualCheckinOption = document.createElement("option");
     manualCheckinOption.textContent = student.name;
     manualCheckinOption.value = student.name;
@@ -1450,6 +1517,7 @@ function fillStudentSelects() {
 
     workoutStudent.appendChild(adminOption);
     adminLoadStudent.appendChild(loadOption);
+    adminEvolutionStudent?.appendChild(evolutionOption);
     assessmentStudent.appendChild(assessmentOption);
     packageViewStudent?.appendChild(packageViewOption);
     packageStudent?.appendChild(packageOption);
@@ -1471,6 +1539,7 @@ function fillStudentSelects() {
       ? selectedStudentProfile
       : validName(selectedViewStudent, visibleStudentOptions[0]?.name || firstStudentName);
   adminLoadStudent.value = validName(selectedAdminLoadStudent, workoutViewStudent.value || firstStudentName);
+  if (adminEvolutionStudent) adminEvolutionStudent.value = validName(selectedAdminEvolutionStudent, workoutViewStudent.value || firstStudentName);
   assessmentStudent.value = validName(selectedAssessmentStudent, workoutViewStudent.value || firstStudentName);
   if (packageViewStudent) packageViewStudent.value = selectedPackageViewStudent && studentNames.includes(selectedPackageViewStudent) ? selectedPackageViewStudent : "";
   if (packageStudent) packageStudent.value = validName(selectedPackageStudent);
@@ -3048,6 +3117,8 @@ function renderCurrentWorkout() {
     form.dataset.workoutTitle = workout.title;
     form.dataset.exerciseKey = exerciseKey;
     form.dataset.exerciseName = normalizedExercise.name;
+    form.dataset.sets = normalizedExercise.sets || "";
+    form.dataset.reps = normalizedExercise.reps || "";
 
     const loadInput = document.createElement("input");
     loadInput.placeholder = "Carga atual";
@@ -3075,8 +3146,78 @@ function renderCurrentWorkout() {
   });
 
   currentWorkout.append(list);
+  currentWorkout.appendChild(createWorkoutFeedbackPanel(selectedStudent, workout));
   renderStudentLoadEvolution();
   renderAdminLoadEvolution();
+}
+
+function createWorkoutFeedbackPanel(studentName, workout) {
+  const panel = document.createElement("section");
+  panel.className = "workout-feedback-panel";
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "primary";
+  toggle.textContent = "Concluir treino";
+
+  const form = document.createElement("form");
+  form.className = "workout-feedback-form";
+  form.hidden = true;
+  form.dataset.studentName = studentName;
+  form.dataset.workoutId = workout.id;
+  form.dataset.workoutTitle = workout.title;
+
+  const title = document.createElement("div");
+  title.innerHTML = "<p class=\"eyebrow\">Feedback</p><h3>Como foi seu treino hoje?</h3>";
+
+  const rating = document.createElement("div");
+  rating.className = "feedback-rating";
+  [1, 2, 3, 4, 5].forEach((value) => {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "rating";
+    input.value = String(value);
+    input.required = true;
+    label.append(input, document.createTextNode(`★ ${value}`));
+    rating.appendChild(label);
+  });
+
+  const pain = document.createElement("div");
+  pain.className = "feedback-pain";
+  pain.innerHTML = `
+    <span>Sentiu alguma dor?</span>
+    <label><input type="radio" name="pain" value="nao" checked> Nao</label>
+    <label><input type="radio" name="pain" value="sim"> Sim</label>
+  `;
+
+  const painLocation = document.createElement("label");
+  painLocation.textContent = "Local da dor";
+  const painInput = document.createElement("input");
+  painInput.name = "painLocation";
+  painInput.placeholder = "Ex: ombro, joelho, lombar";
+  painLocation.appendChild(painInput);
+
+  const note = document.createElement("label");
+  note.textContent = "Observacoes";
+  const textarea = document.createElement("textarea");
+  textarea.name = "note";
+  textarea.placeholder = "Ex: Treino excelente, aumentar carga do supino, dor no ombro...";
+  note.appendChild(textarea);
+
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "primary";
+  submit.textContent = "Finalizar treino";
+
+  toggle.addEventListener("click", () => {
+    form.hidden = false;
+    toggle.hidden = true;
+  });
+
+  form.append(title, rating, pain, painLocation, note, submit);
+  panel.append(toggle, form);
+  return panel;
 }
 
 function groupProgressByExercise(studentName) {
@@ -3100,6 +3241,8 @@ function groupProgressByExercise(studentName) {
             exerciseKey,
             exerciseName: normalizedExercise.name,
             load: prescribedLoad,
+            sets: normalizedExercise.sets || "",
+            reps: normalizedExercise.reps || "",
             note: "Carga prescrita pelo personal",
             date: "Prescrito",
             timestamp: 0,
@@ -3232,10 +3375,206 @@ function renderAdminLoadEvolution() {
   renderLoadHistory(adminLoadHistory, adminLoadStudent.value);
 }
 
+function fillAdminEvolutionExercises() {
+  if (!adminEvolutionExercise || !adminEvolutionStudent) return;
+  const selected = adminEvolutionExercise.value;
+  const groups = Object.entries(groupProgressByExercise(adminEvolutionStudent.value));
+  adminEvolutionExercise.replaceChildren();
+
+  if (!groups.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Nenhum exercicio";
+    adminEvolutionExercise.appendChild(option);
+    return;
+  }
+
+  groups.forEach(([key, group]) => {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = group.exerciseName;
+    adminEvolutionExercise.appendChild(option);
+  });
+  adminEvolutionExercise.value = groups.some(([key]) => key === selected) ? selected : groups[0][0];
+}
+
+function renderAdminEvolution() {
+  if (!adminEvolutionStudent || !adminEvolutionExercise || !adminEvolutionChart) return;
+
+  const students = loadStudents();
+  const selectedStudent = adminEvolutionStudent.value || students[0]?.name || "";
+  if (adminEvolutionStudent.options.length !== students.length) {
+    const previous = adminEvolutionStudent.value;
+    adminEvolutionStudent.replaceChildren();
+    students.forEach((student) => {
+      const option = document.createElement("option");
+      option.value = student.name;
+      option.textContent = student.name;
+      adminEvolutionStudent.appendChild(option);
+    });
+    adminEvolutionStudent.value = students.some((student) => student.name === previous) ? previous : selectedStudent;
+  }
+
+  fillAdminEvolutionExercises();
+  const studentName = adminEvolutionStudent.value;
+  const groups = Object.entries(groupProgressByExercise(studentName));
+  const activeKey = adminEvolutionExercise.value;
+  const group = Object.fromEntries(groups)[activeKey];
+
+  adminEvolutionChart.innerHTML = "";
+  adminEvolutionChartBadge.innerHTML = "";
+  if (!group) {
+    safeSetText(adminEvolutionChartTitle, "Sem dados de carga");
+    safeSetText(adminEvolutionChartSubtitle, "Selecione um aluno com cargas registradas.");
+  } else {
+    safeSetText(adminEvolutionChartTitle, group.exerciseName);
+    safeSetText(adminEvolutionChartSubtitle, group.workoutTitle);
+    adminEvolutionChartBadge.appendChild(createProgressBadge(getProgressFromRecords(group.records)));
+    renderLoadChart(adminEvolutionChart, group.records);
+  }
+
+  renderPersonalRecords(studentName, activeKey);
+  renderAdherenceSummary(studentName);
+  renderAdminFeedbacks(studentName);
+}
+
+function getFeedbackForLoadRecord(studentName, record) {
+  const feedbacks = loadWorkoutFeedbacks()
+    .filter((feedback) => feedback.studentName === studentName)
+    .filter((feedback) => !record.workoutId || feedback.workoutId === record.workoutId)
+    .sort((a, b) => b.timestamp - a.timestamp);
+
+  if (!feedbacks.length) return null;
+  return feedbacks.find((feedback) => feedback.date === record.date) || feedbacks[0];
+}
+
+function renderPersonalRecords(studentName, exerciseKey) {
+  if (!adminPersonalRecords) return;
+  adminPersonalRecords.innerHTML = "";
+
+  if (!studentName || !exerciseKey) {
+    adminPersonalRecords.textContent = "Selecione um aluno e um exercicio para visualizar recordes.";
+    return;
+  }
+
+  const group = groupProgressByExercise(studentName)[exerciseKey];
+  if (!group) {
+    adminPersonalRecords.textContent = "Nenhum registro para este exercicio.";
+    return;
+  }
+
+  const numericRecords = group.records
+    .map((record) => ({ record, value: parseLoad(record.load) }))
+    .filter((item) => item.value !== null);
+
+  const executedRecords = numericRecords.filter((item) => !item.record.prescribed);
+  const recordPool = executedRecords.length ? executedRecords : numericRecords;
+  if (!recordPool.length) {
+    adminPersonalRecords.textContent = "Nenhuma carga numerica registrada para este exercicio.";
+    return;
+  }
+
+  const best = recordPool.reduce((winner, item) => (item.value > winner.value ? item : winner), recordPool[0]);
+  const feedback = getFeedbackForLoadRecord(studentName, best.record);
+  const history = [...recordPool]
+    .sort((a, b) => (b.record.timestamp || 0) - (a.record.timestamp || 0))
+    .slice(0, 5);
+
+  const card = document.createElement("article");
+  card.className = "personal-record-card";
+
+  const title = document.createElement("div");
+  title.className = "load-history-head";
+  title.innerHTML = `<div><strong>${group.exerciseName}</strong><small>${studentName}</small></div><span class="status-ok">Recorde</span>`;
+
+  const metrics = document.createElement("div");
+  metrics.className = "record-metrics-grid";
+  [
+    ["Maior carga registrada", `${best.value.toLocaleString("pt-BR")} kg`],
+    ["Data do recorde", best.record.date || "-"],
+    ["Treino", best.record.workoutTitle || group.workoutTitle || "-"],
+    ["Series e repeticoes", `${best.record.sets || "-"} x ${best.record.reps || "-"}`],
+  ].forEach(([label, value]) => {
+    metrics.appendChild(createAdminMetric(label, value));
+  });
+
+  const note = document.createElement("div");
+  note.className = "record-feedback-note";
+  note.innerHTML = `<strong>Observacao/feedback</strong><span>${feedback?.note || feedback?.painLocation || best.record.note || "Nenhuma observacao vinculada a este recorde."}</span>`;
+
+  const historyTitle = document.createElement("strong");
+  historyTitle.textContent = "Ultimos registros deste exercicio";
+  const historyList = document.createElement("div");
+  historyList.className = "record-history-list";
+  history.forEach(({ record }) => {
+    const item = document.createElement("div");
+    item.className = "evolution-mini-row";
+    item.innerHTML = `<strong>${record.date}</strong><span>${record.load} | ${record.sets || "-"} series | ${record.reps || "-"} reps</span>`;
+    historyList.appendChild(item);
+  });
+
+  card.append(title, metrics, note, historyTitle, historyList);
+  adminPersonalRecords.appendChild(card);
+}
+
+function renderAdherenceSummary(studentName) {
+  if (!adminAdherenceSummary) return;
+  adminAdherenceSummary.innerHTML = "";
+  const month = new Date().toISOString().slice(0, 7);
+  const feedbacks = loadWorkoutFeedbacks().filter((item) => item.studentName === studentName && new Date(item.timestamp).toISOString().slice(0, 7) === month);
+  const checkins = loadCheckins().filter((item) => item.studentName === studentName && (item.month === month || new Date(item.timestamp || Date.now()).toISOString().slice(0, 7) === month));
+  const prescribed = (loadWorkouts()[studentName] || []).reduce((total, workout) => total + (workout.sessions?.length || 1), 0);
+  const completed = feedbacks.length;
+  const adherence = prescribed ? Math.min(100, Math.round((completed / prescribed) * 100)) : 0;
+
+  [
+    ["Treinos concluidos no mes", completed],
+    ["Treinos prescritos", prescribed],
+    ["Adesao", `${adherence}%`],
+    ["Check-ins realizados", checkins.filter(isConsumedLesson).length],
+  ].forEach(([label, value]) => {
+    adminAdherenceSummary.appendChild(createAdminMetric(label, value));
+  });
+}
+
+function renderAdminFeedbacks(studentName) {
+  if (!adminFeedbackHistory || !adminFeedbackNotes) return;
+  const feedbacks = loadWorkoutFeedbacks()
+    .filter((feedback) => !studentName || feedback.studentName === studentName)
+    .sort((a, b) => b.timestamp - a.timestamp);
+
+  adminFeedbackHistory.innerHTML = "";
+  adminFeedbackNotes.innerHTML = "";
+
+  if (!feedbacks.length) {
+    adminFeedbackHistory.textContent = "Nenhum feedback registrado ainda.";
+    adminFeedbackNotes.textContent = "Nenhuma observacao enviada.";
+    return;
+  }
+
+  feedbacks.forEach((feedback) => {
+    const item = document.createElement("article");
+    item.className = "feedback-card";
+    item.innerHTML = `<strong>${feedback.date} | ${feedback.workoutTitle}</strong><span>${feedback.studentName} | Nota ${feedback.rating || "-"} | Dor: ${feedback.pain ? feedback.painLocation || "sim" : "nao"}</span><small>${feedback.note || "Sem observacao."}</small>`;
+    adminFeedbackHistory.appendChild(item);
+
+    if (feedback.note || feedback.painLocation) {
+      const note = document.createElement("article");
+      note.className = "feedback-card";
+      note.innerHTML = `<strong>${feedback.studentName} | ${feedback.date}</strong><small>${feedback.note || feedback.painLocation}</small>`;
+      adminFeedbackNotes.appendChild(note);
+    }
+  });
+}
+
 function renderLoadChart(container, records) {
   container.innerHTML = "";
 
-  const values = records.map((record) => parseLoad(record.load)).filter((value) => value !== null);
+  const numericRecords = records
+    .map((record) => ({ record, value: parseLoad(record.load) }))
+    .filter((item) => item.value !== null);
+
+  const values = numericRecords.map((item) => item.value);
   if (!values.length) {
     container.textContent = "Registros sem carga numerica para montar o grafico.";
     return;
@@ -3244,6 +3583,28 @@ function renderLoadChart(container, records) {
   const max = Math.max(...values);
   const min = Math.min(...values);
   const range = Math.max(max - min, 1);
+  const initial = values[0];
+  const current = values[values.length - 1];
+  const best = max;
+  const percent = initial ? ((current - initial) / initial) * 100 : 0;
+
+  const chartArea = document.createElement("div");
+  chartArea.className = "load-chart-area";
+
+  const axis = document.createElement("div");
+  axis.className = "load-chart-axis";
+  [max, (max + min) / 2, min].forEach((value) => {
+    const tick = document.createElement("span");
+    tick.textContent = `${Number(value.toFixed(1)).toLocaleString("pt-BR")} kg`;
+    axis.appendChild(tick);
+  });
+
+  const bars = document.createElement("div");
+  bars.className = "load-chart-bars";
+
+  const tooltip = document.createElement("div");
+  tooltip.className = "load-chart-tooltip";
+  tooltip.hidden = true;
 
   records.forEach((record) => {
     const value = parseLoad(record.load);
@@ -3253,14 +3614,65 @@ function renderLoadChart(container, records) {
     bar.style.setProperty("--bar-height", `${height}%`);
 
     const fill = document.createElement("span");
+    fill.tabIndex = 0;
+    fill.setAttribute("role", "button");
+    fill.setAttribute("aria-label", `${record.exerciseName || "Exercicio"} ${record.date} ${record.load}`);
     const load = document.createElement("strong");
     load.textContent = record.load;
     const date = document.createElement("small");
-    date.textContent = record.date;
+    date.textContent = formatShortChartDate(record.date);
+
+    const showTooltip = () => {
+      tooltip.innerHTML = "";
+      [
+        record.exerciseName || "Exercicio",
+        `Data: ${record.date}`,
+        `Carga: ${record.load}`,
+        `Series: ${record.sets || "-"}`,
+        `Repeticoes: ${record.reps || "-"}`,
+      ].forEach((text, index) => {
+        const item = document.createElement(index === 0 ? "strong" : "span");
+        item.textContent = text;
+        tooltip.appendChild(item);
+      });
+      tooltip.hidden = false;
+    };
+
+    fill.addEventListener("click", showTooltip);
+    fill.addEventListener("focus", showTooltip);
 
     bar.append(fill, load, date);
-    container.appendChild(bar);
+    bars.appendChild(bar);
   });
+
+  chartArea.append(axis, bars, tooltip);
+
+  const summary = document.createElement("div");
+  summary.className = "load-chart-summary";
+  [
+    ["Carga inicial", `${Number(initial.toFixed(1)).toLocaleString("pt-BR")} kg`],
+    ["Carga atual", `${Number(current.toFixed(1)).toLocaleString("pt-BR")} kg`],
+    ["Maior carga", `${Number(best.toFixed(1)).toLocaleString("pt-BR")} kg`],
+    ["Evolucao em %", `${percent >= 0 ? "+" : ""}${Number(percent.toFixed(1)).toLocaleString("pt-BR")}%`],
+  ].forEach(([label, value]) => {
+    const card = document.createElement("article");
+    const small = document.createElement("small");
+    small.textContent = label;
+    const strong = document.createElement("strong");
+    strong.textContent = value;
+    card.append(small, strong);
+    summary.appendChild(card);
+  });
+
+  container.append(chartArea, summary);
+}
+
+function formatShortChartDate(dateText) {
+  const text = String(dateText || "");
+  if (/prescrito/i.test(text)) return "Presc.";
+  const match = text.match(/(\d{1,2})[/-](\d{1,2})(?:[/-]\d{2,4})?/);
+  if (!match) return text;
+  return `${match[1].padStart(2, "0")}/${match[2].padStart(2, "0")}`;
 }
 
 function renderSingleExerciseHistory(container, records) {
@@ -4313,6 +4725,8 @@ currentWorkout?.addEventListener("click", (event) => {
     exerciseKey: form.dataset.exerciseKey,
     exerciseName: form.dataset.exerciseName,
     load,
+    sets: form.dataset.sets || "",
+    reps: form.dataset.reps || "",
     note: noteInput.value.trim(),
     date: formatToday(),
     timestamp: Date.now(),
@@ -4325,7 +4739,38 @@ currentWorkout?.addEventListener("click", (event) => {
   renderStudentProfile();
 });
 
+currentWorkout?.addEventListener("submit", (event) => {
+  const form = event.target.closest(".workout-feedback-form");
+  if (!form) return;
+
+  event.preventDefault();
+  const feedbacks = loadWorkoutFeedbacks();
+  const pain = form.querySelector('[name="pain"]:checked')?.value === "sim";
+  feedbacks.push({
+    id: createId(),
+    studentName: form.dataset.studentName,
+    studentId: getStudentIdByName(form.dataset.studentName),
+    workoutId: form.dataset.workoutId,
+    workoutTitle: form.dataset.workoutTitle,
+    rating: form.querySelector('[name="rating"]:checked')?.value || "",
+    pain,
+    painLocation: pain ? form.querySelector('[name="painLocation"]')?.value.trim() || "" : "",
+    note: form.querySelector('[name="note"]')?.value.trim() || "",
+    date: formatToday(),
+    timestamp: Date.now(),
+  });
+  saveWorkoutFeedbacks(feedbacks);
+  form.innerHTML = "<strong>Treino finalizado.</strong><small>Feedback enviado para o Personal.</small>";
+  renderAdminEvolution();
+  renderStudentProfile();
+});
+
 adminLoadStudent?.addEventListener("change", renderAdminLoadEvolution);
+adminEvolutionStudent?.addEventListener("change", () => {
+  fillAdminEvolutionExercises();
+  renderAdminEvolution();
+});
+adminEvolutionExercise?.addEventListener("change", renderAdminEvolution);
 assessmentStudent?.addEventListener("change", renderAdminAssessments);
 studentLoadExercise?.addEventListener("change", renderStudentLoadEvolution);
 checkinFilterStudent?.addEventListener("change", renderCheckinHistory);
@@ -4818,6 +5263,9 @@ function openAdminModule(moduleName) {
     fillManualCheckinPackageSelect();
     renderCheckinHistory();
   }
+  if (moduleName === "evolution") {
+    renderAdminEvolution();
+  }
   if (moduleName === "workouts") {
     showWorkoutStudentDirectory();
   }
@@ -5081,6 +5529,7 @@ function refreshAppAfterRemoteState() {
     renderWorkouts();
     renderBillingList();
     renderPackageAdminList();
+    renderAdminEvolution();
   }
 }
 
