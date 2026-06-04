@@ -805,6 +805,20 @@ h3 {
   grid-column: 1 / -1;
 }
 
+.workout-import-block {
+  grid-template-columns: minmax(220px, 0.6fr) minmax(280px, 1fr) auto;
+  align-items: end;
+  background: linear-gradient(135deg, rgba(7, 23, 35, 0.03), rgba(40, 216, 15, 0.08));
+}
+
+.workout-import-block label {
+  min-width: 0;
+}
+
+.workout-import-block textarea {
+  min-height: 150px;
+}
+
 .workout-admin label,
 .student-workout-filter label,
 .workout-copy-tools label {
@@ -2318,6 +2332,10 @@ h3 {
     grid-template-columns: 1fr;
   }
 
+  .workout-import-block {
+    grid-template-columns: 1fr;
+  }
+
   .workout-student-directory,
   .exercise-form-row {
     grid-template-columns: 1fr;
@@ -2609,6 +2627,7 @@ textarea {
   .workout-student-board,
   .workout-form-intro,
   .workout-form-details,
+  .workout-import-block,
   .workout-copy-tools,
   .workout-student-search,
   .workout-student-directory,

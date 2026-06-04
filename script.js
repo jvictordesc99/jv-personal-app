@@ -150,6 +150,8 @@ const workoutExercises = document.querySelector("#workout-exercises");
 const addExerciseButton = document.querySelector("#add-exercise-button");
 const workoutTemplateSource = document.querySelector("#workout-template-source");
 const loadWorkoutButton = document.querySelector("#load-workout-button");
+const workoutImportText = document.querySelector("#workout-import-text");
+const organizeWorkoutTextButton = document.querySelector("#organize-workout-text-button");
 const workoutMessage = document.querySelector("#workout-message");
 const workoutList = document.querySelector("#workout-list");
 const workoutExpirationPanel = document.querySelector("#workout-expiration-panel");
@@ -240,6 +242,67 @@ function showMessage(text, type = "success") {
 
 function safeSetText(element, text = "") {
   if (element) element.textContent = text;
+}
+
+function onlyDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function formatCurrencyBR(value) {
+  const digits = onlyDigits(value);
+  if (!digits) return "";
+  const cents = Number(digits) / 100;
+  return cents.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function formatDateBR(value) {
+  const digits = onlyDigits(value).slice(0, 8);
+  if (!digits) return "";
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function formatLoadKg(value) {
+  const cleaned = String(value || "")
+    .replace(/[^\d,.]/g, "")
+    .replace(/\./g, ",");
+  if (!cleaned) return "";
+  const normalized = cleaned.replace(/,+/g, ",").replace(/^,/, "0,").replace(/(,\d*),.*/, "$1");
+  return `${normalized} kg`;
+}
+
+function formatRestSeconds(value) {
+  const digits = onlyDigits(value);
+  return digits ? `${digits}s` : "";
+}
+
+function applyInputMasks(root = document) {
+  root.querySelectorAll("#student-value").forEach((input) => {
+    input.inputMode = "numeric";
+    input.addEventListener("input", () => {
+      input.value = formatCurrencyBR(input.value);
+    });
+  });
+
+  root.querySelectorAll("#student-due, #student-birth-date, #assessment-date, #workout-start-date, #workout-due-date, #package-start, #package-end, #checkin-filter-date").forEach((input) => {
+    input.inputMode = "numeric";
+    input.addEventListener("input", () => {
+      input.value = formatDateBR(input.value);
+    });
+  });
+}
+
+function applyExerciseFieldMask(input) {
+  if (!input?.dataset?.exerciseField) return;
+
+  if (input.dataset.exerciseField === "currentLoad") {
+    input.value = formatLoadKg(input.value);
+  }
+
+  if (input.dataset.exerciseField === "rest") {
+    input.value = formatRestSeconds(input.value);
+  }
 }
 
 function getSupabaseConfig() {
@@ -2140,6 +2203,7 @@ function createExerciseFormRow(exercise = {}) {
     input.dataset.exerciseField = key;
     input.placeholder = placeholder;
     input.value = exercise[key] || "";
+    if (key === "currentLoad" || key === "sets" || key === "rest") input.inputMode = "decimal";
     if (required) input.required = true;
     row.appendChild(input);
   });
@@ -2211,6 +2275,131 @@ function resetTrainingSessions(sessions = [{ title: "Treino principal", exercise
 
 function resetExerciseRows(exercises = [{}]) {
   resetTrainingSessions([{ title: "Treino principal", exercises }]);
+}
+
+function looksLikeWorkoutTitle(line) {
+  const text = String(line || "").trim();
+  if (!text) return false;
+  if (/\d+\s*x\s*\d+/i.test(text)) return false;
+  if (/\b(series?|s[eé]ries?|reps?|repeti[cç][oõ]es?|kg|carga|descanso)\b/i.test(text)) return false;
+  return /^treino\s+[a-z0-9]/i.test(text) || /^[a-zÀ-ÿ\s]+(\s*-\s*[a-zÀ-ÿ\s]+)?$/i.test(text);
+}
+
+function isWorkoutBlockTitle(line) {
+  const text = String(line || "").trim();
+  if (!text) return false;
+  if (/\d+\s*x\s*\d+/i.test(text)) return false;
+  if (/\b(series?|s[eé]ries?|reps?|repeti[cç][oõ]es?|kg|carga|peso|descanso)\b/i.test(text)) return false;
+
+  const normalized = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  return /^(treino|ficha|workout|parte)\s+[a-z0-9]\b/i.test(normalized)
+    || /^dia\s+\d+\b/i.test(normalized)
+    || /^(inferiores|superiores|full body|costas e biceps|peito e triceps)\b/i.test(normalized);
+}
+
+function cleanExerciseName(line) {
+  return String(line || "")
+    .replace(/\b\d+\s*x\s*\d+\b/gi, "")
+    .replace(/\b\d+\s*s[eé]ries?\s*(de)?\s*\d+\s*(reps?|repeti[cç][oõ]es?)?\b/gi, "")
+    .replace(/\b\d+\s*(s[eé]ries?|series?)\b/gi, "")
+    .replace(/\b\d+\s*(reps?|repeti[cç][oõ]es?)\b/gi, "")
+    .replace(/\b(carga|peso)\s*\d+[,.]?\d*\s*(kg|kgs|quilos?)?\b/gi, "")
+    .replace(/\b\d+[,.]?\d*\s*(kg|kgs|quilos?)\b/gi, "")
+    .replace(/\bdescanso\s*\d+\s*(s|seg|segundos?|min|minutos?)?\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/[-–—|]+$/g, "")
+    .trim();
+}
+
+function parseWorkoutExerciseLine(line) {
+  const text = String(line || "").trim();
+  if (!text) return null;
+
+  const compactMatch = text.match(/\b(\d+)\s*x\s*(\d+)\b/i);
+  const seriesRepMatch = text.match(/\b(\d+)\s*s[eé]ries?\s*(?:de)?\s*(\d+)\s*(?:reps?|repeti[cç][oõ]es?)?\b/i);
+  const setsOnlyMatch = text.match(/\b(\d+)\s*(?:s[eé]ries?|series?)\b/i);
+  const repsOnlyMatch = text.match(/\b(\d+)\s*(?:reps?|repeti[cç][oõ]es?)\b/i);
+  const loadMatch = text.match(/\b(?:carga|peso)\s*(\d+[,.]?\d*)\s*(kg|kgs|quilos?)?\b/i) || text.match(/\b(\d+[,.]?\d*)\s*(kg|kgs|quilos?)\b/i);
+  const restMatch = text.match(/\bdescanso\s*(\d+)\s*(s|seg|segundos?|min|minutos?)?\b/i);
+
+  const sets = compactMatch?.[1] || seriesRepMatch?.[1] || setsOnlyMatch?.[1] || "";
+  const reps = compactMatch?.[2] || seriesRepMatch?.[2] || repsOnlyMatch?.[1] || "";
+  const load = loadMatch ? `${loadMatch[1]}${loadMatch[2] ? loadMatch[2].replace(/kgs?|quilos?/i, "kg") : "kg"}` : "";
+  const rest = restMatch ? `${restMatch[1]}${restMatch[2] ? restMatch[2].replace(/segundos?|seg/i, "s").replace(/minutos?/i, "min") : "s"}` : "";
+  const name = cleanExerciseName(text);
+
+  if (!name) return null;
+
+  return {
+    name,
+    currentLoad: load,
+    weight: load,
+    reps,
+    sets,
+    rest,
+    progressNote: "",
+    videoUrl: "",
+  };
+}
+
+function importWorkoutFromText() {
+  const rawText = workoutImportText?.value || "";
+  const lines = rawText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) {
+    if (workoutMessage) {
+      workoutMessage.textContent = "Cole o treino em texto antes de organizar.";
+      workoutMessage.classList.add("error");
+    }
+    workoutImportText?.focus();
+    return;
+  }
+
+  const sessions = [];
+  let currentSession = null;
+
+  const startSession = (title = "Treino principal") => {
+    currentSession = { title, exercises: [] };
+    sessions.push(currentSession);
+  };
+
+  lines.forEach((line, index) => {
+    if (isWorkoutBlockTitle(line)) {
+      startSession(line);
+      if (index === 0 && workoutTitle && !workoutTitle.value.trim()) workoutTitle.value = line;
+      return;
+    }
+
+    const exercise = parseWorkoutExerciseLine(line);
+    if (!exercise) return;
+
+    if (!currentSession) startSession(workoutTitle?.value.trim() || "Treino principal");
+    currentSession.exercises.push(exercise);
+  });
+
+  const filledSessions = sessions.filter((session) => session.exercises.length);
+  const exerciseCount = filledSessions.reduce((total, session) => total + session.exercises.length, 0);
+
+  if (!filledSessions.length) {
+    if (workoutMessage) {
+      workoutMessage.textContent = "Nao encontrei exercicios no texto. Revise o formato e tente novamente.";
+      workoutMessage.classList.add("error");
+    }
+    return;
+  }
+
+  resetTrainingSessions(filledSessions);
+  if (workoutMessage) {
+    workoutMessage.textContent = `${exerciseCount} exercicio(s) em ${filledSessions.length} treino(s) organizados. Revise os campos antes de salvar.`;
+    workoutMessage.classList.remove("error");
+  }
 }
 
 function getWorkoutCopy(studentName, workoutId) {
@@ -4675,6 +4864,8 @@ adminBackButtons.forEach((button) => {
 
 addExerciseButton?.addEventListener("click", () => addTrainingSession({ title: "", exercises: [{}] }));
 
+organizeWorkoutTextButton?.addEventListener("click", importWorkoutFromText);
+
 workoutExercises?.addEventListener("click", (event) => {
   const addExercise = event.target.closest("[data-add-session-exercise]");
   if (addExercise) {
@@ -4708,6 +4899,26 @@ workoutExercises?.addEventListener("click", (event) => {
 
   removeButton.closest(".exercise-form-row").remove();
 });
+
+workoutExercises?.addEventListener("input", (event) => {
+  const input = event.target.closest("[data-exercise-field]");
+  if (!input) return;
+
+  if (input.dataset.exerciseField === "currentLoad") {
+    const cursorAtEnd = input.selectionStart === input.value.length;
+    input.value = String(input.value).replace(/[^\d,.]/g, "").replace(/\./g, ",");
+    if (cursorAtEnd) input.setSelectionRange(input.value.length, input.value.length);
+  }
+
+  if (input.dataset.exerciseField === "rest") {
+    input.value = onlyDigits(input.value);
+  }
+});
+
+workoutExercises?.addEventListener("blur", (event) => {
+  const input = event.target.closest("[data-exercise-field]");
+  applyExerciseFieldMask(input);
+}, true);
 
 function applyUserPermissions() {
   if (!currentUserType || !loginScreen || !appShell) return;
@@ -4879,6 +5090,7 @@ function initializeApp() {
 
   currentUserType = null;
   console.info(`Supabase URL utilizada: ${getSupabaseConfig().url}`);
+  applyInputMasks();
   normalizeStoredAppData();
 
   if (loginScreen) loginScreen.hidden = false;
