@@ -86,7 +86,10 @@ const loadProgressStorageKey = "joao-victor-load-progress";
 const assessmentStorageKey = "joao-victor-assessments";
 const checkinStorageKey = "joao-victor-checkins";
 const packageStorageKey = "joao-victor-class-packages";
+const dropInStorageKey = "joao-victor-dropin-classes";
+const makeupStorageKey = "joao-victor-makeup-credits";
 const feedbackStorageKey = "joao-victor-workout-feedbacks";
+const resolvedAlertsStorageKey = "joao-victor-resolved-alerts";
 const appDataStorageKey = "joao-victor-app-data";
 const billingSettingsStorageKey = "joao-victor-billing-settings";
 const supabaseTables = {
@@ -98,6 +101,8 @@ const supabaseTables = {
   loadProgress: "load_progress",
   classPackages: "class_packages",
   checkins: "checkins",
+  dropInClasses: "dropin_classes",
+  makeupCredits: "makeup_credits",
   billingSettings: "billing_settings",
 };
 const personalAdminEmail = "jvictordesc99@gmail.com";
@@ -131,6 +136,8 @@ const tempPasswordInput = document.querySelector("#student-temp-password");
 const phoneInput = document.querySelector("#student-phone");
 const birthDateInput = document.querySelector("#student-birth-date");
 const planInput = document.querySelector("#student-plan");
+const frequencyInput = document.querySelector("#student-frequency");
+const makeupLimitInput = document.querySelector("#student-makeup-limit");
 const valueInput = document.querySelector("#student-value");
 const dueInput = document.querySelector("#student-due");
 const paymentInput = document.querySelector("#student-payment");
@@ -138,12 +145,15 @@ const newStudentButton = document.querySelector("[data-focus-student]");
 const workoutFocusButtons = document.querySelectorAll("[data-focus-workout]");
 const adminDashboard = document.querySelector("#admin-dashboard");
 const paymentBlockedPanel = document.querySelector("#payment-blocked-panel");
+const adminAlertsList = document.querySelector("#admin-alerts-list");
+const adminAlertFilter = document.querySelector("#admin-alert-filter");
 const adminModules = document.querySelectorAll(".admin-module");
 const adminModuleButtons = document.querySelectorAll("[data-admin-target]");
 const adminBackButtons = document.querySelectorAll("[data-admin-back]");
 const saveMessage = document.querySelector("#save-message");
 const saveStudentButton = document.querySelector("#save-student-button");
 const cancelEditButton = document.querySelector("#cancel-edit-button");
+const exportDataButton = document.querySelector("#export-data-button");
 const workoutStudentSearch = document.querySelector("#workout-student-search");
 const workoutStudentDirectory = document.querySelector("#workout-student-directory");
 const workoutStudentWorkspace = document.querySelector("#workout-student-workspace");
@@ -216,6 +226,9 @@ const studentAdminProfile = document.querySelector("#student-admin-profile");
 const manualCheckinForm = document.querySelector("#manual-checkin-form");
 const manualCheckinStudent = document.querySelector("#manual-checkin-student");
 const manualCheckinPackage = document.querySelector("#manual-checkin-package");
+const manualCheckinType = document.querySelector("#manual-checkin-type");
+const manualCheckinValue = document.querySelector("#manual-checkin-value");
+const manualCheckinNote = document.querySelector("#manual-checkin-note");
 const checkinFilterStudent = document.querySelector("#checkin-filter-student");
 const checkinFilterDate = document.querySelector("#checkin-filter-date");
 const checkinMonthTotal = document.querySelector("#checkin-month-total");
@@ -233,6 +246,22 @@ const packageDays = document.querySelector("#package-days");
 const packageTime = document.querySelector("#package-time");
 const packageNotes = document.querySelector("#package-notes");
 const packageAdminList = document.querySelector("#package-admin-list");
+const lessonBalancePanel = document.querySelector("#lesson-balance-panel");
+const dropInForm = document.querySelector("#dropin-class-form");
+const dropInStudent = document.querySelector("#dropin-student");
+const dropInDate = document.querySelector("#dropin-date");
+const dropInModality = document.querySelector("#dropin-modality");
+const dropInValue = document.querySelector("#dropin-value");
+const dropInStatus = document.querySelector("#dropin-status");
+const dropInNote = document.querySelector("#dropin-note");
+const makeupForm = document.querySelector("#makeup-credit-form");
+const makeupStudent = document.querySelector("#makeup-student");
+const makeupPackage = document.querySelector("#makeup-package");
+const makeupDate = document.querySelector("#makeup-date");
+const makeupLessonTime = document.querySelector("#makeup-lesson-time");
+const makeupNoticeTime = document.querySelector("#makeup-notice-time");
+const makeupNote = document.querySelector("#makeup-note");
+const lessonExtraHistory = document.querySelector("#lesson-extra-history");
 const studentPackagePanel = document.querySelector("#student-package-panel");
 const billingSettingsForm = document.querySelector("#billing-settings-form");
 const billingPixKey = document.querySelector("#billing-pix-key");
@@ -249,6 +278,8 @@ let memoryLoadProgress = null;
 let memoryAssessments = null;
 let memoryCheckins = null;
 let memoryPackages = null;
+let memoryDropIns = null;
+let memoryMakeups = null;
 let memoryFeedbacks = null;
 let editingStudentIndex = null;
 let editingWorkout = null;
@@ -325,14 +356,14 @@ function formatRestSeconds(value) {
 }
 
 function applyInputMasks(root = document) {
-  root.querySelectorAll("#student-value").forEach((input) => {
+  root.querySelectorAll("#student-value, #dropin-value, #manual-checkin-value").forEach((input) => {
     input.inputMode = "numeric";
     input.addEventListener("input", () => {
       input.value = formatCurrencyBR(input.value);
     });
   });
 
-  root.querySelectorAll("#student-due, #student-birth-date, #assessment-date, #workout-start-date, #workout-due-date, #package-start, #package-end, #checkin-filter-date").forEach((input) => {
+  root.querySelectorAll("#student-due, #student-birth-date, #assessment-date, #workout-start-date, #workout-due-date, #package-start, #package-end, #checkin-filter-date, #dropin-date, #makeup-date").forEach((input) => {
     input.inputMode = "numeric";
     input.addEventListener("input", () => {
       input.value = formatDateBR(input.value);
@@ -458,9 +489,37 @@ create policy "app_state_update_anon" on public.app_state for update to anon usi
   }
 }
 
+function getPersonalRecordsSnapshot() {
+  const bestByKey = {};
+  loadProgressRecords()
+    .filter((record) => !record.prescribed)
+    .forEach((record) => {
+      const value = parseLoad(record.load);
+      if (value === null) return;
+      const key = `${record.studentName}::${record.exerciseKey || record.exerciseName}`;
+      if (!bestByKey[key] || value > bestByKey[key].value) {
+        bestByKey[key] = {
+          studentName: record.studentName,
+          studentId: record.studentId || getStudentIdByName(record.studentName),
+          exerciseKey: record.exerciseKey || "",
+          exerciseName: record.exerciseName || "",
+          workoutTitle: record.workoutTitle || "",
+          load: record.load,
+          value,
+          date: record.date || "",
+          sets: record.sets || "",
+          reps: record.reps || "",
+          note: record.note || "",
+          timestamp: record.timestamp || 0,
+        };
+      }
+    });
+  return Object.values(bestByKey);
+}
+
 function getAppStateSnapshot() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     savedAt: new Date().toISOString(),
     students: loadStudents(),
     workouts: loadWorkouts(),
@@ -468,8 +527,29 @@ function getAppStateSnapshot() {
     assessments: loadAssessments(),
     checkins: loadCheckins(),
     classPackages: loadClassPackages(),
+    dropInClasses: loadDropInClasses(),
+    makeupCredits: loadMakeupCredits(),
     workoutFeedbacks: loadWorkoutFeedbacks(),
+    resolvedAlerts: loadResolvedAlerts(),
+    personalRecords: getPersonalRecordsSnapshot(),
     billingSettings: loadBillingSettings(),
+  };
+}
+
+function getAppStateAuditCounts(state = getAppStateSnapshot()) {
+  const workouts = state.workouts || {};
+  return {
+    students: normalizeListData(state.students || []).length,
+    workouts: Object.values(workouts).reduce((total, items) => total + normalizeListData(items).length, 0),
+    assessments: normalizeListData(state.assessments || []).length,
+    loadProgress: normalizeListData(state.loadProgress || []).length,
+    feedbacks: normalizeListData(state.workoutFeedbacks || []).length,
+    personalRecords: normalizeListData(state.personalRecords || []).length || getPersonalRecordsSnapshot().length,
+    classPackages: normalizeListData(state.classPackages || []).length,
+    checkins: normalizeListData(state.checkins || []).length,
+    dropInClasses: normalizeListData(state.dropInClasses || []).length,
+    makeupCredits: normalizeListData(state.makeupCredits || []).length,
+    resolvedAlerts: normalizeListData(state.resolvedAlerts || []).length,
   };
 }
 
@@ -484,7 +564,9 @@ function writeAppStateToLocalStorage(state) {
     memoryAssessments = normalizeListData(state.assessments || []).map(normalizeStudentLinkedRecord);
     memoryCheckins = normalizeListData(state.checkins || []).map(normalizeStudentLinkedRecord);
     memoryPackages = normalizeClassPackages(state.classPackages || []);
-    memoryFeedbacks = normalizeListData(state.workoutFeedbacks || []).map(normalizeStudentLinkedRecord);
+    memoryDropIns = normalizeDropInClasses(state.dropInClasses || []);
+    memoryMakeups = normalizeMakeupCredits(state.makeupCredits || []);
+    memoryFeedbacks = normalizeWorkoutFeedbacks(state.workoutFeedbacks || []);
 
     localStorage.setItem(studentStorageKey, JSON.stringify(memoryStudents));
     localStorage.setItem(workoutStorageKey, JSON.stringify(memoryWorkouts));
@@ -492,11 +574,15 @@ function writeAppStateToLocalStorage(state) {
     localStorage.setItem(assessmentStorageKey, JSON.stringify(memoryAssessments));
     localStorage.setItem(checkinStorageKey, JSON.stringify(memoryCheckins));
     localStorage.setItem(packageStorageKey, JSON.stringify(memoryPackages));
+    localStorage.setItem(dropInStorageKey, JSON.stringify(memoryDropIns));
+    localStorage.setItem(makeupStorageKey, JSON.stringify(memoryMakeups));
     localStorage.setItem(feedbackStorageKey, JSON.stringify(memoryFeedbacks));
+    localStorage.setItem(resolvedAlertsStorageKey, JSON.stringify(normalizeResolvedAlerts(state.resolvedAlerts || [])));
     if (state.billingSettings) {
       localStorage.setItem(billingSettingsStorageKey, JSON.stringify(state.billingSettings));
     }
     persistAppDataMeta();
+    console.info(`Auditoria app_state carregado do Supabase/cache: ${JSON.stringify(getAppStateAuditCounts(state))}`);
     return true;
   } catch (error) {
     console.error("Nao foi possivel aplicar dados do Supabase no localStorage.", error);
@@ -601,11 +687,12 @@ async function syncAppStateToSupabase() {
     data: appState,
     updated_at: new Date().toISOString(),
   };
+  const auditCounts = getAppStateAuditCounts(appState);
   console.info(`Enviando app_state para Supabase: ${JSON.stringify({
     table: supabaseTables.appState,
     id: payload.id,
     updated_at: payload.updated_at,
-    data: payload.data,
+    collections: auditCounts,
   })}`);
 
   try {
@@ -621,6 +708,7 @@ async function syncAppStateToSupabase() {
       const restResult = await upsertAppStateWithRest(payload);
       if (restResult.ok) {
         console.info(`Upsert app_state via REST concluido com sucesso: ${JSON.stringify(restResult.data)}`);
+        console.info(`Auditoria app_state sincronizado via REST: ${JSON.stringify(auditCounts)}`);
         return;
       }
       showSupabaseSyncWarning("Dados salvos localmente. Supabase indisponivel no momento.");
@@ -630,11 +718,13 @@ async function syncAppStateToSupabase() {
     }
 
     console.info(`Upsert app_state concluido com sucesso: ${JSON.stringify(data)}`);
+    console.info(`Auditoria app_state sincronizado: ${JSON.stringify(auditCounts)}`);
   } catch (error) {
     logSupabaseAppStateError("salvar por rede/CDN", error);
     const restResult = await upsertAppStateWithRest(payload);
     if (restResult.ok) {
       console.info(`Upsert app_state via REST concluido com sucesso: ${JSON.stringify(restResult.data)}`);
+      console.info(`Auditoria app_state sincronizado via REST: ${JSON.stringify(auditCounts)}`);
       return;
     }
     showSupabaseSyncWarning("Dados salvos localmente. Supabase indisponivel no momento.");
@@ -648,6 +738,10 @@ function queueSupabaseAppStateSync() {
   window.clearTimeout(supabaseSyncTimer);
   console.info("Sincronizacao app_state agendada.");
   supabaseSyncTimer = window.setTimeout(syncAppStateToSupabase, 300);
+}
+
+function logLocalPersistenceAudit(context = "local") {
+  console.info(`Auditoria de persistencia (${context}): ${JSON.stringify(getAppStateAuditCounts())}`);
 }
 
 function getSupabaseUserRole(user) {
@@ -822,18 +916,23 @@ function normalizeStudentsData(students) {
 
   const normalized = students
     .filter((student) => student && typeof student === "object")
-    .map((student) => ({
-      id: student.id || createId(),
-      supabaseUserId: String(student.supabaseUserId || student.authUserId || "").trim(),
-      name: String(student.name || "").trim(),
-      email: String(student.email || "").trim().toLowerCase(),
-      phone: String(student.phone || student.whatsapp || "").trim(),
-      birthDate: String(student.birthDate || student.birth_date || "").trim(),
-      plan: String(student.plan || "Plano nao informado").trim(),
-      value: String(student.value || "").trim(),
-      due: String(student.due || "").trim(),
-      payment: validPayments.includes(student.payment) ? student.payment : "Em dia",
-    }))
+    .map((student) => {
+      const frequency = normalizeWeeklyFrequency(student.frequency || student.weeklyFrequency);
+      return {
+        id: student.id || createId(),
+        supabaseUserId: String(student.supabaseUserId || student.authUserId || "").trim(),
+        name: String(student.name || "").trim(),
+        email: String(student.email || "").trim().toLowerCase(),
+        phone: String(student.phone || student.whatsapp || "").trim(),
+        birthDate: String(student.birthDate || student.birth_date || "").trim(),
+        plan: String(student.plan || "Plano nao informado").trim(),
+        frequency,
+        makeupLimit: normalizeMakeupLimit(student.makeupLimit ?? student.makeup_limit, frequency),
+        value: String(student.value || "").trim(),
+        due: String(student.due || "").trim(),
+        payment: validPayments.includes(student.payment) ? student.payment : "Em dia",
+      };
+    })
     .filter((student) => student.name);
 
   return normalized.length ? normalized : normalizeStudentsData(defaultStudents);
@@ -902,20 +1001,372 @@ function normalizeWhatsAppPhone(phone) {
   return digits.startsWith("55") ? digits : `55${digits}`;
 }
 
+function normalizeWeeklyFrequency(value) {
+  const match = String(value || "").match(/[1-5]/);
+  return match ? `${match[0]}x` : "3x";
+}
+
+function getDefaultMakeupLimit(frequency) {
+  const normalized = normalizeWeeklyFrequency(frequency);
+  if (normalized === "3x") return 3;
+  return Number(normalized.replace("x", "")) || 0;
+}
+
+function normalizeMakeupLimit(value, frequency) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : getDefaultMakeupLimit(frequency);
+}
+
 function getStudentBillingStatus(student) {
   const dueStatus = getWorkoutExpirationStatus(student.due);
   const paymentBlocked = isPaymentBlocked(student);
+  const hasPendingDropIns = getPendingDropInValue(student.name) > 0;
   return {
     dueStatus,
-    shouldShow: paymentBlocked || (dueStatus.days !== null && dueStatus.days <= 7),
+    shouldShow: hasPendingDropIns || paymentBlocked || (dueStatus.days !== null && dueStatus.days <= 7),
   };
 }
 
 function createBillingMessage(student, settings) {
   const activePackage = getActivePackage(student.name);
+  const pendingDropIns = getPendingDropInValue(student.name);
   const planName = activePackage?.name || student.plan || "plano";
-  const value = activePackage?.value || student.value || "valor nao informado";
+  const value = pendingDropIns > 0 ? formatCurrencyNumber(pendingDropIns) : activePackage?.value || student.value || "valor nao informado";
   return `Ola, ${student.name}! Tudo bem?\n\nPassando para lembrar que seu plano ${planName} vence em ${student.due}.\nValor: ${value}\n\n${settings.defaultMessage}\n\nChave Pix: ${settings.pixKey || "nao configurada"}\n\nApos o pagamento, me envie o comprovante por aqui.\n\n${settings.senderName}`;
+}
+
+function parseDateLike(value) {
+  const text = String(value || "").trim();
+  if (!text || /prescrito/i.test(text)) return null;
+
+  const brDate = text.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
+  if (brDate) {
+    const currentYear = new Date().getFullYear();
+    const year = brDate[3] ? Number(brDate[3].length === 2 ? `20${brDate[3]}` : brDate[3]) : currentYear;
+    const date = new Date(year, Number(brDate[2]) - 1, Number(brDate[1]));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getDaysSince(date) {
+  if (!date) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const normalized = new Date(date);
+  normalized.setHours(0, 0, 0, 0);
+  return Math.floor((today - normalized) / 86400000);
+}
+
+function openAdminStudentProfile(studentName) {
+  if (!studentName) return;
+  openAdminModule("students");
+  selectedAdminProfileStudent = studentName;
+  renderStudents();
+  renderAdminStudentProfile(studentName);
+  studentAdminProfile?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function normalizeResolvedAlerts(alerts) {
+  return normalizeListData(alerts)
+    .filter((item) => item && typeof item === "object" && item.id)
+    .map((item) => ({
+      id: String(item.id),
+      type: String(item.type || ""),
+      title: String(item.title || ""),
+      detail: String(item.detail || ""),
+      studentName: String(item.studentName || ""),
+      tone: String(item.tone || "neutral"),
+      resolvedAt: item.resolvedAt || new Date().toISOString(),
+    }));
+}
+
+function loadResolvedAlerts() {
+  try {
+    const saved = localStorage.getItem(resolvedAlertsStorageKey);
+    return normalizeResolvedAlerts(saved ? JSON.parse(saved) : []);
+  } catch {
+    return [];
+  }
+}
+
+function saveResolvedAlerts(alerts) {
+  try {
+    localStorage.setItem(resolvedAlertsStorageKey, JSON.stringify(normalizeResolvedAlerts(alerts)));
+    persistAppDataMeta();
+    queueSupabaseAppStateSync();
+  } catch (error) {
+    console.error("Nao foi possivel salvar alertas resolvidos.", error);
+  }
+}
+
+function resolveAdminAlert(alertId) {
+  const alert = collectAdminAlerts({ includeResolved: true }).find((item) => item.id === alertId);
+  if (!alert) return false;
+  const resolved = loadResolvedAlerts();
+  if (!resolved.some((item) => item.id === alertId)) {
+    resolved.push({ ...alert, resolvedAt: new Date().toISOString() });
+    saveResolvedAlerts(resolved);
+  }
+  return true;
+}
+
+function isOnlineStudentPlan(student) {
+  const text = `${student?.plan || ""} ${student?.modality || ""} ${student?.mode || ""}`.toLowerCase();
+  return text.includes("online") || text.includes("consultoria") || text.includes("remoto");
+}
+
+function createAdminAlert(type, title, detail, studentName, tone = "warning", idSeed = detail, extra = {}) {
+  return {
+    id: `${type}-${studentName}-${idSeed}`.toLowerCase().replace(/\s+/g, "-"),
+    type,
+    title,
+    detail,
+    studentName,
+    tone,
+    ...extra,
+  };
+}
+
+function collectAdminAlerts(options = {}) {
+  const alerts = [];
+  const students = loadStudents();
+  const feedbacks = loadWorkoutFeedbacks();
+  const checkins = loadCheckins();
+
+  students.forEach((student) => {
+    const studentFeedbacks = feedbacks
+      .filter((feedback) => feedback.studentName === student.name)
+      .sort((a, b) => b.timestamp - a.timestamp);
+
+    if (isOnlineStudentPlan(student)) {
+      const completedDates = studentFeedbacks
+        .map((feedback) => parseDateLike(feedback.date) || new Date(feedback.timestamp || 0))
+        .filter((date) => date && !Number.isNaN(date.getTime()))
+        .sort((a, b) => b - a);
+      const lastCompleted = completedDates[0];
+      const daysWithoutWorkout = lastCompleted ? getDaysSince(lastCompleted) : null;
+      if (daysWithoutWorkout === null || daysWithoutWorkout > 7) {
+        const lastKey = lastCompleted ? getDateKey(lastCompleted) : "sem-registro";
+        alerts.push(createAdminAlert(
+          "Treino online",
+          "Aluno online sem treinar ha mais de 7 dias",
+          daysWithoutWorkout === null ? "Nenhum treino concluido registrado." : `Ultimo treino concluido ha ${daysWithoutWorkout} dias.`,
+          student.name,
+          "warning",
+          `online-${lastKey}`,
+        ));
+      }
+    }
+
+    checkins
+      .filter((checkin) =>
+        checkin.studentName === student.name &&
+        ["cancelada-no-prazo", "cancelada-fora-prazo", "desmarcada-com-reposicao", "desmarcada-sem-reposicao"].includes(checkin.status),
+      )
+      .slice(0, 8)
+      .forEach((checkin) => {
+        const generated = checkin.generatedMakeup || checkin.status === "desmarcada-com-reposicao";
+        alerts.push(createAdminAlert(
+          "Cancelamento",
+          "Aluno cancelou aula",
+          `${checkin.date || "-"} | ${checkin.time || "-"} | ${generated ? "gerou reposicao" : "nao gerou reposicao"}`,
+          student.name,
+          generated ? "warning" : "danger",
+          checkin.id,
+        ));
+      });
+
+    studentFeedbacks
+      .filter((feedback) => feedback.pain)
+      .slice(0, 8)
+      .forEach((feedback) => {
+      alerts.push(createAdminAlert(
+        "Dor",
+        "Aluno relatou dor no treino",
+        `${feedback.date || "-"} | ${feedback.workoutTitle || "Treino"} | ${feedback.painLocation || "Local nao informado"}`,
+        student.name,
+        "danger",
+        feedback.id || feedback.timestamp || `${feedback.date}-${feedback.workoutTitle}-${feedback.painLocation}`,
+      ));
+    });
+
+    const dueStatus = getWorkoutExpirationStatus(student.due);
+    if (student.payment === "Atrasado" || student.payment === "Pendente" || (dueStatus.days !== null && dueStatus.days <= 7)) {
+        alerts.push(createAdminAlert(
+        "Vencimento",
+        "Vencimento do plano",
+        `Vencimento ${student.due || "-"} | pagamento ${student.payment || "Status nao informado"}`,
+          student.name,
+        student.payment === "Em dia" ? "warning" : "danger",
+        `${student.due || "sem-vencimento"}-${student.payment || "sem-status"}`,
+        ));
+    }
+  });
+
+  const unique = [];
+  const seen = new Set();
+  alerts.forEach((alert) => {
+    if (seen.has(alert.id)) return;
+    seen.add(alert.id);
+    unique.push(alert);
+  });
+
+  if (options.includeResolved) return unique;
+
+  const resolvedIds = new Set(loadResolvedAlerts().map((alert) => alert.id));
+  return unique.filter((alert) => !resolvedIds.has(alert.id));
+}
+
+function renderAdminAlerts() {
+  if (!adminAlertsList) return;
+  const filter = adminAlertFilter?.value || "pending";
+  const pendingAlerts = collectAdminAlerts();
+  const resolvedAlerts = loadResolvedAlerts();
+  const alerts = filter === "resolved"
+    ? resolvedAlerts
+    : filter === "all"
+      ? [...pendingAlerts, ...resolvedAlerts.map((alert) => ({ ...alert, resolved: true }))]
+      : pendingAlerts;
+  adminAlertsList.innerHTML = "";
+
+  if (!alerts.length) {
+    const empty = document.createElement("article");
+    empty.className = "alert-card neutral";
+    empty.innerHTML = filter === "resolved"
+      ? "<strong>Nenhum alerta resolvido ainda.</strong><span>Quando voce marcar um alerta como resolvido, ele aparece aqui.</span>"
+      : "<strong>Nenhum alerta pendente agora.</strong><span>Seu painel esta em ordem.</span>";
+    adminAlertsList.appendChild(empty);
+    return;
+  }
+
+  alerts.forEach((alert) => {
+    const card = document.createElement("article");
+    const isResolved = Boolean(alert.resolved || alert.resolvedAt);
+    card.className = `alert-card ${alert.tone}${isResolved ? " resolved" : ""}`;
+    const badge = document.createElement("span");
+    badge.className = "alert-badge";
+    badge.textContent = isResolved ? `${alert.type} resolvido` : alert.type;
+    const title = document.createElement("strong");
+    title.textContent = alert.title;
+    const detail = document.createElement("small");
+    detail.textContent = `${alert.studentName} | ${alert.detail}${isResolved && alert.resolvedAt ? ` | resolvido em ${new Date(alert.resolvedAt).toLocaleDateString("pt-BR")}` : ""}`;
+
+    const actions = document.createElement("div");
+    actions.className = "student-actions alert-actions";
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary";
+    button.dataset.openAlertStudent = alert.studentName;
+    button.textContent = "Abrir perfil";
+    actions.appendChild(button);
+
+    if (!isResolved) {
+      const resolve = document.createElement("button");
+      resolve.type = "button";
+      resolve.className = "primary";
+      resolve.dataset.resolveAlert = alert.id;
+      resolve.textContent = "Marcar como resolvido";
+      actions.appendChild(resolve);
+    }
+
+    card.append(badge, title, detail, actions);
+    adminAlertsList.appendChild(card);
+  });
+}
+
+function exportAppData() {
+  const payload = getAppStateSnapshot();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `backup-joao-victor-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showMessage("Backup JSON exportado com sucesso.");
+}
+
+function showConfirmDialog({ title, message, confirmLabel = "Confirmar", cancelLabel = "Cancelar" }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "confirm-overlay";
+    const dialog = document.createElement("article");
+    dialog.className = "confirm-dialog";
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    const text = document.createElement("p");
+    text.textContent = message;
+    const actions = document.createElement("div");
+    actions.className = "confirm-actions";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "secondary";
+    cancel.textContent = cancelLabel;
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.className = "primary danger-action";
+    confirm.textContent = confirmLabel;
+
+    const close = (result) => {
+      overlay.remove();
+      resolve(result);
+    };
+
+    cancel.addEventListener("click", () => close(false));
+    confirm.addEventListener("click", () => close(true));
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) close(false);
+    });
+
+    actions.append(cancel, confirm);
+    dialog.append(heading, text, actions);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    cancel.focus();
+  });
+}
+
+function confirmStudentDeletion(student) {
+  return showConfirmDialog({
+    title: "Tem certeza que deseja excluir este aluno?",
+    message: `Serao removidos: fichas, avaliacoes, historico de execucao, feedbacks, check-ins, pacotes, aulas avulsas e reposicoes. Aluno: ${student?.name || "-"}.`,
+    cancelLabel: "Cancelar",
+    confirmLabel: "Excluir",
+  });
+}
+
+function deleteStudentWithLinkedData(student) {
+  if (!student?.name) return;
+  const studentName = student.name;
+  const studentId = student.id;
+
+  saveStudents(loadStudents().filter((item) => item.id !== studentId && item.name !== studentName));
+
+  const workouts = loadWorkouts();
+  delete workouts[studentName];
+  saveWorkouts(workouts);
+
+  saveAssessments(loadAssessments().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+  saveProgressRecords(loadProgressRecords().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+  saveWorkoutFeedbacks(loadWorkoutFeedbacks().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+  saveCheckins(loadCheckins().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+  saveClassPackages(loadClassPackages().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+  saveDropInClasses(loadDropInClasses().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+  saveMakeupCredits(loadMakeupCredits().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+
+  if (selectedStudentProfile === studentName) {
+    selectedStudentProfile = "";
+    removeLocalValue("student-profile");
+  }
+  if (selectedAdminProfileStudent === studentName) selectedAdminProfileStudent = "";
+  if (selectedAdminWorkoutStudent === studentName) selectedAdminWorkoutStudent = "";
+  delete activeWorkoutByStudent[studentName];
 }
 
 function renderBillingSettings() {
@@ -941,7 +1392,8 @@ function renderBillingList() {
     const status = getStudentBillingStatus(student);
     const activePackage = getActivePackage(student.name);
     const planName = activePackage?.name || student.plan || "Plano";
-    const value = activePackage?.value || student.value || "Valor nao informado";
+    const pendingDropIns = getPendingDropInValue(student.name);
+    const value = pendingDropIns > 0 ? formatCurrencyNumber(pendingDropIns) : activePackage?.value || student.value || "Valor nao informado";
     const phone = normalizeWhatsAppPhone(student.phone);
     const card = document.createElement("article");
     card.className = "billing-card";
@@ -950,7 +1402,7 @@ function renderBillingList() {
     const title = document.createElement("strong");
     title.textContent = student.name;
     const details = document.createElement("span");
-    details.textContent = `${planName} | ${value} | vence ${student.due}`;
+    details.textContent = `${pendingDropIns > 0 ? "Aulas avulsas pendentes" : planName} | ${value} | vence ${student.due}`;
     const statusText = document.createElement("small");
     statusText.textContent = isPaymentBlocked(student) ? `Pagamento ${student.payment}` : status.dueStatus.detail;
     info.append(title, details, statusText);
@@ -1005,6 +1457,8 @@ function persistAppDataMeta() {
         assessments: loadAssessments().length,
         packages: loadClassPackages().length,
         checkins: loadCheckins().length,
+        dropInClasses: loadDropInClasses().length,
+        makeupCredits: loadMakeupCredits().length,
         feedbacks: loadWorkoutFeedbacks().length,
       },
     };
@@ -1034,6 +1488,8 @@ function normalizeStoredAppData() {
     localStorage.setItem(assessmentStorageKey, JSON.stringify(loadAssessments()));
     localStorage.setItem(checkinStorageKey, JSON.stringify(loadCheckins()));
     localStorage.setItem(packageStorageKey, JSON.stringify(loadClassPackages()));
+    localStorage.setItem(dropInStorageKey, JSON.stringify(loadDropInClasses()));
+    localStorage.setItem(makeupStorageKey, JSON.stringify(loadMakeupCredits()));
     localStorage.setItem(feedbackStorageKey, JSON.stringify(loadWorkoutFeedbacks()));
     persistAppDataMeta();
   } catch {
@@ -1181,6 +1637,137 @@ function saveCheckins(checkins) {
   }
 }
 
+function normalizeDropInClasses(classes) {
+  return normalizeListData(classes)
+    .filter((item) => item && typeof item === "object")
+    .map((item) => normalizeStudentLinkedRecord({
+      ...item,
+      date: item.date || formatToday(),
+      modality: String(item.modality || item.type || "Aula avulsa").trim(),
+      value: String(item.value || "").trim(),
+      status: ["pendente", "pago", "cancelado"].includes(String(item.status || "").toLowerCase()) ? String(item.status).toLowerCase() : "pendente",
+      note: String(item.note || item.observation || "").trim(),
+      createdAt: item.createdAt || Date.now(),
+    }));
+}
+
+function loadDropInClasses() {
+  if (memoryDropIns) return memoryDropIns;
+
+  try {
+    const saved = localStorage.getItem(dropInStorageKey);
+    memoryDropIns = normalizeDropInClasses(saved ? JSON.parse(saved) : []);
+  } catch {
+    memoryDropIns = [];
+  }
+
+  return memoryDropIns;
+}
+
+function saveDropInClasses(classes) {
+  memoryDropIns = normalizeDropInClasses(classes);
+
+  try {
+    localStorage.setItem(dropInStorageKey, JSON.stringify(memoryDropIns));
+    persistAppDataMeta();
+    queueSupabaseAppStateSync();
+  } catch {
+    showMessage("Aula avulsa apareceu na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
+  }
+}
+
+function addDaysToBrazilianDate(dateText, days) {
+  const date = parseBrazilianDate(dateText);
+  if (!date) return "";
+  date.setDate(date.getDate() + days);
+  return date.toLocaleDateString("pt-BR");
+}
+
+function isPastBrazilianDate(dateText) {
+  const date = parseBrazilianDate(dateText);
+  if (!date) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return date < today;
+}
+
+function normalizeMakeupStatus(status, validUntil) {
+  const allowed = ["available", "requested", "approved", "used", "expired", "rejected"];
+  const normalized = allowed.includes(status) ? status : status === "used" ? "used" : "available";
+  if (["used", "rejected", "expired"].includes(normalized)) return normalized;
+  return isPastBrazilianDate(validUntil) ? "expired" : normalized;
+}
+
+function getMakeupStatusLabel(status) {
+  const labels = {
+    available: "Disponivel",
+    requested: "Solicitada",
+    approved: "Aprovada",
+    used: "Usada",
+    expired: "Expirada",
+    rejected: "Recusada",
+  };
+  return labels[status] || "Disponivel";
+}
+
+function normalizeMakeupCredits(credits) {
+  return normalizeListData(credits)
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const sourceLessonDate = item.sourceLessonDate || item.date || "";
+      const validUntil = item.validUntil || item.expiresAt || addDaysToBrazilianDate(sourceLessonDate, 10);
+      const status = normalizeMakeupStatus(item.status, validUntil);
+      return normalizeStudentLinkedRecord({
+        ...item,
+        packageId: item.packageId || "",
+        packageName: item.packageName || "",
+        sourceLessonDate,
+        lessonTime: item.lessonTime || "",
+        noticeDate: item.noticeDate || item.cancellationDate || "",
+        noticeTime: item.noticeTime || "",
+        leadMinutes: Number(item.leadMinutes) || 0,
+        generated: item.generated !== false,
+        reason: item.reason || "",
+        validUntil,
+        status,
+        usedAt: item.usedAt || "",
+        requestedAt: item.requestedAt || "",
+        approvedAt: item.approvedAt || "",
+        rejectedAt: item.rejectedAt || "",
+        replacementDate: item.replacementDate || "",
+        replacementTime: item.replacementTime || "",
+        note: String(item.note || "").trim(),
+        personalNote: String(item.personalNote || item.personal_note || "").trim(),
+        createdAt: item.createdAt || Date.now(),
+      });
+    });
+}
+
+function loadMakeupCredits() {
+  if (memoryMakeups) return memoryMakeups;
+
+  try {
+    const saved = localStorage.getItem(makeupStorageKey);
+    memoryMakeups = normalizeMakeupCredits(saved ? JSON.parse(saved) : []);
+  } catch {
+    memoryMakeups = [];
+  }
+
+  return memoryMakeups;
+}
+
+function saveMakeupCredits(credits) {
+  memoryMakeups = normalizeMakeupCredits(credits);
+
+  try {
+    localStorage.setItem(makeupStorageKey, JSON.stringify(memoryMakeups));
+    persistAppDataMeta();
+    queueSupabaseAppStateSync();
+  } catch {
+    showMessage("Reposicao apareceu na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
+  }
+}
+
 function normalizeClassPackages(packages) {
   return normalizeListData(packages)
     .filter((item) => item && typeof item === "object")
@@ -1300,6 +1887,16 @@ function syncStudentNameReferences(previousName, nextName) {
     checkin.studentName === previousName ? { ...checkin, studentName: nextName, studentId: nextStudentId || checkin.studentId || "" } : checkin,
   );
   saveCheckins(checkins);
+
+  const dropIns = loadDropInClasses().map((item) =>
+    item.studentName === previousName ? { ...item, studentName: nextName, studentId: nextStudentId || item.studentId || "" } : item,
+  );
+  saveDropInClasses(dropIns);
+
+  const makeups = loadMakeupCredits().map((item) =>
+    item.studentName === previousName ? { ...item, studentName: nextName, studentId: nextStudentId || item.studentId || "" } : item,
+  );
+  saveMakeupCredits(makeups);
 
   const feedbacks = loadWorkoutFeedbacks().map((feedback) =>
     feedback.studentName === previousName ? { ...feedback, studentName: nextName, studentId: nextStudentId || feedback.studentId || "" } : feedback,
@@ -1479,6 +2076,8 @@ function fillStudentSelects() {
   const selectedPackageStudent = packageStudent?.value;
   const selectedPackageViewStudent = packageViewStudent?.value;
   const selectedManualCheckinStudent = manualCheckinStudent?.value;
+  const selectedDropInStudent = dropInStudent?.value;
+  const selectedMakeupStudent = makeupStudent?.value;
   const selectedCheckinFilterStudent = checkinFilterStudent?.value;
   const selectedLoginStudent = loginStudentSelect?.value || selectedStudentProfile;
   const studentNames = students.map((student) => student.name);
@@ -1497,6 +2096,8 @@ function fillStudentSelects() {
   packageViewStudent?.replaceChildren();
   packageStudent?.replaceChildren();
   manualCheckinStudent?.replaceChildren();
+  dropInStudent?.replaceChildren();
+  makeupStudent?.replaceChildren();
   checkinFilterStudent?.replaceChildren();
   loginStudentSelect?.replaceChildren();
 
@@ -1547,6 +2148,14 @@ function fillStudentSelects() {
     checkinFilterOption.textContent = student.name;
     checkinFilterOption.value = student.name;
 
+    const dropInOption = document.createElement("option");
+    dropInOption.textContent = student.name;
+    dropInOption.value = student.name;
+
+    const makeupOption = document.createElement("option");
+    makeupOption.textContent = student.name;
+    makeupOption.value = student.name;
+
     const loginOption = document.createElement("option");
     loginOption.textContent = student.name;
     loginOption.value = student.name;
@@ -1558,6 +2167,8 @@ function fillStudentSelects() {
     packageViewStudent?.appendChild(packageViewOption);
     packageStudent?.appendChild(packageOption);
     manualCheckinStudent?.appendChild(manualCheckinOption);
+    dropInStudent?.appendChild(dropInOption);
+    makeupStudent?.appendChild(makeupOption);
     checkinFilterStudent?.appendChild(checkinFilterOption);
     loginStudentSelect?.appendChild(loginOption);
   });
@@ -1580,10 +2191,13 @@ function fillStudentSelects() {
   if (packageViewStudent) packageViewStudent.value = selectedPackageViewStudent && studentNames.includes(selectedPackageViewStudent) ? selectedPackageViewStudent : "";
   if (packageStudent) packageStudent.value = validName(selectedPackageStudent);
   if (manualCheckinStudent) manualCheckinStudent.value = validName(selectedManualCheckinStudent);
+  if (dropInStudent) dropInStudent.value = validName(selectedDropInStudent, packageViewStudent?.value || firstStudentName);
+  if (makeupStudent) makeupStudent.value = validName(selectedMakeupStudent, packageViewStudent?.value || firstStudentName);
   if (checkinFilterStudent) checkinFilterStudent.value = selectedCheckinFilterStudent && studentNames.includes(selectedCheckinFilterStudent) ? selectedCheckinFilterStudent : "";
   if (loginStudentSelect) loginStudentSelect.value = validName(selectedLoginStudent);
   updateStudentHeader();
   fillManualCheckinPackageSelect();
+  fillMakeupPackageSelect();
 }
 
 function updateStudentHeader() {
@@ -1646,6 +2260,7 @@ function createStudentRow(student, index) {
 
   const remove = document.createElement("button");
   remove.type = "button";
+  remove.className = "secondary danger-action";
   remove.dataset.removeStudent = index;
   remove.textContent = "Remover";
 
@@ -1736,11 +2351,17 @@ function createAdminPackageProfileCard(studentName, activePackage, packageStatus
 
   const body = document.createElement("div");
   body.className = "admin-profile-card-body package-compact-body";
+  const balance = getLessonBalance(studentName, activePackage);
   body.append(
     createAdminMetric("Pacote", activePackage?.name || "Sem pacote ativo"),
     createAdminMetric("Progresso", activePackage ? `${packageStatus.completed}/${activePackage.total}` : "0/0"),
     createAdminMetric("Restantes", packageStatus?.remaining ?? "0"),
-    createAdminMetric("Status", packageStatus?.remaining <= 0 && activePackage ? "Finalizado" : activePackage ? "Ativo" : "Sem pacote"),
+    createAdminMetric("Reposicoes disp.", balance.makeupAvailable),
+    createAdminMetric("Solicitadas", balance.makeupRequested),
+    createAdminMetric("Usadas", balance.makeupUsed),
+    createAdminMetric("Expiradas", balance.makeupExpired),
+    createAdminMetric("Avulsas", balance.dropInCount),
+    createAdminMetric("Pendente avulsa", formatCurrencyNumber(balance.pendingDropInValue)),
   );
 
   const actions = document.createElement("div");
@@ -2025,6 +2646,8 @@ function renderAdminStudentProfile(studentName) {
   grid.append(
     createAdminProfileCard("Dados do aluno", "Cadastro", [
       createAdminMetric("Plano", student.plan),
+      createAdminMetric("Frequencia", student.frequency || "3x"),
+      createAdminMetric("Limite reposicoes", normalizeMakeupLimit(student.makeupLimit, student.frequency)),
       createAdminMetric("WhatsApp", student.phone || "Nao cadastrado"),
       createAdminMetric("Nascimento", student.birthDate || "Nao informado"),
       createAdminMetric("Login", student.supabaseUserId ? "Vinculado" : "Sem userId"),
@@ -2116,6 +2739,7 @@ function renderStudents() {
   renderAdminAssessments();
   renderCheckinHistory();
   renderBillingList();
+  renderAdminAlerts();
 }
 
 function createWorkoutRow(studentName, workout) {
@@ -2675,18 +3299,22 @@ function parseLessonDateTime(dateKey, timeText) {
 }
 
 function getLessonRecord(packageId, lessonDateKey) {
-  return loadCheckins().find((checkin) => checkin.packageId === packageId && checkin.dateKey === lessonDateKey);
+  return loadCheckins().find((checkin) => checkin.packageId === packageId && checkin.dateKey === lessonDateKey && (checkin.lessonType || "package") === "package");
 }
 
 function isConsumedLesson(checkin) {
+  if (checkin?.lessonType === "makeup" || checkin?.lessonType === "dropin") return false;
   return checkin?.status === "realizado" || checkin?.consumed === true || checkin?.status === "cancelada-fora-prazo" || checkin?.status === "falta";
 }
 
 function getCheckinStatusLabel(checkin) {
+  if (checkin?.statusLabel) return checkin.statusLabel;
   if (checkin?.status === "falta") return "Falta - aula contabilizada";
   if (checkin?.status === "cancelada-no-prazo") return "Cancelada no prazo";
   if (checkin?.status === "cancelada-fora-prazo") return "Cancelada fora do prazo - aula contabilizada";
-  return checkin?.statusLabel || "Realizado";
+  if (checkin?.status === "desmarcada-com-reposicao") return "Desmarcada no prazo - gerou reposicao";
+  if (checkin?.status === "desmarcada-sem-reposicao") return "Desmarcada fora do prazo - sem reposicao";
+  return "Realizado";
 }
 
 function getCancellationStatus(lesson) {
@@ -2749,6 +3377,100 @@ function getPackageCheckins(packageId) {
   return loadCheckins().filter((checkin) => checkin.packageId === packageId && isConsumedLesson(checkin));
 }
 
+function parseCurrencyValue(value) {
+  const digits = onlyDigits(value);
+  return digits ? Number(digits) / 100 : 0;
+}
+
+function formatCurrencyNumber(value) {
+  return Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function getStudentMakeupCredits(studentName) {
+  const credits = loadMakeupCredits();
+  let changed = false;
+  const refreshed = credits.map((credit) => {
+    if (!["used", "rejected", "expired"].includes(credit.status) && isPastBrazilianDate(credit.validUntil)) {
+      changed = true;
+      return { ...credit, status: "expired", expiredAt: new Date().toISOString() };
+    }
+    return credit;
+  });
+  if (changed) saveMakeupCredits(refreshed);
+  return refreshed.filter((credit) => credit.studentName === studentName);
+}
+
+function getAvailableMakeupCredits(studentName) {
+  return getStudentMakeupCredits(studentName).filter((credit) => credit.status === "available");
+}
+
+function getApprovedMakeupCredits(studentName) {
+  return getStudentMakeupCredits(studentName).filter((credit) => credit.status === "approved");
+}
+
+function getMakeupCreditsByStatus(studentName, status) {
+  return getStudentMakeupCredits(studentName).filter((credit) => credit.status === status);
+}
+
+function getPackageGeneratedMakeupCount(classPackage, studentName = classPackage?.studentName || "") {
+  if (!classPackage) return 0;
+  return getStudentMakeupCredits(studentName).filter((credit) => credit.packageId === classPackage.id && credit.generated !== false && credit.status !== "rejected").length;
+}
+
+function getStudentPackageMakeupLimit(studentName) {
+  const student = getStudentByName(studentName);
+  return normalizeMakeupLimit(student?.makeupLimit, student?.frequency || "3x");
+}
+
+function getStudentDropIns(studentName) {
+  return loadDropInClasses().filter((item) => item.studentName === studentName);
+}
+
+function getPendingDropInValue(studentName) {
+  return getStudentDropIns(studentName)
+    .filter((item) => item.status === "pendente")
+    .reduce((total, item) => total + parseCurrencyValue(item.value), 0);
+}
+
+function getLessonBalance(studentName, activePackage = getActivePackage(studentName)) {
+  const status = activePackage ? getPackageStatus(activePackage) : { completed: 0, remaining: 0 };
+  const dropIns = getStudentDropIns(studentName);
+  const makeups = getStudentMakeupCredits(studentName);
+  const validities = makeups
+    .filter((item) => ["available", "requested", "approved"].includes(item.status) && item.validUntil)
+    .map((item) => item.validUntil)
+    .join(", ");
+  return {
+    packageTotal: activePackage?.total || 0,
+    completed: status.completed || 0,
+    remaining: status.remaining || 0,
+    makeupAvailable: getAvailableMakeupCredits(studentName).length,
+    makeupRequested: getMakeupCreditsByStatus(studentName, "requested").length,
+    makeupApproved: getMakeupCreditsByStatus(studentName, "approved").length,
+    makeupUsed: getMakeupCreditsByStatus(studentName, "used").length,
+    makeupExpired: getMakeupCreditsByStatus(studentName, "expired").length,
+    makeupValidities: validities || "-",
+    dropInCount: dropIns.length,
+    pendingDropInValue: getPendingDropInValue(studentName),
+  };
+}
+
+function getMinutesFromTime(timeText) {
+  const match = String(timeText || "").match(/(\d{1,2})[:hH](\d{2})?/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2] || 0);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function getNoticeDifferenceMinutes(lessonTime, noticeTime) {
+  const lessonMinutes = getMinutesFromTime(lessonTime);
+  const noticeMinutes = getMinutesFromTime(noticeTime);
+  if (lessonMinutes === null || noticeMinutes === null) return null;
+  return lessonMinutes - noticeMinutes;
+}
+
 function getCompletedLessons(classPackage) {
   return getPackageCheckins(classPackage.id).length;
 }
@@ -2782,13 +3504,18 @@ function getTodayPackageLesson(classPackage) {
   return generatePackageSchedule(classPackage).find((lesson) => lesson.dateKey === todayKey) || null;
 }
 
-function createCheckin(studentName, type = "check-in do aluno", classPackage = null, markedBy = "aluno") {
+function createCheckin(studentName, type = "check-in do aluno", classPackage = null, markedBy = "aluno", extras = {}) {
   return {
     id: createId(),
     studentName,
     studentId: getStudentIdByName(studentName),
     packageId: classPackage?.id || "",
     packageName: classPackage?.name || "",
+    lessonType: extras.lessonType || "package",
+    value: extras.value || "",
+    note: extras.note || "",
+    dropInId: extras.dropInId || "",
+    makeupCreditId: extras.makeupCreditId || "",
     date: formatToday(),
     dateKey: getDateKey(),
     time: formatCurrentTime(),
@@ -2807,7 +3534,7 @@ function getTodayStudentCheckin(studentName, packageId = "") {
     (checkin) =>
       checkin.studentName === studentName &&
       (checkin.dateKey === today || (!checkin.dateKey && checkin.date === todayText)) &&
-      (!packageId || checkin.packageId === packageId),
+      (!packageId || (checkin.packageId === packageId && (checkin.lessonType || "package") === "package")),
   );
 }
 
@@ -2824,6 +3551,65 @@ function registerPackageCheckin(studentName, classPackage, markedBy = "aluno") {
   checkins.push(createCheckin(studentName, markedBy === "personal" ? "presenca manual do personal" : "check-in do aluno", classPackage, markedBy));
   saveCheckins(checkins);
   return true;
+}
+
+function registerFlexibleLessonCheckin(studentName, lessonType = "package", classPackage = null, markedBy = "personal", options = {}) {
+  if (!studentName) return { ok: false, message: "Selecione um aluno." };
+
+  if (lessonType === "makeup") {
+    const credits = loadMakeupCredits();
+    const creditIndex = credits.findIndex((credit) => credit.studentName === studentName && credit.status === "approved");
+    if (creditIndex < 0) return { ok: false, message: "Aluno sem reposicao aprovada disponivel." };
+    credits[creditIndex] = {
+      ...credits[creditIndex],
+      status: "used",
+      usedAt: new Date().toISOString(),
+      replacementDate: formatToday(),
+      replacementTime: formatCurrentTime(),
+    };
+    saveMakeupCredits(credits);
+
+    const checkins = loadCheckins();
+    checkins.push(createCheckin(studentName, "aula de reposicao", classPackage, markedBy, {
+      lessonType: "makeup",
+      makeupCreditId: credits[creditIndex].id,
+      note: options.note || "Reposicao utilizada",
+    }));
+    saveCheckins(checkins);
+    return { ok: true, message: "Reposicao usada sem consumir pacote." };
+  }
+
+  if (lessonType === "dropin") {
+    const dropIn = {
+      id: createId(),
+      studentName,
+      studentId: getStudentIdByName(studentName),
+      date: formatToday(),
+      modality: options.modality || "Aula avulsa",
+      value: options.value || "",
+      status: options.status || "pendente",
+      note: options.note || "Lancada pelo check-in",
+      timestamp: Date.now(),
+      createdAt: Date.now(),
+    };
+    const dropIns = loadDropInClasses();
+    dropIns.push(dropIn);
+    saveDropInClasses(dropIns);
+
+    const checkins = loadCheckins();
+    checkins.push(createCheckin(studentName, "aula avulsa", classPackage, markedBy, {
+      lessonType: "dropin",
+      value: dropIn.value,
+      note: dropIn.note,
+      dropInId: dropIn.id,
+    }));
+    saveCheckins(checkins);
+    return { ok: true, message: "Aula avulsa registrada sem consumir pacote." };
+  }
+
+  return registerPackageCheckin(studentName, classPackage, markedBy)
+    ? { ok: true, message: "Aula do pacote registrada." }
+    : { ok: false, message: "Presenca nao registrada: pacote finalizado ou aula de hoje ja possui registro." };
 }
 
 function registerLessonCancellation(studentName, classPackage, lesson) {
@@ -2856,6 +3642,96 @@ function registerLessonCancellation(studentName, classPackage, lesson) {
   });
   saveCheckins(checkins);
   return true;
+}
+
+function registerStudentRescheduleNotice({ studentName, classPackage, date, lessonTime, noticeTime, note = "" }) {
+  if (!studentName || !date || !lessonTime || !noticeTime) {
+    return { ok: false, message: "Preencha aluno, data, horario da aula e horario do aviso." };
+  }
+
+  const difference = getNoticeDifferenceMinutes(lessonTime, noticeTime);
+  if (difference === null) return { ok: false, message: "Confira os horarios informados." };
+
+  const inTime = difference > 120;
+  const packageId = classPackage?.id || "";
+  const packageName = classPackage?.name || "";
+  const dateKey = parseBrazilianDate(date) ? getDateKey(parseBrazilianDate(date)) : "";
+  const noticeDate = formatToday();
+  const limit = getStudentPackageMakeupLimit(studentName);
+  const alreadyGenerated = classPackage
+    ? getPackageGeneratedMakeupCount(classPackage, studentName)
+    : getStudentMakeupCredits(studentName).filter((credit) => credit.generated !== false && credit.status !== "rejected").length;
+  const limitReached = inTime && alreadyGenerated >= limit;
+  const generated = inTime && !limitReached;
+  const validUntil = generated ? addDaysToBrazilianDate(date, 10) : "";
+  const reason = generated
+    ? "Reposicao gerada dentro do prazo."
+    : limitReached
+      ? "Limite de reposicoes do pacote atingido."
+      : "Aviso com 2 horas ou menos de antecedencia.";
+  const status = generated ? "desmarcada-com-reposicao" : "desmarcada-sem-reposicao";
+
+  const checkins = loadCheckins();
+  const checkinId = createId();
+  checkins.push({
+    id: checkinId,
+    studentName,
+    studentId: getStudentIdByName(studentName),
+    packageId,
+    packageName,
+    lessonType: "package",
+    date,
+    dateKey,
+    time: lessonTime,
+    type: "aluno desmarcou",
+    status,
+    statusLabel: generated ? "Desmarcada no prazo - gerou reposicao" : "Desmarcada sem direito a reposicao",
+    cancellationDate: noticeDate,
+    cancellationTime: noticeTime,
+    noticeDate,
+    noticeTime,
+    leadMinutes: difference,
+    generatedMakeup: generated,
+    makeupValidUntil: validUntil,
+    reason,
+    consumed: !generated,
+    note,
+    markedBy: "personal",
+    month: currentMonthKey(),
+    timestamp: Date.now(),
+  });
+  saveCheckins(checkins);
+
+  if (generated) {
+    const credits = loadMakeupCredits();
+    credits.push({
+      id: createId(),
+      studentName,
+      studentId: getStudentIdByName(studentName),
+      packageId,
+      packageName,
+      sourceLessonDate: date,
+      lessonTime,
+      noticeDate,
+      noticeTime,
+      leadMinutes: difference,
+      validUntil,
+      status: "available",
+      generated: true,
+      reason,
+      sourceCheckinId: checkinId,
+      note,
+      timestamp: Date.now(),
+      createdAt: Date.now(),
+    });
+    saveMakeupCredits(credits);
+  }
+
+  return {
+    ok: true,
+    generated,
+    message: generated ? `Reposicao disponivel ate ${validUntil}.` : reason,
+  };
 }
 
 function registerLessonAbsence(studentName, classPackage, lesson) {
@@ -4062,6 +4938,28 @@ function fillManualCheckinPackageSelect() {
   manualCheckinPackage.value = packages.some((classPackage) => classPackage.id === selectedPackage) ? selectedPackage : packages[0].id;
 }
 
+function fillMakeupPackageSelect() {
+  if (!makeupPackage || !makeupStudent) return;
+
+  const selectedPackage = makeupPackage.value;
+  const packages = loadClassPackages().filter((classPackage) => classPackage.studentName === makeupStudent.value);
+  makeupPackage.replaceChildren();
+
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = packages.length ? "Sem pacote vinculado" : "Nenhum pacote salvo";
+  makeupPackage.appendChild(empty);
+
+  packages.forEach((classPackage) => {
+    const option = document.createElement("option");
+    option.value = classPackage.id;
+    option.textContent = classPackage.name;
+    makeupPackage.appendChild(option);
+  });
+
+  makeupPackage.value = packages.some((classPackage) => classPackage.id === selectedPackage) ? selectedPackage : "";
+}
+
 function fillPackageForm(classPackage = null, studentName = "") {
   if (!packageForm) return;
 
@@ -4126,10 +5024,17 @@ function renderPackageAdminList() {
 
   if (!selectedStudent) {
     if (packageEmptyState) packageEmptyState.hidden = false;
+    renderLessonBalancePanel("");
+    renderLessonExtraHistory("");
     return;
   }
 
   if (packageEmptyState) packageEmptyState.hidden = true;
+  if (manualCheckinStudent) manualCheckinStudent.value = selectedStudent;
+  if (dropInStudent) dropInStudent.value = selectedStudent;
+  if (makeupStudent) makeupStudent.value = selectedStudent;
+  fillManualCheckinPackageSelect();
+  fillMakeupPackageSelect();
 
   const packages = loadClassPackages()
     .filter((classPackage) => classPackage.studentName === selectedStudent)
@@ -4137,13 +5042,15 @@ function renderPackageAdminList() {
 
   if (!packages.length) {
     packageAdminList.textContent = "Nenhum pacote cadastrado para este aluno.";
+    renderLessonBalancePanel(selectedStudent);
+    renderLessonExtraHistory(selectedStudent);
     return;
   }
 
   packages.forEach((classPackage) => {
     const status = getPackageStatus(classPackage);
     const schedule = generatePackageSchedule(classPackage);
-    const usedDateKeys = new Set(loadCheckins().filter((checkin) => checkin.packageId === classPackage.id).map((checkin) => checkin.dateKey || ""));
+    const usedDateKeys = new Set(loadCheckins().filter((checkin) => checkin.packageId === classPackage.id && (checkin.lessonType || "package") === "package").map((checkin) => checkin.dateKey || ""));
     const nextLesson = schedule.find((lesson) => lesson.dateKey >= getDateKey() && !usedDateKeys.has(lesson.dateKey));
     const card = document.createElement("article");
     card.className = "package-card package-admin-card";
@@ -4192,6 +5099,169 @@ function renderPackageAdminList() {
     card.append(head, actions, detail);
     packageAdminList.appendChild(card);
   });
+  renderLessonBalancePanel(selectedStudent);
+  renderLessonExtraHistory(selectedStudent);
+}
+
+function renderLessonBalancePanel(studentName = packageViewStudent?.value || "") {
+  if (!lessonBalancePanel) return;
+  lessonBalancePanel.innerHTML = "";
+
+  if (!studentName) {
+    lessonBalancePanel.textContent = "Selecione um aluno para ver saldo de pacote, reposicoes e avulsas.";
+    return;
+  }
+
+  const activePackage = getActivePackage(studentName);
+  const balance = getLessonBalance(studentName, activePackage);
+  const card = document.createElement("section");
+  card.className = "lesson-balance-grid";
+  [
+    ["Aulas do pacote", balance.packageTotal],
+    ["Aulas realizadas", balance.completed],
+    ["Aulas restantes", balance.remaining],
+    ["Reposicoes disponiveis", balance.makeupAvailable],
+    ["Reposicoes solicitadas", balance.makeupRequested],
+    ["Reposicoes aprovadas", balance.makeupApproved],
+    ["Reposicoes usadas", balance.makeupUsed],
+    ["Reposicoes expiradas", balance.makeupExpired],
+    ["Validade das reposicoes", balance.makeupValidities],
+    ["Aulas avulsas lancadas", balance.dropInCount],
+    ["Valor pendente avulsas", formatCurrencyNumber(balance.pendingDropInValue)],
+  ].forEach(([label, value]) => card.appendChild(createAdminMetric(label, value)));
+  lessonBalancePanel.appendChild(card);
+}
+
+function createMakeupWhatsAppUrl(student, credit) {
+  const phone = normalizeWhatsAppPhone(student?.phone);
+  if (!phone) return "";
+  const message = `Ola, ${student.name}! Tudo bem?\n\nVoce possui 1 aula de reposicao disponivel referente a aula desmarcada em ${credit.sourceLessonDate}.\n\nEssa reposicao e valida ate ${credit.validUntil}.\n\nMe envie uma opcao de horario para avaliarmos o reagendamento.\n\nPersonal Joao Victor`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
+function updateMakeupCreditStatus(creditId, status, extras = {}) {
+  const credits = loadMakeupCredits();
+  const index = credits.findIndex((credit) => credit.id === creditId);
+  if (index < 0) return false;
+  credits[index] = {
+    ...credits[index],
+    ...extras,
+    status,
+    updatedAt: Date.now(),
+  };
+  if (status === "requested") credits[index].requestedAt = new Date().toISOString();
+  if (status === "approved") credits[index].approvedAt = new Date().toISOString();
+  if (status === "rejected") credits[index].rejectedAt = new Date().toISOString();
+  saveMakeupCredits(credits);
+  return true;
+}
+
+function createLessonHistoryItem(entry) {
+  const card = document.createElement("article");
+  card.className = "checkin-history-card";
+  card.classList.toggle("cancel-late", ["expired", "rejected", "desmarcada-sem-reposicao", "falta"].includes(entry.status));
+  card.classList.toggle("cancel-ok", ["available", "approved", "requested", "used", "desmarcada-com-reposicao"].includes(entry.status));
+  const title = document.createElement("strong");
+  title.textContent = entry.title;
+  const detail = document.createElement("span");
+  detail.textContent = entry.detail;
+  card.append(title, detail);
+  if (entry.note) {
+    const note = document.createElement("small");
+    note.textContent = entry.note;
+    card.appendChild(note);
+  }
+  if (entry.kind === "makeup") {
+    const actions = document.createElement("div");
+    actions.className = "student-actions package-card-actions";
+    if (entry.status === "available") {
+      const whatsapp = document.createElement("button");
+      whatsapp.type = "button";
+      whatsapp.className = "secondary";
+      whatsapp.dataset.sendMakeupWhatsapp = entry.id;
+      whatsapp.textContent = "Enviar mensagem para agendar reposicao";
+      actions.appendChild(whatsapp);
+
+      const request = document.createElement("button");
+      request.type = "button";
+      request.className = "secondary";
+      request.dataset.requestMakeup = entry.id;
+      request.textContent = "Marcar como solicitada";
+      actions.appendChild(request);
+    }
+    if (entry.status === "available" || entry.status === "requested") {
+      const approve = document.createElement("button");
+      approve.type = "button";
+      approve.className = "primary";
+      approve.dataset.approveMakeup = entry.id;
+      approve.textContent = "Aprovar reposicao";
+      actions.appendChild(approve);
+    }
+    if (entry.status !== "used" && entry.status !== "expired" && entry.status !== "rejected") {
+      const reject = document.createElement("button");
+      reject.type = "button";
+      reject.className = "secondary danger-action";
+      reject.dataset.rejectMakeup = entry.id;
+      reject.textContent = "Recusar";
+      actions.appendChild(reject);
+    }
+    if (actions.children.length) card.appendChild(actions);
+  }
+  return card;
+}
+
+function getUnifiedLessonHistory(studentName) {
+  const checkinEntries = loadCheckins()
+    .filter((item) => item.studentName === studentName)
+    .map((item) => ({
+      timestamp: item.timestamp || 0,
+      status: item.status,
+      title: `${item.date} | ${item.lessonType === "makeup" ? "Reposicao" : item.lessonType === "dropin" ? "Avulsa" : "Pacote"}`,
+      detail: `${getCheckinStatusLabel(item)}${item.value ? ` | ${item.value}` : ""}`,
+      note: [
+        item.reason,
+        item.makeupValidUntil ? `Validade reposicao: ${item.makeupValidUntil}` : "",
+        item.leadMinutes ? `Antecedencia: ${Math.floor(item.leadMinutes / 60)}h${String(item.leadMinutes % 60).padStart(2, "0")}` : "",
+        item.note || item.packageName || "",
+      ].filter(Boolean).join(" | "),
+    }));
+  const dropInEntries = getStudentDropIns(studentName).map((item) => ({
+    timestamp: item.timestamp || item.createdAt || 0,
+    title: `${item.date} | Avulsa`,
+    detail: `${item.modality} | ${item.status} | ${item.value || "Sem valor"}`,
+    note: item.note || "",
+  }));
+  const makeupEntries = getStudentMakeupCredits(studentName).map((item) => ({
+    timestamp: item.timestamp || item.createdAt || 0,
+    kind: "makeup",
+    id: item.id,
+    status: item.status,
+    title: `${item.sourceLessonDate} | Reposicao`,
+    detail: `${getMakeupStatusLabel(item.status)} | aula ${item.lessonTime} | aviso ${item.noticeDate || "-"} ${item.noticeTime} | validade ${item.validUntil || "-"}`,
+    note: [
+      item.reason,
+      item.leadMinutes ? `Antecedencia: ${Math.floor(item.leadMinutes / 60)}h${String(item.leadMinutes % 60).padStart(2, "0")}` : "",
+      item.replacementDate ? `Reposicao em ${item.replacementDate} ${item.replacementTime || ""}` : "",
+      item.note || item.packageName || "",
+    ].filter(Boolean).join(" | "),
+  }));
+  return [...checkinEntries, ...dropInEntries, ...makeupEntries].sort((a, b) => b.timestamp - a.timestamp);
+}
+
+function renderLessonExtraHistory(studentName = packageViewStudent?.value || "") {
+  if (!lessonExtraHistory) return;
+  lessonExtraHistory.innerHTML = "";
+  if (!studentName) {
+    lessonExtraHistory.textContent = "";
+    return;
+  }
+
+  const history = getUnifiedLessonHistory(studentName);
+  if (!history.length) {
+    lessonExtraHistory.textContent = "Nenhum historico de pacote, reposicao ou aula avulsa para este aluno.";
+    return;
+  }
+  history.slice(0, 20).forEach((entry) => lessonExtraHistory.appendChild(createLessonHistoryItem(entry)));
 }
 
 function renderPackageListDetails(classPackage, detail) {
@@ -4228,10 +5298,10 @@ function renderPackageListHistory(classPackage, detail) {
   history.forEach((record) => {
     const item = document.createElement("article");
     item.className = "checkin-history-card";
-    item.classList.toggle("cancel-late", record.status === "cancelada-fora-prazo" || record.status === "falta");
-    item.classList.toggle("cancel-ok", record.status === "cancelada-no-prazo");
+    item.classList.toggle("cancel-late", record.status === "cancelada-fora-prazo" || record.status === "desmarcada-sem-reposicao" || record.status === "falta");
+    item.classList.toggle("cancel-ok", record.status === "cancelada-no-prazo" || record.status === "desmarcada-com-reposicao");
     item.classList.toggle("checkin-ok", record.status === "realizado");
-    item.textContent = `${record.date} as ${record.time} | ${getCheckinStatusLabel(record)}`;
+    item.textContent = `${record.date} as ${record.time} | ${getCheckinStatusLabel(record)}${record.reason ? ` | ${record.reason}` : ""}${record.makeupValidUntil ? ` | validade ${record.makeupValidUntil}` : ""}`;
     detail.appendChild(item);
   });
 }
@@ -4244,6 +5314,7 @@ function renderPackageListMoreActions(classPackage, detail) {
     ["Editar pacote", "edit", "primary"],
     ["Excluir pacote", "delete", "secondary danger-action"],
     ["Marcar falta", "absence", "secondary danger-action"],
+    ["Aluno desmarcou", "reschedule", "secondary"],
   ].forEach(([label, action, className]) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -4279,8 +5350,8 @@ function renderCheckinHistory() {
   checkins.forEach((checkin) => {
     const card = document.createElement("article");
     card.className = "checkin-history-card";
-    card.classList.toggle("cancel-late", checkin.status === "cancelada-fora-prazo" || checkin.status === "falta");
-    card.classList.toggle("cancel-ok", checkin.status === "cancelada-no-prazo");
+    card.classList.toggle("cancel-late", checkin.status === "cancelada-fora-prazo" || checkin.status === "desmarcada-sem-reposicao" || checkin.status === "falta");
+    card.classList.toggle("cancel-ok", checkin.status === "cancelada-no-prazo" || checkin.status === "desmarcada-com-reposicao");
 
     const head = document.createElement("div");
     head.className = "load-history-head";
@@ -4293,7 +5364,7 @@ function renderCheckinHistory() {
     title.append(name, detail);
 
     const type = document.createElement("span");
-    type.className = checkin.status === "cancelada-fora-prazo" || checkin.status === "falta" ? "status-danger" : "status-ok";
+    type.className = checkin.status === "cancelada-fora-prazo" || checkin.status === "desmarcada-sem-reposicao" || checkin.status === "falta" ? "status-danger" : "status-ok";
     type.textContent = getCheckinStatusLabel(checkin);
 
     if (checkin.type === "cancelamento de aula") {
@@ -4342,7 +5413,7 @@ function renderStudentPackagePanel() {
   const schedule = generatePackageSchedule(activePackage);
   const packageRecords = loadCheckins().filter((checkin) => checkin.packageId === activePackage.id);
   const checkins = packageRecords.filter(isConsumedLesson);
-  const usedDateKeys = new Set(packageRecords.map((checkin) => checkin.dateKey || ""));
+  const usedDateKeys = new Set(packageRecords.filter((checkin) => (checkin.lessonType || "package") === "package").map((checkin) => checkin.dateKey || ""));
   const todayKey = getDateKey();
   const status = getPackageStatus(activePackage);
   const upcoming = schedule.filter((lesson) => lesson.dateKey >= todayKey && !usedDateKeys.has(lesson.dateKey));
@@ -4353,9 +5424,10 @@ function renderStudentPackagePanel() {
 
   const packageCard = createStudentPackageCompactCard("Meu pacote", `${status.completed}/${activePackage.total}`, `${status.remaining} restantes`, status.remaining <= 0 ? "Pacote finalizado" : "Ativo", "Ver detalhes", "details");
   const nextCard = createStudentPackageCompactCard("Proxima aula", nextLesson?.date || "Sem aula prevista", nextLesson?.time || "-", nextLesson?.dateKey === todayKey ? "Hoje" : "Agendada", nextLesson?.dateKey === todayKey ? "Fazer check-in" : "Ver detalhes", nextLesson?.dateKey === todayKey ? "checkin" : "next");
-  const historyCard = createStudentPackageCompactCard("Historico", `${packageRecords.length} registros`, "Aulas e cancelamentos", "Check-ins", "Ver historico", "history");
+  const makeupCard = createStudentPackageCompactCard("Reposicoes", getAvailableMakeupCredits(activePackage.studentName).length, "Aulas liberadas", "Saldo", "Ver historico", "history");
+  const historyCard = createStudentPackageCompactCard("Historico", `${getUnifiedLessonHistory(activePackage.studentName).length} registros`, "Pacote, reposicoes e avulsas", "Check-ins", "Ver historico", "history");
 
-  cards.append(packageCard, nextCard, historyCard);
+  cards.append(packageCard, nextCard, makeupCard, historyCard);
 
   const detail = document.createElement("div");
   detail.className = "package-expand-panel";
@@ -4447,26 +5519,12 @@ function renderStudentPackageDetail(action) {
   }
 
   if (action === "history") {
-    if (!packageRecords.length) {
-      detail.textContent = "Nenhuma aula realizada ainda.";
+    const unifiedHistory = getUnifiedLessonHistory(studentName);
+    if (!unifiedHistory.length) {
+      detail.textContent = "Nenhum historico registrado.";
       return;
     }
-    packageRecords
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .forEach((record) => {
-        const card = document.createElement("article");
-        card.className = "checkin-history-card";
-        card.classList.toggle("cancel-late", record.status === "cancelada-fora-prazo" || record.status === "falta");
-        card.classList.toggle("cancel-ok", record.status === "cancelada-no-prazo");
-        if (record.type === "cancelamento de aula") {
-          card.textContent = `${record.date} as ${record.time} | ${getCheckinStatusLabel(record)} | cancelada em ${record.cancellationDate} as ${record.cancellationTime} | ${record.consumed ? "descontou aula" : "nao descontou aula"}`;
-        } else if (record.status === "falta") {
-          card.textContent = `${record.date} as ${record.time} | ${getCheckinStatusLabel(record)} | registrada em ${record.absenceDate} as ${record.absenceTime} | descontou aula`;
-        } else {
-          card.textContent = `${record.date} as ${record.time} | check-in feito por ${record.markedBy || "aluno"}`;
-        }
-        detail.appendChild(card);
-      });
+    unifiedHistory.slice(0, 20).forEach((entry) => detail.appendChild(createLessonHistoryItem(entry)));
     return;
   }
 
@@ -4683,6 +5741,8 @@ function resetStudentForm() {
   if (tempPasswordInput) tempPasswordInput.value = "";
   if (phoneInput) phoneInput.value = "";
   if (birthDateInput) birthDateInput.value = "";
+  if (frequencyInput) frequencyInput.value = "3x";
+  if (makeupLimitInput) makeupLimitInput.value = "3";
   editingStudentIndex = null;
   safeSetText(saveStudentButton, "Salvar aluno");
   if (cancelEditButton) cancelEditButton.hidden = true;
@@ -4700,6 +5760,8 @@ function startEditingStudent(index, message = "Editando aluno. Altere os campos 
   if (phoneInput) phoneInput.value = student.phone || "";
   if (birthDateInput) birthDateInput.value = student.birthDate || "";
   planInput.value = student.plan;
+  if (frequencyInput) frequencyInput.value = normalizeWeeklyFrequency(student.frequency);
+  if (makeupLimitInput) makeupLimitInput.value = normalizeMakeupLimit(student.makeupLimit, student.frequency);
   valueInput.value = student.value;
   dueInput.value = student.due;
   paymentInput.value = student.payment;
@@ -4723,6 +5785,8 @@ studentForm?.addEventListener("submit", async (event) => {
     phone: phoneInput?.value.trim() || "",
     birthDate: birthDateInput?.value.trim() || "",
     plan: planInput.value.trim(),
+    frequency: frequencyInput?.value || "3x",
+    makeupLimit: normalizeMakeupLimit(makeupLimitInput?.value, frequencyInput?.value || "3x"),
     value: valueInput.value.trim(),
     due: dueInput.value.trim(),
     payment: paymentInput.value,
@@ -4965,6 +6029,7 @@ studentLoadChartMode?.addEventListener("change", renderStudentLoadEvolution);
 checkinFilterStudent?.addEventListener("change", renderCheckinHistory);
 checkinFilterDate?.addEventListener("input", renderCheckinHistory);
 manualCheckinStudent?.addEventListener("change", fillManualCheckinPackageSelect);
+makeupStudent?.addEventListener("change", fillMakeupPackageSelect);
 packageViewStudent?.addEventListener("change", () => {
   if (packageForm) packageForm.hidden = true;
   editingPackageId = null;
@@ -5036,6 +6101,13 @@ billingSettingsForm?.addEventListener("submit", (event) => {
   renderBillingList();
 });
 
+frequencyInput?.addEventListener("change", () => {
+  const defaultLimit = getDefaultMakeupLimit(frequencyInput.value);
+  if (makeupLimitInput && (!makeupLimitInput.value || Number(makeupLimitInput.value) === 0)) {
+    makeupLimitInput.value = String(defaultLimit);
+  }
+});
+
 studentCheckinButton?.addEventListener("click", () => {
   const studentName = workoutViewStudent?.value;
   const activePackage = getActivePackage(studentName);
@@ -5052,9 +6124,16 @@ manualCheckinForm?.addEventListener("submit", (event) => {
 
   const studentName = manualCheckinStudent?.value;
   const classPackage = loadClassPackages().find((item) => item.id === manualCheckinPackage?.value) || getActivePackage(studentName);
-  if (!studentName || !classPackage) return;
+  const lessonType = manualCheckinType?.value || "package";
+  if (!studentName || (lessonType === "package" && !classPackage)) return;
 
-  registerPackageCheckin(studentName, classPackage, "personal");
+  const result = registerFlexibleLessonCheckin(studentName, lessonType, classPackage, "personal", {
+    value: manualCheckinValue?.value.trim() || "",
+    note: manualCheckinNote?.value.trim() || "",
+  });
+  if (!result.ok) showMessage(result.message, "error");
+  if (manualCheckinValue) manualCheckinValue.value = "";
+  if (manualCheckinNote) manualCheckinNote.value = "";
   renderCheckinHistory();
   renderPackageAdminList();
   renderStudentPackagePanel();
@@ -5062,6 +6141,87 @@ manualCheckinForm?.addEventListener("submit", (event) => {
   if (workoutViewStudent?.value === studentName) {
     renderStudentCheckinStatus();
   }
+});
+
+dropInForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const dropIns = loadDropInClasses();
+  dropIns.push({
+    id: createId(),
+    studentName: dropInStudent?.value || "",
+    studentId: getStudentIdByName(dropInStudent?.value || ""),
+    date: dropInDate?.value.trim() || formatToday(),
+    modality: dropInModality?.value.trim() || "Aula avulsa",
+    value: dropInValue?.value.trim() || "",
+    status: dropInStatus?.value || "pendente",
+    note: dropInNote?.value.trim() || "",
+    timestamp: Date.now(),
+    createdAt: Date.now(),
+  });
+  saveDropInClasses(dropIns);
+  dropInForm.reset();
+  if (dropInStudent && packageViewStudent?.value) dropInStudent.value = packageViewStudent.value;
+  renderPackageAdminList();
+  renderBillingList();
+  if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
+});
+
+makeupForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const studentName = makeupStudent?.value || "";
+  const classPackage = loadClassPackages().find((item) => item.id === makeupPackage?.value) || null;
+  const result = registerStudentRescheduleNotice({
+    studentName,
+    classPackage,
+    date: makeupDate?.value.trim() || "",
+    lessonTime: makeupLessonTime?.value.trim() || "",
+    noticeTime: makeupNoticeTime?.value.trim() || "",
+    note: makeupNote?.value.trim() || "",
+  });
+  if (!result.ok) {
+    showMessage(result.message, "error");
+    return;
+  }
+  showMessage(result.message);
+  makeupForm.reset();
+  if (makeupStudent && packageViewStudent?.value) makeupStudent.value = packageViewStudent.value;
+  fillMakeupPackageSelect();
+  renderCheckinHistory();
+  renderPackageAdminList();
+  renderStudentPackagePanel();
+  if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
+});
+
+lessonExtraHistory?.addEventListener("click", (event) => {
+  const whatsappButton = event.target.closest("[data-send-makeup-whatsapp]");
+  const requestButton = event.target.closest("[data-request-makeup]");
+  const approveButton = event.target.closest("[data-approve-makeup]");
+  const rejectButton = event.target.closest("[data-reject-makeup]");
+  const button = whatsappButton || requestButton || approveButton || rejectButton;
+  if (!button) return;
+
+  const creditId = button.dataset.sendMakeupWhatsapp || button.dataset.requestMakeup || button.dataset.approveMakeup || button.dataset.rejectMakeup;
+  const credit = loadMakeupCredits().find((item) => item.id === creditId);
+  if (!credit) return;
+
+  if (whatsappButton) {
+    const student = getStudentByName(credit.studentName);
+    const url = createMakeupWhatsAppUrl(student, credit);
+    if (!url) {
+      window.alert("Cadastre o WhatsApp do aluno para enviar a mensagem.");
+      return;
+    }
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+
+  if (requestButton) updateMakeupCreditStatus(creditId, "requested");
+  if (approveButton) updateMakeupCreditStatus(creditId, "approved");
+  if (rejectButton && window.confirm("Recusar esta reposicao?")) updateMakeupCreditStatus(creditId, "rejected");
+
+  renderPackageAdminList();
+  renderStudentPackagePanel();
+  if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
 });
 
 packageAdminList?.addEventListener("click", (event) => {
@@ -5115,6 +6275,19 @@ packageAdminList?.addEventListener("click", (event) => {
       renderPackageAdminList();
       renderStudentPackagePanel();
       if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
+      return;
+    }
+
+    if (action === "reschedule") {
+      if (makeupStudent) makeupStudent.value = classPackage.studentName;
+      fillMakeupPackageSelect();
+      if (makeupPackage) makeupPackage.value = classPackage.id;
+      const nextLesson = generatePackageSchedule(classPackage).find((lesson) => lesson.dateKey >= getDateKey() && !getLessonRecord(classPackage.id, lesson.dateKey));
+      if (nextLesson) {
+        if (makeupDate) makeupDate.value = nextLesson.date;
+        if (makeupLessonTime) makeupLessonTime.value = nextLesson.time;
+      }
+      makeupForm?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
 
@@ -5286,7 +6459,7 @@ cancelWorkoutEditButton?.addEventListener("click", () => {
   workoutMessage.classList.remove("error");
 });
 
-studentList?.addEventListener("click", (event) => {
+studentList?.addEventListener("click", async (event) => {
   const openButton = event.target.closest("[data-open-student-profile]");
   if (openButton) {
     renderAdminStudentProfile(openButton.dataset.openStudentProfile);
@@ -5303,9 +6476,15 @@ studentList?.addEventListener("click", (event) => {
   if (!removeButton) return;
 
   const students = loadStudents();
-  students.splice(Number(removeButton.dataset.removeStudent), 1);
-  saveStudents(students);
+  const student = students[Number(removeButton.dataset.removeStudent)];
+  if (!student || !(await confirmStudentDeletion(student))) return;
+
+  deleteStudentWithLinkedData(student);
   renderStudents();
+  fillStudentSelects();
+  renderWorkouts();
+  renderWorkoutStudentDirectory();
+  renderAdminAlerts();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
 });
 
@@ -5392,6 +6571,8 @@ studentAdminProfile?.addEventListener("click", (event) => {
     if (phoneInput) phoneInput.value = student.phone || "";
     if (birthDateInput) birthDateInput.value = student.birthDate || "";
     planInput.value = student.plan;
+    if (frequencyInput) frequencyInput.value = normalizeWeeklyFrequency(student.frequency);
+    if (makeupLimitInput) makeupLimitInput.value = normalizeMakeupLimit(student.makeupLimit, student.frequency);
     valueInput.value = student.value;
     dueInput.value = student.due;
     paymentInput.value = student.payment;
@@ -5427,9 +6608,10 @@ studentAdminProfile?.addEventListener("click", (event) => {
   }
 
   if (action === "evolution") {
-    openAdminModule("assessments");
-    if (adminLoadStudent) adminLoadStudent.value = studentName;
-    renderAdminLoadEvolution();
+    openAdminModule("evolution");
+    if (adminEvolutionStudent) adminEvolutionStudent.value = studentName;
+    fillAdminEvolutionExercises();
+    renderAdminEvolution();
   }
 });
 
@@ -5455,6 +6637,9 @@ function openAdminModule(moduleName) {
   if (moduleName === "evolution") {
     renderAdminEvolution();
   }
+  if (moduleName === "alerts") {
+    renderAdminAlerts();
+  }
   if (moduleName === "workouts") {
     showWorkoutStudentDirectory();
   }
@@ -5472,6 +6657,7 @@ function showAdminDashboard() {
   adminModules.forEach((module) => {
     module.hidden = true;
   });
+  renderAdminAlerts();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -5498,6 +6684,23 @@ adminModuleButtons.forEach((button) => {
 adminBackButtons.forEach((button) => {
   button.addEventListener("click", showAdminDashboard);
 });
+
+adminAlertsList?.addEventListener("click", (event) => {
+  const resolveButton = event.target.closest("[data-resolve-alert]");
+  if (resolveButton) {
+    resolveAdminAlert(resolveButton.dataset.resolveAlert);
+    renderAdminAlerts();
+    return;
+  }
+
+  const button = event.target.closest("[data-open-alert-student]");
+  if (!button) return;
+  openAdminStudentProfile(button.dataset.openAlertStudent);
+});
+
+adminAlertFilter?.addEventListener("change", renderAdminAlerts);
+
+exportDataButton?.addEventListener("click", exportAppData);
 
 addExerciseButton?.addEventListener("click", () => addTrainingSession({ title: "", exercises: [{}] }));
 
@@ -5704,6 +6907,7 @@ function refreshAppAfterRemoteState() {
   normalizeStoredAppData();
   resetExerciseRows();
   renderStudents();
+  renderAdminAlerts();
   renderBillingSettings();
   fillStudentSelects();
   updateStudentHeader();
@@ -5719,6 +6923,7 @@ function refreshAppAfterRemoteState() {
     renderBillingList();
     renderPackageAdminList();
     renderAdminEvolution();
+    renderAdminAlerts();
   }
 }
 
@@ -5740,17 +6945,23 @@ function initializeApp() {
 
   resetExerciseRows();
   renderStudents();
+  renderAdminAlerts();
   renderBillingSettings();
+  logLocalPersistenceAudit("inicio");
   fillStudentSelects();
   loadSupabaseAppState()
     .then((status) => {
       if (status === "loaded") {
+        logLocalPersistenceAudit("supabase carregado");
         refreshAppAfterRemoteState();
         return;
       }
       if (status === "missing") {
+        console.warn("Supabase app_state ainda sem registro main. Enviando cache local como estado inicial.");
         queueSupabaseAppStateSync();
+        return;
       }
+      console.warn(`Supabase app_state nao carregado (${status}). LocalStorage segue como cache/fallback.`);
     })
     .catch((error) => {
       console.warn("Supabase app_state nao carregou. App local continua funcionando.", error);

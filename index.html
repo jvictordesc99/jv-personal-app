@@ -299,6 +299,7 @@
           <div class="admin-grid" id="admin-dashboard">
             <article><strong>Alunos</strong><span>Cadastro, plano, valor manual e status.</span><button data-admin-target="students">Abrir</button></article>
             <article><strong>Fichas de treino</strong><span>Criar, copiar, editar e remover fichas.</span><button data-admin-target="workouts">Abrir</button></article>
+            <article><strong>Alertas</strong><span>Dores, atrasos, pagamentos e recordes.</span><button data-admin-target="alerts">Abrir</button></article>
             <article><strong>Evolucao</strong><span>Cargas, recordes, frequencia e feedbacks.</span><button data-admin-target="evolution">Abrir</button></article>
             <article><strong>Avaliacoes</strong><span>Registrar medidas e fotos de evolucao.</span><button data-admin-target="assessments">Abrir</button></article>
             <article><strong>Pacotes e Check-ins</strong><span>Pacotes de aulas, agenda e presencas.</span><button data-admin-target="checkins">Abrir</button></article>
@@ -405,6 +406,14 @@
           </section>
           <section class="admin-module" id="admin-module-students" hidden>
           <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
+          <section class="backup-panel">
+            <div>
+              <p class="eyebrow">Backup</p>
+              <h3>Exportar dados</h3>
+              <span>Baixe um arquivo JSON com alunos, fichas, avaliacoes, evolucao, feedbacks e check-ins.</span>
+            </div>
+            <button type="button" class="secondary" id="export-data-button">Exportar dados</button>
+          </section>
           <form class="manual-payment" id="student-form">
             <div>
               <p class="eyebrow">Valores flexiveis</p>
@@ -417,6 +426,16 @@
             <label>Telefone WhatsApp<input id="student-phone" placeholder="Ex: 19992782696" /></label>
             <label>Data de nascimento<input id="student-birth-date" placeholder="Ex: 15/08/1995" /></label>
             <label>Plano<input id="student-plan" required placeholder="Ex: Personal, Beach" /></label>
+            <label>Frequencia semanal
+              <select id="student-frequency">
+                <option value="1x">1x por semana</option>
+                <option value="2x">2x por semana</option>
+                <option value="3x">3x por semana</option>
+                <option value="4x">4x por semana</option>
+                <option value="5x">5x por semana</option>
+              </select>
+            </label>
+            <label>Limite de reposicoes por pacote<input id="student-makeup-limit" type="number" min="0" placeholder="Ex: 3" /></label>
             <label>Valor mensal<input id="student-value" required placeholder="R$ 250,00" /></label>
             <label>Vencimento<input id="student-due" required placeholder="05/06" /></label>
             <label>Status
@@ -435,6 +454,23 @@
             <div class="table-row head"><span>Aluno</span><span>Plano</span><span>Valor manual</span><span>Status</span><span>Pagamento</span><span>Acoes</span></div>
             <div id="student-list"></div>
           </div>
+          </section>
+          <section class="admin-module" id="admin-module-alerts" hidden>
+            <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
+            <div class="alerts-panel">
+              <div class="section-title compact-title">
+                <p class="eyebrow">Central de alertas</p>
+                <h2>Prioridades dos alunos</h2>
+              </div>
+              <label class="alert-filter-label">Filtro
+                <select id="admin-alert-filter">
+                  <option value="all">Todos</option>
+                  <option value="pending" selected>Pendentes</option>
+                  <option value="resolved">Resolvidos</option>
+                </select>
+              </label>
+              <div class="alerts-grid" id="admin-alerts-list"></div>
+            </div>
           </section>
           <section class="admin-module" id="admin-module-assessments" hidden>
             <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
@@ -558,15 +594,90 @@
                 <button type="submit" class="primary">Salvar pacote</button>
               </form>
               <div class="package-admin-list" id="package-admin-list"></div>
-              <form class="checkin-admin-form checkin-legacy-tools" id="manual-checkin-form" hidden>
+              <div class="lesson-balance-panel" id="lesson-balance-panel"></div>
+              <form class="checkin-admin-form" id="manual-checkin-form">
                 <label>Aluno
                   <select id="manual-checkin-student"></select>
                 </label>
                 <label>Pacote
                   <select id="manual-checkin-package"></select>
                 </label>
+                <label>Tipo de aula
+                  <select id="manual-checkin-type">
+                    <option value="package">Aula do pacote</option>
+                    <option value="makeup">Aula de reposicao aprovada</option>
+                    <option value="dropin">Aula avulsa</option>
+                  </select>
+                </label>
+                <label>Valor se for avulsa
+                  <input id="manual-checkin-value" placeholder="R$ 60,00" />
+                </label>
+                <label>Observacao
+                  <input id="manual-checkin-note" placeholder="Ex: aula extra de musculacao" />
+                </label>
                 <button type="submit" class="primary">Marcar presenca manual</button>
               </form>
+              <section class="lesson-extra-panel">
+                <div>
+                  <p class="eyebrow">Aulas avulsas</p>
+                  <h3>Lancar aula avulsa</h3>
+                  <span>Entram no financeiro do aluno, sem consumir pacote.</span>
+                </div>
+                <form class="dropin-form" id="dropin-class-form">
+                  <label>Aluno
+                    <select id="dropin-student"></select>
+                  </label>
+                  <label>Data da aula
+                    <input id="dropin-date" required placeholder="Ex: 10/06/2026" />
+                  </label>
+                  <label>Modalidade
+                    <input id="dropin-modality" required placeholder="Ex: Musculacao" />
+                  </label>
+                  <label>Valor da aula
+                    <input id="dropin-value" required placeholder="R$ 60,00" />
+                  </label>
+                  <label>Status
+                    <select id="dropin-status">
+                      <option value="pendente">Pendente</option>
+                      <option value="pago">Pago</option>
+                      <option value="cancelado">Cancelado</option>
+                    </select>
+                  </label>
+                  <label class="package-notes">Observacao
+                    <textarea id="dropin-note" placeholder="Observacao da aula avulsa"></textarea>
+                  </label>
+                  <button type="submit" class="primary">Salvar aula avulsa</button>
+                </form>
+              </section>
+              <section class="lesson-extra-panel">
+                <div>
+                  <p class="eyebrow">Reposicao</p>
+                  <h3>Aluno desmarcou</h3>
+                  <span>Se avisar com mais de 2 horas, gera 1 reposicao.</span>
+                </div>
+                <form class="dropin-form" id="makeup-credit-form">
+                  <label>Aluno
+                    <select id="makeup-student"></select>
+                  </label>
+                  <label>Pacote
+                    <select id="makeup-package"></select>
+                  </label>
+                  <label>Data da aula
+                    <input id="makeup-date" required placeholder="Ex: 10/06/2026" />
+                  </label>
+                  <label>Horario da aula
+                    <input id="makeup-lesson-time" required placeholder="Ex: 18:00" />
+                  </label>
+                  <label>Horario do aviso
+                    <input id="makeup-notice-time" required placeholder="Ex: 15:30" />
+                  </label>
+                  <label class="package-notes">Observacao
+                    <textarea id="makeup-note" placeholder="Ex: avisou pelo WhatsApp"></textarea>
+                  </label>
+                  <button type="submit" class="primary">Registrar desmarcacao</button>
+                </form>
+              </section>
+              <div class="load-history-list" id="lesson-extra-history"></div>
               <div class="checkin-filters checkin-legacy-tools" hidden>
                 <label>Filtrar por aluno
                   <select id="checkin-filter-student"></select>

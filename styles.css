@@ -1921,6 +1921,149 @@ h3 {
   width: fit-content;
 }
 
+.alerts-panel,
+.backup-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.backup-panel {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid rgba(184, 255, 56, 0.22);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(7, 23, 35, 0.04), rgba(184, 255, 56, 0.08));
+}
+
+.backup-panel h3,
+.backup-panel p {
+  margin: 0;
+}
+
+.backup-panel span {
+  color: var(--muted);
+}
+
+.alerts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.alert-filter-label {
+  display: grid;
+  gap: 8px;
+  max-width: 260px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.alert-filter-label select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: #fbfeff;
+}
+
+.alert-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 14px 30px rgba(7, 23, 35, 0.08);
+}
+
+.alert-card strong {
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.alert-card small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.alert-card.warning {
+  border-color: rgba(234, 179, 8, 0.35);
+}
+
+.alert-card.danger {
+  border-color: rgba(239, 68, 68, 0.36);
+}
+
+.alert-card.success {
+  border-color: rgba(34, 197, 94, 0.36);
+}
+
+.alert-card.resolved {
+  opacity: 0.72;
+}
+
+.alert-actions {
+  margin-top: 4px;
+}
+
+.alert-badge {
+  width: fit-content;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #071723;
+  background: var(--lime);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(7, 23, 35, 0.68);
+}
+
+.confirm-dialog {
+  width: min(100%, 440px);
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid rgba(184, 255, 56, 0.24);
+  border-radius: 8px;
+  color: #eaffef;
+  background: #071723;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.35);
+}
+
+.confirm-dialog h3,
+.confirm-dialog p {
+  margin: 0;
+}
+
+.confirm-dialog p {
+  color: #b8d9d8;
+  line-height: 1.5;
+}
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.confirm-actions button {
+  flex: 1 1 140px;
+  min-height: 46px;
+}
+
 .admin-module {
   margin-top: 18px;
 }
@@ -2144,14 +2287,42 @@ h3 {
 }
 
 .checkin-admin-form,
-.checkin-filters {
+.checkin-filters,
+.dropin-form {
   display: grid;
   gap: 12px;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .checkin-filters {
   grid-template-columns: 1fr 1fr;
+}
+
+.checkin-admin-form button,
+.dropin-form .package-notes,
+.dropin-form button {
+  grid-column: 1 / -1;
+}
+
+.lesson-extra-panel,
+.lesson-balance-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(184, 255, 56, 0.22);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(7, 23, 35, 0.04), rgba(184, 255, 56, 0.08));
+}
+
+.lesson-extra-panel h3,
+.lesson-extra-panel p {
+  margin: 0;
+}
+
+.lesson-balance-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .checkin-month-total {
@@ -2250,6 +2421,33 @@ h3 {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dropin-form label,
+.checkin-admin-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.dropin-form input,
+.dropin-form select,
+.dropin-form textarea,
+.checkin-admin-form input,
+.checkin-admin-form select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: #fbfeff;
+}
+
+.dropin-form textarea {
+  min-height: 88px;
+  resize: vertical;
 }
 
 .package-form .package-notes,
@@ -2699,6 +2897,8 @@ h3 {
   .checkin-filters,
   .package-student-selector,
   .package-form,
+  .dropin-form,
+  .lesson-balance-grid,
   .package-meta,
   .package-lesson,
   .package-compact-grid,
@@ -2996,6 +3196,8 @@ textarea {
   .checkin-filters,
   .package-student-selector,
   .package-form,
+  .dropin-form,
+  .lesson-balance-grid,
   .package-meta,
   .package-lesson,
   .package-compact-grid,
@@ -3004,6 +3206,8 @@ textarea {
   .package-detail-grid,
   .billing-settings,
   .billing-card,
+  .alerts-grid,
+  .backup-panel,
   .workout-meta,
   .workout-expiration-alert {
     grid-template-columns: 1fr !important;
@@ -3188,8 +3392,17 @@ textarea {
 
   .load-chart-summary,
   .record-metrics-grid,
+  .alerts-grid,
+  .backup-panel,
+  .lesson-balance-grid,
+  .dropin-form,
   .feedback-grid,
   .general-notes-list {
     grid-template-columns: 1fr;
+  }
+
+  .backup-panel button,
+  .alert-card button {
+    width: 100%;
   }
 }
