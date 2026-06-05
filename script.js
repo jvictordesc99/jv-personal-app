@@ -144,16 +144,21 @@ const paymentInput = document.querySelector("#student-payment");
 const newStudentButton = document.querySelector("[data-focus-student]");
 const workoutFocusButtons = document.querySelectorAll("[data-focus-workout]");
 const adminDashboard = document.querySelector("#admin-dashboard");
+const adminAlertCard = document.querySelector("#admin-alert-card");
 const paymentBlockedPanel = document.querySelector("#payment-blocked-panel");
 const adminAlertsList = document.querySelector("#admin-alerts-list");
 const adminAlertFilter = document.querySelector("#admin-alert-filter");
 const adminModules = document.querySelectorAll(".admin-module");
 const adminModuleButtons = document.querySelectorAll("[data-admin-target]");
 const adminBackButtons = document.querySelectorAll("[data-admin-back]");
+const adminSubpageMenus = document.querySelectorAll("[data-subpage-menu]");
+const adminSubpages = document.querySelectorAll("[data-subpage]");
 const saveMessage = document.querySelector("#save-message");
 const saveStudentButton = document.querySelector("#save-student-button");
 const cancelEditButton = document.querySelector("#cancel-edit-button");
 const exportDataButton = document.querySelector("#export-data-button");
+const studentPlanSummary = document.querySelector("#student-plan-summary");
+const studentStatusSummary = document.querySelector("#student-status-summary");
 const workoutStudentSearch = document.querySelector("#workout-student-search");
 const workoutStudentDirectory = document.querySelector("#workout-student-directory");
 const workoutStudentWorkspace = document.querySelector("#workout-student-workspace");
@@ -215,6 +220,9 @@ const assessmentNotes = document.querySelector("#assessment-notes");
 const assessmentFile = document.querySelector("#assessment-file");
 const assessmentMessage = document.querySelector("#assessment-message");
 const adminAssessmentHistory = document.querySelector("#admin-assessment-history");
+const assessmentChartSummary = document.querySelector("#assessment-chart-summary");
+const assessmentPhotoSummary = document.querySelector("#assessment-photo-summary");
+const assessmentCompareSummary = document.querySelector("#assessment-compare-summary");
 const studentAssessmentSummary = document.querySelector("#student-assessment-summary");
 const studentAssessmentHistory = document.querySelector("#student-assessment-history");
 const saveWorkoutButton = document.querySelector("#save-workout-button");
@@ -1074,10 +1082,109 @@ function getDaysSince(date) {
 function openAdminStudentProfile(studentName) {
   if (!studentName) return;
   openAdminModule("students");
+  openAdminSubpage("students-list");
   selectedAdminProfileStudent = studentName;
   renderStudents();
   renderAdminStudentProfile(studentName);
   studentAdminProfile?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function getSubpageGroup(pageName) {
+  if (pageName.startsWith("assessment-")) return "assessments";
+  if (pageName.startsWith("students-")) return "students";
+  if (pageName.startsWith("evolution-")) return "evolution";
+  return pageName.split("-")[0];
+}
+
+function isSubpageInGroup(pageName, groupName) {
+  return getSubpageGroup(pageName || "") === groupName;
+}
+
+function showAdminSubpageMenu(menuName) {
+  adminSubpageMenus.forEach((menu) => {
+    menu.hidden = menu.dataset.subpageMenu !== menuName ? menu.hidden : false;
+  });
+  adminSubpages.forEach((page) => {
+    if (isSubpageInGroup(page.dataset.subpage, menuName)) {
+      page.hidden = true;
+    }
+  });
+}
+
+function openAdminSubpage(pageName) {
+  const page = document.querySelector(`[data-subpage="${pageName}"]`);
+  if (!page) return;
+  const menuName = getSubpageGroup(pageName);
+  const menu = document.querySelector(`[data-subpage-menu="${menuName}"]`);
+  if (menu) menu.hidden = true;
+  adminSubpages.forEach((item) => {
+    const sameGroup = isSubpageInGroup(item.dataset.subpage, menuName);
+    if (sameGroup) item.hidden = item.dataset.subpage !== pageName;
+  });
+  renderAdminSubpageContent(pageName);
+}
+
+function renderSummaryCard(title, detail, tone = "") {
+  const card = document.createElement("article");
+  card.className = `checkin-history-card ${tone}`;
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  const small = document.createElement("small");
+  small.textContent = detail;
+  card.append(strong, small);
+  return card;
+}
+
+function renderStudentPlanSummary() {
+  if (!studentPlanSummary) return;
+  studentPlanSummary.innerHTML = "";
+  loadStudents().forEach((student) => {
+    studentPlanSummary.appendChild(renderSummaryCard(student.name, `${student.plan} | ${student.value || "-"} | ${student.frequency || "3x"} | vence ${student.due || "-"}`));
+  });
+}
+
+function renderStudentStatusSummary() {
+  if (!studentStatusSummary) return;
+  studentStatusSummary.innerHTML = "";
+  loadStudents().forEach((student) => {
+    const tone = student.payment === "Em dia" ? "checkin-ok" : "cancel-late";
+    studentStatusSummary.appendChild(renderSummaryCard(student.name, `${student.payment || "-"} | vencimento ${student.due || "-"}`, tone));
+  });
+}
+
+function renderAssessmentSupportSummaries() {
+  const studentName = assessmentStudent?.value || loadStudents()[0]?.name || "";
+  const assessments = getStudentAssessments(studentName);
+  if (assessmentChartSummary) {
+    assessmentChartSummary.innerHTML = "";
+    assessments.slice(-6).forEach((item) => assessmentChartSummary.appendChild(renderSummaryCard(item.date, `Peso ${item.weight || "-"} | Gordura ${item.fat || "-"} | Massa ${item.muscle || "-"}`)));
+    if (!assessments.length) assessmentChartSummary.textContent = "Nenhuma avaliacao para montar graficos ainda.";
+  }
+  if (assessmentPhotoSummary) {
+    assessmentPhotoSummary.innerHTML = "";
+    assessments.filter((item) => item.fileName || item.fileUrl || item.fileData).forEach((item) => assessmentPhotoSummary.appendChild(renderSummaryCard(item.date, item.fileName || "Anexo salvo")));
+    if (!assessmentPhotoSummary.children.length) assessmentPhotoSummary.textContent = "Nenhuma foto/anexo de evolucao cadastrado.";
+  }
+  if (assessmentCompareSummary) {
+    assessmentCompareSummary.innerHTML = "";
+    const first = assessments[0];
+    const last = assessments[assessments.length - 1];
+    if (first && last && first !== last) {
+      assessmentCompareSummary.appendChild(renderSummaryCard(`${first.date} x ${last.date}`, `Peso: ${first.weight || "-"} -> ${last.weight || "-"} | Gordura: ${first.fat || "-"} -> ${last.fat || "-"} | Massa: ${first.muscle || "-"} -> ${last.muscle || "-"}`));
+    } else {
+      assessmentCompareSummary.textContent = "Cadastre pelo menos duas avaliacoes para comparar.";
+    }
+  }
+}
+
+function renderAdminSubpageContent(pageName) {
+  if (pageName === "students-plans") renderStudentPlanSummary();
+  if (pageName === "students-status") renderStudentStatusSummary();
+  if (pageName.startsWith("assessment-")) {
+    renderAdminAssessments();
+    renderAssessmentSupportSummaries();
+  }
+  if (pageName.startsWith("evolution-")) renderAdminEvolution();
 }
 
 function normalizeResolvedAlerts(alerts) {
@@ -1233,6 +1340,7 @@ function collectAdminAlerts(options = {}) {
 
 function renderAdminAlerts() {
   if (!adminAlertsList) return;
+  renderAdminAlertBadge();
   const filter = adminAlertFilter?.value || "pending";
   const pendingAlerts = collectAdminAlerts();
   const resolvedAlerts = loadResolvedAlerts();
@@ -1287,6 +1395,17 @@ function renderAdminAlerts() {
     card.append(badge, title, detail, actions);
     adminAlertsList.appendChild(card);
   });
+}
+
+function renderAdminAlertBadge() {
+  if (!adminAlertCard) return;
+  adminAlertCard.querySelector(".admin-alert-badge")?.remove();
+  const count = collectAdminAlerts().length;
+  if (!count) return;
+  const badge = document.createElement("span");
+  badge.className = "admin-alert-badge";
+  badge.textContent = count > 99 ? "99+" : String(count);
+  adminAlertCard.appendChild(badge);
 }
 
 function exportAppData() {
@@ -3647,16 +3766,19 @@ function registerFlexibleLessonCheckin(studentName, lessonType = "package", clas
 }
 
 function registerLessonCancellation(studentName, classPackage, lesson) {
-  if (!studentName || !classPackage || !lesson) return false;
-  if (getLessonRecord(classPackage.id, lesson.dateKey)) return false;
+  if (!studentName || !classPackage || !lesson) return { ok: false, message: "Nao foi possivel cancelar esta aula." };
+  if (getLessonRecord(classPackage.id, lesson.dateKey)) return { ok: false, message: "Esta aula ja possui registro." };
 
   const cancellation = getCancellationStatus(lesson);
   const status = getPackageStatus(classPackage);
-  if (cancellation.consumed && status.remaining <= 0) return false;
+  if (cancellation.consumed && status.remaining <= 0) return { ok: false, message: "Pacote sem saldo para contabilizar cancelamento." };
+  const generated = cancellation.status === "cancelada-no-prazo";
+  const validUntil = generated ? addDaysToBrazilianDate(lesson.date, 10) : "";
+  const checkinId = createId();
 
   const checkins = loadCheckins();
   checkins.push({
-    id: createId(),
+    id: checkinId,
     studentName,
     studentId: getStudentIdByName(studentName),
     packageId: classPackage.id,
@@ -3668,6 +3790,9 @@ function registerLessonCancellation(studentName, classPackage, lesson) {
     status: cancellation.status,
     statusLabel: cancellation.label,
     consumed: cancellation.consumed,
+    generatedMakeup: generated,
+    makeupValidUntil: validUntil,
+    reason: generated ? "Cancelamento dentro do prazo. Reposicao gerada." : "Fora do prazo minimo de 2 horas.",
     markedBy: "aluno",
     cancellationDate: formatToday(),
     cancellationTime: formatCurrentTime(),
@@ -3675,7 +3800,41 @@ function registerLessonCancellation(studentName, classPackage, lesson) {
     timestamp: Date.now(),
   });
   saveCheckins(checkins);
-  return true;
+
+  let credit = null;
+  if (generated) {
+    credit = {
+      id: createId(),
+      studentName,
+      studentId: getStudentIdByName(studentName),
+      packageId: classPackage.id,
+      packageName: classPackage.name,
+      sourceLessonDate: lesson.date,
+      lessonTime: lesson.time,
+      noticeDate: formatToday(),
+      noticeTime: formatCurrentTime(),
+      validUntil,
+      status: "available",
+      generated: true,
+      reason: "Cancelamento do aluno dentro do prazo.",
+      sourceCheckinId: checkinId,
+      note: "",
+      timestamp: Date.now(),
+      createdAt: Date.now(),
+    };
+    const credits = loadMakeupCredits();
+    credits.push(credit);
+    saveMakeupCredits(credits);
+  }
+
+  return {
+    ok: true,
+    generated,
+    credit,
+    message: generated
+      ? "Cancelamento realizado. Voce tem direito a uma reposicao."
+      : "Cancelamento realizado, mas sem direito a reposicao por estar fora do prazo minimo de 2 horas.",
+  };
 }
 
 function registerStudentRescheduleNotice({ studentName, classPackage, date, lessonTime, noticeTime, note = "" }) {
@@ -5215,6 +5374,19 @@ function createMakeupWhatsAppUrl(student, credit) {
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
+function createStudentMakeupWhatsAppUrl(studentName, credit) {
+  const phone = normalizeWhatsAppPhone("19992782696");
+  const message = `Ola, Joao! Aqui e ${studentName}.\n\nCancelei minha aula do dia ${credit.sourceLessonDate} as ${credit.lessonTime} e gostaria de remarcar minha reposicao.\n\nMinha reposicao e valida ate ${credit.validUntil}.\n\nPode me passar os horarios disponiveis?`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
+function requestStudentMakeupReschedule(creditId) {
+  const credit = loadMakeupCredits().find((item) => item.id === creditId);
+  if (!credit || credit.status !== "available") return "";
+  updateMakeupCreditStatus(creditId, "requested");
+  return createStudentMakeupWhatsAppUrl(credit.studentName, credit);
+}
+
 function updateMakeupCreditStatus(creditId, status, extras = {}) {
   const credits = loadMakeupCredits();
   const index = credits.findIndex((credit) => credit.id === creditId);
@@ -5567,28 +5739,24 @@ function renderStudentPackagePanel() {
     return;
   }
 
-  const schedule = generatePackageSchedule(activePackage);
-  const packageRecords = loadCheckins().filter((checkin) => checkin.packageId === activePackage.id);
-  const checkins = packageRecords.filter(isConsumedLesson);
-  const usedDateKeys = new Set(packageRecords.filter((checkin) => (checkin.lessonType || "package") === "package").map((checkin) => checkin.dateKey || ""));
-  const todayKey = getDateKey();
-  const status = getPackageStatus(activePackage);
-  const upcoming = schedule.filter((lesson) => lesson.dateKey >= todayKey && !usedDateKeys.has(lesson.dateKey));
-  const nextLesson = upcoming[0];
-
   const cards = document.createElement("div");
-  cards.className = "package-compact-grid";
-
-  const packageCard = createStudentPackageCompactCard("Meu pacote", `${status.completed}/${activePackage.total}`, `${status.remaining} restantes`, status.remaining <= 0 ? "Pacote finalizado" : "Ativo", "Ver detalhes", "details");
-  const nextCard = createStudentPackageCompactCard("Proxima aula", nextLesson?.date || "Sem aula prevista", nextLesson?.time || "-", nextLesson?.dateKey === todayKey ? "Hoje" : "Agendada", nextLesson?.dateKey === todayKey ? "Fazer check-in" : "Ver detalhes", nextLesson?.dateKey === todayKey ? "checkin" : "next");
-  const makeupCard = createStudentPackageCompactCard("Reposicoes", getAvailableMakeupCredits(activePackage.studentName).length, "Aulas liberadas", "Saldo", "Ver historico", "history");
-  const historyCard = createStudentPackageCompactCard("Historico", `${getUnifiedLessonHistory(activePackage.studentName).length} registros`, "Pacote, reposicoes e avulsas", "Check-ins", "Ver historico", "history");
-
-  cards.append(packageCard, nextCard, makeupCard, historyCard);
+  cards.className = "nav-card-grid student-agenda-menu";
+  cards.dataset.studentAgendaMenu = "true";
+  const studentMakeups = getStudentMakeupCredits(activePackage.studentName);
+  const makeupAvailable = studentMakeups.filter((item) => item.status === "available").length;
+  const makeupRequested = studentMakeups.filter((item) => item.status === "requested").length;
+  cards.append(
+    createStudentAgendaNavCard("AUL", "Minhas aulas", "Veja suas proximas aulas agendadas.", "lessons"),
+    createStudentAgendaNavCard("CAN", "Cancelar aula", "Cancele uma aula futura com regra de 2 horas.", "cancel"),
+    createStudentAgendaNavCard("REP", "Reposicoes disponiveis", `${makeupAvailable} disponiveis para reagendar.`, "makeups"),
+    createStudentAgendaNavCard("MSG", "Solicitar reagendamento", `${makeupRequested} solicitadas em andamento.`, "reschedule"),
+    createStudentAgendaNavCard("HIS", "Historico", "Aulas, cancelamentos e reposicoes.", "history"),
+  );
 
   const detail = document.createElement("div");
   detail.className = "package-expand-panel";
   detail.dataset.studentPackageDetail = "true";
+  detail.hidden = true;
 
   studentPackagePanel.append(cards, detail);
 }
@@ -5616,8 +5784,216 @@ function createStudentPackageCompactCard(title, main, detail, status, buttonLabe
   return card;
 }
 
+function createStudentAgendaNavCard(icon, title, description, action) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "nav-card";
+  button.dataset.studentPackageAction = action;
+
+  const iconNode = document.createElement("span");
+  iconNode.className = "nav-card-icon";
+  iconNode.textContent = icon;
+  const titleNode = document.createElement("strong");
+  titleNode.textContent = title;
+  const descNode = document.createElement("small");
+  descNode.textContent = description;
+  const open = document.createElement("em");
+  open.textContent = "Abrir";
+
+  button.append(iconNode, titleNode, descNode, open);
+  return button;
+}
+
+function createStudentLessonCard(lesson, classPackage, mode = "view") {
+  const item = document.createElement("article");
+  item.className = "package-lesson";
+  const info = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = lesson.date;
+  const detail = document.createElement("small");
+  detail.textContent = `${lesson.time || "-"} | ${classPackage.name || "Aula"} | Local: Studio Joao Victor`;
+  const status = document.createElement("small");
+  const existingRecord = getLessonRecord(classPackage.id, lesson.dateKey);
+  status.textContent = `Status: ${existingRecord ? getCheckinStatusLabel(existingRecord) : "Agendada"}`;
+  info.append(title, detail, status);
+
+  const actions = document.createElement("div");
+  actions.className = "student-actions";
+  if (existingRecord) {
+    const badge = document.createElement("span");
+    badge.className = existingRecord.status === "cancelada-fora-prazo" || existingRecord.status === "desmarcada-sem-reposicao" ? "status-danger" : "status-ok";
+    badge.textContent = getCheckinStatusLabel(existingRecord);
+    actions.appendChild(badge);
+  } else {
+    const detailButton = document.createElement("button");
+    detailButton.type = "button";
+    detailButton.className = "secondary";
+    detailButton.textContent = "Ver detalhes";
+    detailButton.addEventListener("click", () => window.alert(`${lesson.date} as ${lesson.time}\\n${classPackage.name}\\nLocal: Studio Joao Victor`));
+    actions.appendChild(detailButton);
+
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = mode === "cancel" ? "primary" : "secondary";
+    cancel.dataset.cancelLesson = classPackage.id;
+    cancel.dataset.lessonDate = lesson.dateKey;
+    cancel.textContent = mode === "cancel" ? "Selecionar aula" : "Cancelar aula";
+    actions.appendChild(cancel);
+  }
+
+  item.append(info, actions);
+  return item;
+}
+
+function appendStudentAgendaBack(detail) {
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "secondary package-page-back";
+  back.dataset.studentPackageAction = "menu";
+  back.textContent = "Voltar para agenda";
+  detail.appendChild(back);
+}
+
+function renderStudentCancelConfirmation(classPackage, lesson) {
+  const detail = studentPackagePanel?.querySelector("[data-student-package-detail]");
+  if (!detail || !classPackage || !lesson) return;
+  const cancellation = getCancellationStatus(lesson);
+  const hasMakeup = cancellation.status === "cancelada-no-prazo";
+  detail.innerHTML = "";
+  appendStudentAgendaBack(detail);
+
+  const card = document.createElement("article");
+  card.className = "package-card";
+  const title = document.createElement("strong");
+  title.textContent = "Cancelar aula";
+  const step = document.createElement("span");
+  step.textContent = "Passo 2: confirmar cancelamento";
+  card.append(title, step);
+
+  const summary = document.createElement("div");
+  summary.className = "lesson-balance-grid";
+  [
+    ["Modalidade", classPackage.name || "Aula"],
+    ["Data", lesson.date],
+    ["Horario", lesson.time],
+    ["Local", "Studio Joao Victor"],
+  ].forEach(([label, value]) => summary.appendChild(createAdminMetric(label, value)));
+
+  const notice = document.createElement("small");
+  notice.textContent = "Se o cancelamento for feito com mais de 2 horas de antecedencia, voce tera direito a uma reposicao.";
+
+  const result = document.createElement("span");
+  result.className = hasMakeup ? "status-ok" : "status-danger";
+  result.textContent = hasMakeup
+    ? "Voce tera direito a 1 reposicao."
+    : "Voce nao tera direito a reposicao, pois esta fora do prazo minimo de 2 horas.";
+
+  const actions = document.createElement("div");
+  actions.className = "student-actions";
+  const confirm = document.createElement("button");
+  confirm.type = "button";
+  confirm.className = "primary";
+  confirm.dataset.confirmCancelLesson = classPackage.id;
+  confirm.dataset.lessonDate = lesson.dateKey;
+  confirm.textContent = "Cancelar agora";
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "secondary";
+  back.dataset.studentPackageAction = "cancel";
+  back.textContent = "Voltar";
+  actions.append(confirm, back);
+
+  card.append(summary, notice, result, actions);
+  detail.appendChild(card);
+}
+
+function renderStudentCancelSuccess(result) {
+  const detail = studentPackagePanel?.querySelector("[data-student-package-detail]");
+  if (!detail) return;
+  detail.innerHTML = "";
+  appendStudentAgendaBack(detail);
+
+  const card = document.createElement("article");
+  card.className = "package-card";
+  const title = document.createElement("strong");
+  title.textContent = result?.generated
+    ? "Cancelamento realizado. Voce ganhou 1 aula de reposicao."
+    : "Cancelamento realizado. Esta aula nao gerou reposicao.";
+  card.appendChild(title);
+
+  if (result?.credit) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "primary";
+    button.dataset.studentRequestMakeup = result.credit.id;
+    button.textContent = "Solicitar reagendamento pelo WhatsApp";
+    card.appendChild(button);
+  }
+
+  detail.appendChild(card);
+}
+
+function createStudentMakeupCard(credit) {
+  const card = document.createElement("article");
+  card.className = "checkin-history-card";
+  card.classList.toggle("cancel-late", credit.status === "expired" || credit.status === "rejected");
+  card.classList.toggle("cancel-ok", ["available", "requested", "approved", "used"].includes(credit.status));
+
+  const title = document.createElement("strong");
+  title.textContent = `Aula cancelada: ${credit.sourceLessonDate} as ${credit.lessonTime || "-"}`;
+  const detail = document.createElement("span");
+  detail.textContent = `Valida ate: ${credit.validUntil || "-"} | Status: ${getMakeupStatusLabel(credit.status)}`;
+  card.append(title, detail);
+
+  if (credit.status === "available") {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "primary";
+    button.dataset.studentRequestMakeup = credit.id;
+    button.textContent = "Solicitar reagendamento pelo WhatsApp";
+    card.appendChild(button);
+  }
+
+  return card;
+}
+
+function renderStudentMakeupList(container, studentName) {
+  const credits = getStudentMakeupCredits(studentName);
+  const counts = {
+    available: credits.filter((item) => item.status === "available").length,
+    requested: credits.filter((item) => item.status === "requested").length,
+    approved: credits.filter((item) => item.status === "approved").length,
+    expired: credits.filter((item) => item.status === "expired").length,
+  };
+
+  const summary = document.createElement("article");
+  summary.className = "package-card";
+  summary.innerHTML = `<strong>Reposicoes/Reagendamentos</strong><span>Voce tem ${counts.available} aula(s) para reagendar.</span>`;
+  const grid = document.createElement("div");
+  grid.className = "lesson-balance-grid";
+  [
+    ["Disponiveis", counts.available],
+    ["Solicitadas", counts.requested],
+    ["Aprovadas", counts.approved],
+    ["Expiradas", counts.expired],
+  ].forEach(([label, value]) => grid.appendChild(createAdminMetric(label, value)));
+  summary.appendChild(grid);
+  container.appendChild(summary);
+
+  const list = document.createElement("div");
+  list.className = "load-history-list";
+  credits
+    .sort((a, b) => (b.timestamp || b.createdAt || 0) - (a.timestamp || a.createdAt || 0))
+    .forEach((credit) => list.appendChild(createStudentMakeupCard(credit)));
+  if (!credits.length) {
+    list.textContent = "Nenhuma reposicao registrada.";
+  }
+  container.appendChild(list);
+}
+
 function renderStudentPackageDetail(action) {
   const detail = studentPackagePanel?.querySelector("[data-student-package-detail]");
+  const menu = studentPackagePanel?.querySelector("[data-student-agenda-menu]");
   const studentName = workoutViewStudent?.value;
   const activePackage = getActivePackage(studentName);
   if (!detail || !activePackage) return;
@@ -5629,56 +6005,60 @@ function renderStudentPackageDetail(action) {
   const todayKey = getDateKey();
   detail.innerHTML = "";
 
+  if (action === "menu") {
+    detail.hidden = true;
+    if (menu) menu.hidden = false;
+    return;
+  }
+
+  if (menu) menu.hidden = true;
+  detail.hidden = false;
+
   if (action === "details") {
+    appendStudentAgendaBack(detail);
     detail.appendChild(createPackageSummaryCard(activePackage));
     return;
   }
 
-  if (action === "next") {
+  if (action === "lessons" || action === "cancel" || action === "next") {
+    appendStudentAgendaBack(detail);
+    const heading = document.createElement("article");
+    heading.className = "package-card";
+    heading.innerHTML = action === "cancel"
+      ? "<strong>Cancelar aula</strong><span>Passo 1: escolha a aula que deseja cancelar.</span>"
+      : "<strong>Minhas aulas</strong><span>Proximas aulas agendadas.</span>";
+    detail.appendChild(heading);
+
     const list = document.createElement("div");
     list.className = "package-lesson-list";
     schedule
       .filter((lesson) => lesson.dateKey >= todayKey)
       .slice(0, 6)
       .forEach((lesson) => {
-        const item = document.createElement("article");
-        item.className = "package-lesson";
-        const info = document.createElement("div");
-        const title = document.createElement("strong");
-        title.textContent = lesson.date;
-        const time = document.createElement("small");
-        time.textContent = lesson.time;
-        info.append(title, time);
-
-        const actions = document.createElement("div");
-        actions.className = "student-actions";
-        const existingRecord = getLessonRecord(activePackage.id, lesson.dateKey);
-        if (existingRecord) {
-          const badge = document.createElement("span");
-          badge.className = existingRecord.status === "cancelada-fora-prazo" ? "status-danger" : "status-ok";
-          badge.textContent = getCheckinStatusLabel(existingRecord);
-          actions.appendChild(badge);
-        } else {
-          const cancel = document.createElement("button");
-          cancel.type = "button";
-          cancel.className = "secondary";
-          cancel.dataset.cancelLesson = activePackage.id;
-          cancel.dataset.lessonDate = lesson.dateKey;
-          cancel.textContent = "Cancelar aula";
-          actions.appendChild(cancel);
-        }
-
-        item.append(info, actions);
-        list.appendChild(item);
+        list.appendChild(createStudentLessonCard(lesson, activePackage, action === "cancel" ? "cancel" : "view"));
       });
+    if (!list.children.length) list.textContent = "Nenhuma aula futura encontrada.";
     detail.appendChild(list);
     return;
   }
 
+  if (action === "makeups" || action === "reschedule") {
+    appendStudentAgendaBack(detail);
+    const heading = document.createElement("article");
+    heading.className = "package-card";
+    heading.innerHTML = action === "reschedule"
+      ? "<strong>Solicitar reagendamento</strong><span>Use o WhatsApp para combinar um novo horario com o Personal.</span>"
+      : "<strong>Reposicoes disponiveis</strong><span>Acompanhe validade e status das suas reposicoes.</span>";
+    detail.appendChild(heading);
+    renderStudentMakeupList(detail, studentName);
+    return;
+  }
+
   if (action === "history") {
+    appendStudentAgendaBack(detail);
     const unifiedHistory = getUnifiedLessonHistory(studentName);
+    renderStudentMakeupList(detail, studentName);
     if (!unifiedHistory.length) {
-      detail.textContent = "Nenhum historico registrado.";
       return;
     }
     unifiedHistory.slice(0, 20).forEach((entry) => detail.appendChild(createLessonHistoryItem(entry)));
@@ -6180,7 +6560,10 @@ adminEvolutionStudent?.addEventListener("change", () => {
 });
 adminEvolutionExercise?.addEventListener("change", renderAdminEvolution);
 adminEvolutionChartMode?.addEventListener("change", renderAdminEvolution);
-assessmentStudent?.addEventListener("change", renderAdminAssessments);
+assessmentStudent?.addEventListener("change", () => {
+  renderAdminAssessments();
+  renderAssessmentSupportSummaries();
+});
 studentLoadExercise?.addEventListener("change", renderStudentLoadEvolution);
 studentLoadChartMode?.addEventListener("change", renderStudentLoadEvolution);
 checkinFilterStudent?.addEventListener("change", renderCheckinHistory);
@@ -6367,6 +6750,7 @@ makeupForm?.addEventListener("submit", (event) => {
   renderPackageAdminList();
   renderMakeupCreditList();
   renderStudentPackagePanel();
+  renderAdminAlertBadge();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
 });
 
@@ -6568,13 +6952,36 @@ studentPackagePanel?.addEventListener("click", (event) => {
     const lesson = generatePackageSchedule(classPackage || {}).find((item) => item.dateKey === cancelButton.dataset.lessonDate);
     if (!studentName || !classPackage || !lesson || getLessonRecord(classPackage.id, lesson.dateKey)) return;
 
-    if (!window.confirm("Deseja cancelar esta aula? A regra de 2 horas sera aplicada automaticamente.")) return;
+    renderStudentCancelConfirmation(classPackage, lesson);
+    return;
+  }
 
-    registerLessonCancellation(studentName, classPackage, lesson);
+  const confirmCancelButton = event.target.closest("[data-confirm-cancel-lesson]");
+  if (confirmCancelButton) {
+    const studentName = workoutViewStudent?.value;
+    const classPackage = loadClassPackages().find((item) => item.id === confirmCancelButton.dataset.confirmCancelLesson);
+    const lesson = generatePackageSchedule(classPackage || {}).find((item) => item.dateKey === confirmCancelButton.dataset.lessonDate);
+    if (!studentName || !classPackage || !lesson || getLessonRecord(classPackage.id, lesson.dateKey)) return;
+
+    const result = registerLessonCancellation(studentName, classPackage, lesson);
     renderStudentCheckinStatus();
-    renderStudentPackagePanel();
+    renderStudentCancelSuccess(result);
     renderCheckinHistory();
     renderPackageAdminList();
+    renderMakeupCreditList();
+    renderAdminAlertBadge();
+    if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
+    return;
+  }
+
+  const requestMakeupButton = event.target.closest("[data-student-request-makeup]");
+  if (requestMakeupButton) {
+    const url = requestStudentMakeupReschedule(requestMakeupButton.dataset.studentRequestMakeup);
+    if (url) window.open(url, "_blank", "noopener");
+    renderStudentPackagePanel();
+    renderStudentPackageDetail("history");
+    renderPackageAdminList();
+    renderMakeupCreditList();
     if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
     return;
   }
@@ -6842,6 +7249,7 @@ function openAdminModule(moduleName) {
     module.hidden = module.id !== `admin-module-${moduleName}`;
   });
   if (moduleName === "assessments") {
+    showAdminSubpageMenu("assessments");
     if (!assessmentDate.value) assessmentDate.value = formatToday();
     renderAdminAssessments();
     renderAdminLoadEvolution();
@@ -6855,6 +7263,7 @@ function openAdminModule(moduleName) {
     renderCheckinHistory();
   }
   if (moduleName === "evolution") {
+    showAdminSubpageMenu("evolution");
     renderAdminEvolution();
   }
   if (moduleName === "alerts") {
@@ -6862,6 +7271,9 @@ function openAdminModule(moduleName) {
   }
   if (moduleName === "workouts") {
     showWorkoutStudentDirectory();
+  }
+  if (moduleName === "students") {
+    showAdminSubpageMenu("students");
   }
   if (moduleName === "finance") {
     renderBillingSettings();
@@ -6910,6 +7322,7 @@ adminAlertsList?.addEventListener("click", (event) => {
   if (resolveButton) {
     resolveAdminAlert(resolveButton.dataset.resolveAlert);
     renderAdminAlerts();
+    renderAdminAlertBadge();
     return;
   }
 
@@ -6921,6 +7334,19 @@ adminAlertsList?.addEventListener("click", (event) => {
 adminAlertFilter?.addEventListener("change", renderAdminAlerts);
 
 exportDataButton?.addEventListener("click", exportAppData);
+
+document.addEventListener("click", (event) => {
+  const subpageButton = event.target.closest("[data-subpage-target]");
+  if (subpageButton) {
+    openAdminSubpage(subpageButton.dataset.subpageTarget);
+    return;
+  }
+
+  const backButton = event.target.closest("[data-subpage-back]");
+  if (backButton) {
+    showAdminSubpageMenu(backButton.dataset.subpageBack);
+  }
+});
 
 addExerciseButton?.addEventListener("click", () => addTrainingSession({ title: "", exercises: [{}] }));
 

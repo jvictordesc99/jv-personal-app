@@ -299,7 +299,7 @@
           <div class="admin-grid" id="admin-dashboard">
             <article><strong>Alunos</strong><span>Cadastro, plano, valor manual e status.</span><button data-admin-target="students">Abrir</button></article>
             <article><strong>Fichas de treino</strong><span>Criar, copiar, editar e remover fichas.</span><button data-admin-target="workouts">Abrir</button></article>
-            <article><strong>Alertas</strong><span>Dores, atrasos, pagamentos e recordes.</span><button data-admin-target="alerts">Abrir</button></article>
+            <article id="admin-alert-card"><strong>Alertas</strong><span>Dores, cancelamentos e vencimentos.</span><button data-admin-target="alerts">Abrir</button></article>
             <article><strong>Evolucao</strong><span>Cargas, recordes, frequencia e feedbacks.</span><button data-admin-target="evolution">Abrir</button></article>
             <article><strong>Avaliacoes</strong><span>Registrar medidas e fotos de evolucao.</span><button data-admin-target="assessments">Abrir</button></article>
             <article><strong>Pacotes e Check-ins</strong><span>Pacotes de aulas, agenda e presencas.</span><button data-admin-target="checkins">Abrir</button></article>
@@ -406,6 +406,18 @@
           </section>
           <section class="admin-module" id="admin-module-students" hidden>
           <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
+          <div class="section-title compact-title">
+            <p class="eyebrow">Alunos</p>
+            <h2>Gestao de alunos</h2>
+          </div>
+          <div class="nav-card-grid" data-subpage-menu="students">
+            <button type="button" class="nav-card" data-subpage-target="students-register"><span class="nav-card-icon">+</span><strong>Cadastrar aluno</strong><small>Novo aluno, plano, valor e pagamento.</small><em>Abrir</em></button>
+            <button type="button" class="nav-card" data-subpage-target="students-list"><span class="nav-card-icon">≡</span><strong>Lista de alunos</strong><small>Abrir, editar ou excluir cadastros.</small><em>Abrir</em></button>
+            <button type="button" class="nav-card" data-subpage-target="students-plans"><span class="nav-card-icon">$</span><strong>Planos e valores</strong><small>Plano, valor, frequencia e vencimento.</small><em>Abrir</em></button>
+            <button type="button" class="nav-card" data-subpage-target="students-status"><span class="nav-card-icon">!</span><strong>Status e vencimentos</strong><small>Em dia, pendentes e vencidos.</small><em>Abrir</em></button>
+          </div>
+          <section class="admin-subpage" data-subpage="students-register" hidden>
+          <button type="button" class="secondary package-page-back" data-subpage-back="students">Voltar</button>
           <section class="backup-panel">
             <div>
               <p class="eyebrow">Backup</p>
@@ -449,11 +461,23 @@
             <button type="button" class="secondary" id="cancel-edit-button" hidden>Cancelar</button>
           </form>
           <p class="save-message" id="save-message" role="status"></p>
+          </section>
+          <section class="admin-subpage" data-subpage="students-list" hidden>
+          <button type="button" class="secondary package-page-back" data-subpage-back="students">Voltar</button>
           <section class="student-admin-profile" id="student-admin-profile" hidden></section>
           <div class="table-panel">
             <div class="table-row head"><span>Aluno</span><span>Plano</span><span>Valor manual</span><span>Status</span><span>Pagamento</span><span>Acoes</span></div>
             <div id="student-list"></div>
           </div>
+          </section>
+          <section class="admin-subpage" data-subpage="students-plans" hidden>
+            <button type="button" class="secondary package-page-back" data-subpage-back="students">Voltar</button>
+            <div class="load-history-list" id="student-plan-summary"></div>
+          </section>
+          <section class="admin-subpage" data-subpage="students-status" hidden>
+            <button type="button" class="secondary package-page-back" data-subpage-back="students">Voltar</button>
+            <div class="load-history-list" id="student-status-summary"></div>
+          </section>
           </section>
           <section class="admin-module" id="admin-module-alerts" hidden>
             <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
@@ -474,6 +498,19 @@
           </section>
           <section class="admin-module" id="admin-module-assessments" hidden>
             <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
+            <div class="section-title compact-title">
+              <p class="eyebrow">Avaliacoes</p>
+              <h2>Avaliacao fisica</h2>
+            </div>
+            <div class="nav-card-grid" data-subpage-menu="assessments">
+              <button type="button" class="nav-card" data-subpage-target="assessment-new"><span class="nav-card-icon">+</span><strong>Nova avaliacao</strong><small>Registrar bioimpedancia e observacoes.</small><em>Abrir</em></button>
+              <button type="button" class="nav-card" data-subpage-target="assessment-history"><span class="nav-card-icon">≡</span><strong>Historico de avaliacoes</strong><small>Avaliacoes salvas em cards.</small><em>Abrir</em></button>
+              <button type="button" class="nav-card" data-subpage-target="assessment-charts"><span class="nav-card-icon">↗</span><strong>Graficos corporais</strong><small>Peso, gordura e massa muscular.</small><em>Abrir</em></button>
+              <button type="button" class="nav-card" data-subpage-target="assessment-photos"><span class="nav-card-icon">□</span><strong>Fotos de evolucao</strong><small>Anexos e imagens cadastradas.</small><em>Abrir</em></button>
+              <button type="button" class="nav-card" data-subpage-target="assessment-compare"><span class="nav-card-icon">⇄</span><strong>Comparativo</strong><small>Comparar avaliacao inicial e final.</small><em>Abrir</em></button>
+            </div>
+            <section class="admin-subpage" data-subpage="assessment-new" hidden>
+            <button type="button" class="secondary package-page-back" data-subpage-back="assessments">Voltar</button>
             <form class="assessment-form" id="assessment-form">
               <div class="assessment-form-head">
                 <div>
@@ -497,7 +534,23 @@
               <button type="submit" class="primary">Salvar avaliacao</button>
             </form>
             <p class="save-message" id="assessment-message" role="status"></p>
+            </section>
+            <section class="admin-subpage" data-subpage="assessment-history" hidden>
+            <button type="button" class="secondary package-page-back" data-subpage-back="assessments">Voltar</button>
             <div class="load-history-list" id="admin-assessment-history"></div>
+            </section>
+            <section class="admin-subpage" data-subpage="assessment-charts" hidden>
+              <button type="button" class="secondary package-page-back" data-subpage-back="assessments">Voltar</button>
+              <div class="load-history-list" id="assessment-chart-summary"></div>
+            </section>
+            <section class="admin-subpage" data-subpage="assessment-photos" hidden>
+              <button type="button" class="secondary package-page-back" data-subpage-back="assessments">Voltar</button>
+              <div class="load-history-list" id="assessment-photo-summary"></div>
+            </section>
+            <section class="admin-subpage" data-subpage="assessment-compare" hidden>
+              <button type="button" class="secondary package-page-back" data-subpage-back="assessments">Voltar</button>
+              <div class="load-history-list" id="assessment-compare-summary"></div>
+            </section>
           </section>
           <section class="admin-module" id="admin-module-evolution" hidden>
             <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
@@ -506,6 +559,15 @@
                 <p class="eyebrow">Evolucao</p>
                 <h2>Desempenho dos alunos</h2>
               </div>
+              <div class="nav-card-grid" data-subpage-menu="evolution">
+                <button type="button" class="nav-card" data-subpage-target="evolution-loads"><span class="nav-card-icon">↗</span><strong>Evolucao de cargas</strong><small>Acompanhe graficos e progresso.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-subpage-target="evolution-records"><span class="nav-card-icon">★</span><strong>Recordes pessoais</strong><small>Maior carga por aluno e exercicio.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-subpage-target="evolution-feedbacks"><span class="nav-card-icon">✎</span><strong>Feedbacks dos alunos</strong><small>Notas, dores e observacoes.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-subpage-target="evolution-adherence"><span class="nav-card-icon">✓</span><strong>Frequencia e adesao</strong><small>Treinos e check-ins realizados.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-subpage-target="evolution-notes"><span class="nav-card-icon">≡</span><strong>Observacoes</strong><small>Historico cronologico dos alunos.</small><em>Abrir</em></button>
+              </div>
+              <section class="admin-subpage" data-subpage="evolution-loads" hidden>
+              <button type="button" class="secondary package-page-back" data-subpage-back="evolution">Voltar</button>
               <div class="evolution-toolbar">
                 <div>
                   <p class="eyebrow">Aluno</p>
@@ -531,20 +593,25 @@
                 </div>
                 <div class="load-chart" id="admin-evolution-chart"></div>
               </div>
+              </section>
               <div class="evolution-admin-grid">
-                <section class="load-history-card">
+                <section class="admin-subpage load-history-card" data-subpage="evolution-records" hidden>
+                  <button type="button" class="secondary package-page-back" data-subpage-back="evolution">Voltar</button>
                   <div class="load-history-head"><strong>Recordes pessoais</strong></div>
                   <div id="admin-personal-records"></div>
                 </section>
-                <section class="load-history-card">
+                <section class="admin-subpage load-history-card" data-subpage="evolution-adherence" hidden>
+                  <button type="button" class="secondary package-page-back" data-subpage-back="evolution">Voltar</button>
                   <div class="load-history-head"><strong>Frequencia e adesao</strong></div>
                   <div id="admin-adherence-summary"></div>
                 </section>
-                <section class="load-history-card">
+                <section class="admin-subpage load-history-card" data-subpage="evolution-feedbacks" hidden>
+                  <button type="button" class="secondary package-page-back" data-subpage-back="evolution">Voltar</button>
                   <div class="load-history-head"><strong>Feedbacks dos alunos</strong></div>
                   <div id="admin-feedback-history"></div>
                 </section>
-                <section class="load-history-card">
+                <section class="admin-subpage load-history-card" data-subpage="evolution-notes" hidden>
+                  <button type="button" class="secondary package-page-back" data-subpage-back="evolution">Voltar</button>
                   <div class="load-history-head"><strong>Observacoes gerais</strong></div>
                   <div id="admin-feedback-notes"></div>
                 </section>
@@ -559,13 +626,13 @@
                 <h3>Pacotes de aulas presenciais</h3>
                 <span>Escolha uma area para gerenciar sem misturar as funcoes.</span>
               </div>
-              <div class="package-module-menu" id="package-module-menu">
-                <button type="button" data-package-page-target="packages" data-package-mode="create"><strong>Criar novo pacote</strong><span>Cadastrar pacote de aulas</span></button>
-                <button type="button" data-package-page-target="packages" data-package-mode="edit"><strong>Editar pacote</strong><span>Alterar pacote atual</span></button>
-                <button type="button" data-package-page-target="dropin"><strong>Aula avulsa</strong><span>Lancar aula sem consumir pacote</span></button>
-                <button type="button" data-package-page-target="checkin"><strong>Check-in / Cancelamento</strong><span>Presenca, falta ou desmarcacao</span></button>
-                <button type="button" data-package-page-target="makeup"><strong>Reagendamento / Reposicao</strong><span>Aprovar, recusar e usar reposicoes</span></button>
-                <button type="button" data-package-page-target="history"><strong>Historico</strong><span>Consultar registros por aluno</span></button>
+              <div class="package-module-menu nav-card-grid" id="package-module-menu">
+                <button type="button" class="nav-card" data-package-page-target="packages" data-package-mode="create"><span class="nav-card-icon">+</span><strong>Criar novo pacote</strong><small>Cadastrar pacote de aulas.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-package-page-target="packages" data-package-mode="edit"><span class="nav-card-icon">✎</span><strong>Editar pacote</strong><small>Alterar pacote atual.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-package-page-target="dropin"><span class="nav-card-icon">$</span><strong>Aula avulsa</strong><small>Lancar aula sem consumir pacote.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-package-page-target="checkin"><span class="nav-card-icon">✓</span><strong>Check-in / Cancelamento</strong><small>Presenca, falta ou desmarcacao.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-package-page-target="makeup"><span class="nav-card-icon">↺</span><strong>Reagendamento / Reposicao</strong><small>Aprovar, recusar e usar reposicoes.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-package-page-target="history"><span class="nav-card-icon">≡</span><strong>Historico</strong><small>Consultar registros por aluno.</small><em>Abrir</em></button>
               </div>
               <section class="package-subpage" data-package-page="packages" hidden>
                 <button type="button" class="secondary package-page-back" data-package-page-back>Voltar</button>
