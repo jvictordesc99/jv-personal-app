@@ -2271,6 +2271,70 @@ h3 {
   display: none;
 }
 
+.package-module-menu {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.package-module-menu[hidden],
+.package-subpage[hidden] {
+  display: none;
+}
+
+.package-module-menu button {
+  min-height: 118px;
+  align-items: flex-start;
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 18px;
+  text-align: left;
+  white-space: normal;
+}
+
+.package-module-menu button strong {
+  color: inherit;
+  font-size: 17px;
+}
+
+.package-module-menu button span {
+  color: inherit;
+  line-height: 1.35;
+  opacity: 0.72;
+}
+
+.package-subpage {
+  display: grid;
+  gap: 16px;
+}
+
+.package-page-back {
+  width: fit-content;
+}
+
+.package-history-filter {
+  display: grid;
+  gap: 8px;
+  max-width: 320px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.package-history-filter select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: #fbfeff;
+}
+
+.package-history-filters {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .checkin-card {
   align-items: center;
   grid-template-columns: 1fr auto;
@@ -2895,6 +2959,8 @@ h3 {
   .checkin-card,
   .checkin-admin-form,
   .checkin-filters,
+  .package-module-menu,
+  .package-history-filters,
   .package-student-selector,
   .package-form,
   .dropin-form,
@@ -3194,6 +3260,8 @@ textarea {
   .checkin-card,
   .checkin-admin-form,
   .checkin-filters,
+  .package-module-menu,
+  .package-history-filters,
   .package-student-selector,
   .package-form,
   .dropin-form,
@@ -3397,6 +3465,8 @@ textarea {
   .lesson-balance-grid,
   .dropin-form,
   .feedback-grid,
+  .package-module-menu,
+  .package-history-filters,
   .general-notes-list {
     grid-template-columns: 1fr;
   }

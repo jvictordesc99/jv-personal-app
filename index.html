@@ -557,16 +557,30 @@
               <div>
                 <p class="eyebrow">Pacotes e Check-ins</p>
                 <h3>Pacotes de aulas presenciais</h3>
-                <span>Selecione um aluno para gerenciar pacotes e presencas.</span>
+                <span>Escolha uma area para gerenciar sem misturar as funcoes.</span>
               </div>
-              <div class="package-student-selector">
+              <div class="package-module-menu" id="package-module-menu">
+                <button type="button" data-package-page-target="packages" data-package-mode="create"><strong>Criar novo pacote</strong><span>Cadastrar pacote de aulas</span></button>
+                <button type="button" data-package-page-target="packages" data-package-mode="edit"><strong>Editar pacote</strong><span>Alterar pacote atual</span></button>
+                <button type="button" data-package-page-target="dropin"><strong>Aula avulsa</strong><span>Lancar aula sem consumir pacote</span></button>
+                <button type="button" data-package-page-target="checkin"><strong>Check-in / Cancelamento</strong><span>Presenca, falta ou desmarcacao</span></button>
+                <button type="button" data-package-page-target="makeup"><strong>Reagendamento / Reposicao</strong><span>Aprovar, recusar e usar reposicoes</span></button>
+                <button type="button" data-package-page-target="history"><strong>Historico</strong><span>Consultar registros por aluno</span></button>
+              </div>
+              <section class="package-subpage" data-package-page="packages" hidden>
+                <button type="button" class="secondary package-page-back" data-package-page-back>Voltar</button>
+                <div class="section-title compact-title">
+                  <p class="eyebrow">Pacotes</p>
+                  <h3 id="package-editor-title">Criar ou editar pacote</h3>
+                </div>
+                <div class="package-student-selector">
                 <label>Aluno
                   <select id="package-view-student"></select>
                 </label>
                 <button type="button" class="primary" id="new-package-button">Novo pacote</button>
-              </div>
-              <div class="package-empty-state" id="package-empty-state">Selecione um aluno para visualizar os check-ins e pacotes.</div>
-              <form class="package-form" id="package-form" hidden>
+                </div>
+                <div class="package-empty-state" id="package-empty-state">Selecione um aluno para visualizar os check-ins e pacotes.</div>
+                <form class="package-form" id="package-form" hidden>
                 <label>Aluno
                   <select id="package-student"></select>
                 </label>
@@ -576,11 +590,20 @@
                 <label>Total de aulas
                   <input id="package-total" required inputmode="numeric" placeholder="Ex: 12" />
                 </label>
+                <label>Frequencia semanal
+                  <input id="package-frequency" placeholder="Ex: 3x por semana" />
+                </label>
+                <label>Valor do pacote
+                  <input id="package-value" placeholder="R$ 600,00" />
+                </label>
                 <label>Data de inicio
                   <input id="package-start" required placeholder="Ex: 01/06" />
                 </label>
-                <label>Data de termino
+                <label>Data de vencimento
                   <input id="package-end" required placeholder="Ex: 30/06" />
+                </label>
+                <label>Limite de reposicoes
+                  <input id="package-makeup-limit" inputmode="numeric" placeholder="Ex: 3" />
                 </label>
                 <label>Dias da semana
                   <input id="package-days" required placeholder="Ex: segunda, quarta e sexta" />
@@ -592,10 +615,17 @@
                   <textarea id="package-notes" placeholder="Orientacoes ou combinados do pacote"></textarea>
                 </label>
                 <button type="submit" class="primary">Salvar pacote</button>
-              </form>
-              <div class="package-admin-list" id="package-admin-list"></div>
-              <div class="lesson-balance-panel" id="lesson-balance-panel"></div>
-              <form class="checkin-admin-form" id="manual-checkin-form">
+                </form>
+                <div class="package-admin-list" id="package-admin-list"></div>
+                <div class="lesson-balance-panel" id="lesson-balance-panel"></div>
+              </section>
+              <section class="package-subpage" data-package-page="checkin" hidden>
+                <button type="button" class="secondary package-page-back" data-package-page-back>Voltar</button>
+                <div class="section-title compact-title">
+                  <p class="eyebrow">Check-in / Cancelamento</p>
+                  <h3>Registrar aula</h3>
+                </div>
+                <form class="checkin-admin-form" id="manual-checkin-form">
                 <label>Aluno
                   <select id="manual-checkin-student"></select>
                 </label>
@@ -616,8 +646,39 @@
                   <input id="manual-checkin-note" placeholder="Ex: aula extra de musculacao" />
                 </label>
                 <button type="submit" class="primary">Marcar presenca manual</button>
-              </form>
-              <section class="lesson-extra-panel">
+                </form>
+                <section class="lesson-extra-panel">
+                  <div>
+                    <p class="eyebrow">Cancelamento</p>
+                    <h3>Aluno desmarcou</h3>
+                    <span>Informe aula e aviso para calcular a regra de 2 horas.</span>
+                  </div>
+                  <form class="dropin-form" id="makeup-credit-form">
+                    <label>Aluno
+                      <select id="makeup-student"></select>
+                    </label>
+                    <label>Pacote
+                      <select id="makeup-package"></select>
+                    </label>
+                    <label>Data da aula
+                      <input id="makeup-date" required placeholder="Ex: 10/06/2026" />
+                    </label>
+                    <label>Horario da aula
+                      <input id="makeup-lesson-time" required placeholder="Ex: 18:00" />
+                    </label>
+                    <label>Horario do aviso
+                      <input id="makeup-notice-time" required placeholder="Ex: 15:30" />
+                    </label>
+                    <label class="package-notes">Observacao
+                      <textarea id="makeup-note" placeholder="Ex: avisou pelo WhatsApp"></textarea>
+                    </label>
+                    <button type="submit" class="primary">Registrar desmarcacao</button>
+                  </form>
+                </section>
+              </section>
+              <section class="package-subpage" data-package-page="dropin" hidden>
+                <button type="button" class="secondary package-page-back" data-package-page-back>Voltar</button>
+                <section class="lesson-extra-panel">
                 <div>
                   <p class="eyebrow">Aulas avulsas</p>
                   <h3>Lancar aula avulsa</h3>
@@ -649,35 +710,39 @@
                   <button type="submit" class="primary">Salvar aula avulsa</button>
                 </form>
               </section>
-              <section class="lesson-extra-panel">
-                <div>
-                  <p class="eyebrow">Reposicao</p>
-                  <h3>Aluno desmarcou</h3>
-                  <span>Se avisar com mais de 2 horas, gera 1 reposicao.</span>
-                </div>
-                <form class="dropin-form" id="makeup-credit-form">
-                  <label>Aluno
-                    <select id="makeup-student"></select>
-                  </label>
-                  <label>Pacote
-                    <select id="makeup-package"></select>
-                  </label>
-                  <label>Data da aula
-                    <input id="makeup-date" required placeholder="Ex: 10/06/2026" />
-                  </label>
-                  <label>Horario da aula
-                    <input id="makeup-lesson-time" required placeholder="Ex: 18:00" />
-                  </label>
-                  <label>Horario do aviso
-                    <input id="makeup-notice-time" required placeholder="Ex: 15:30" />
-                  </label>
-                  <label class="package-notes">Observacao
-                    <textarea id="makeup-note" placeholder="Ex: avisou pelo WhatsApp"></textarea>
-                  </label>
-                  <button type="submit" class="primary">Registrar desmarcacao</button>
-                </form>
               </section>
-              <div class="load-history-list" id="lesson-extra-history"></div>
+              <section class="package-subpage" data-package-page="makeup" hidden>
+                <button type="button" class="secondary package-page-back" data-package-page-back>Voltar</button>
+                <div>
+                  <p class="eyebrow">Reagendamento / Reposicao</p>
+                  <h3>Reposicoes disponiveis</h3>
+                  <span>Aprove, recuse, envie WhatsApp ou marque como usada.</span>
+                </div>
+                <label class="package-history-filter">Aluno
+                  <select id="makeup-list-student"></select>
+                </label>
+                <div class="load-history-list" id="makeup-credit-list"></div>
+              </section>
+              <section class="package-subpage" data-package-page="history" hidden>
+                <button type="button" class="secondary package-page-back" data-package-page-back>Voltar</button>
+                <div>
+                  <p class="eyebrow">Historico</p>
+                  <h3>Registros por aluno</h3>
+                  <span>Aulas do pacote, avulsas, cancelamentos, reposicoes e check-ins.</span>
+                </div>
+                <div class="checkin-filters package-history-filters">
+                  <label>Aluno
+                    <select id="lesson-history-student"></select>
+                  </label>
+                  <label>Periodo inicial
+                    <input id="lesson-history-start" placeholder="Ex: 01/06/2026" />
+                  </label>
+                  <label>Periodo final
+                    <input id="lesson-history-end" placeholder="Ex: 30/06/2026" />
+                  </label>
+                </div>
+                <div class="load-history-list" id="lesson-extra-history"></div>
+              </section>
               <div class="checkin-filters checkin-legacy-tools" hidden>
                 <label>Filtrar por aluno
                   <select id="checkin-filter-student"></select>

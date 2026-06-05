@@ -240,13 +240,19 @@ const packageEmptyState = document.querySelector("#package-empty-state");
 const packageStudent = document.querySelector("#package-student");
 const packageName = document.querySelector("#package-name");
 const packageTotal = document.querySelector("#package-total");
+const packageFrequency = document.querySelector("#package-frequency");
+const packageValue = document.querySelector("#package-value");
 const packageStart = document.querySelector("#package-start");
 const packageEnd = document.querySelector("#package-end");
+const packageMakeupLimit = document.querySelector("#package-makeup-limit");
 const packageDays = document.querySelector("#package-days");
 const packageTime = document.querySelector("#package-time");
 const packageNotes = document.querySelector("#package-notes");
 const packageAdminList = document.querySelector("#package-admin-list");
 const lessonBalancePanel = document.querySelector("#lesson-balance-panel");
+const packageModuleMenu = document.querySelector("#package-module-menu");
+const packageSubpages = document.querySelectorAll("[data-package-page]");
+const packageEditorTitle = document.querySelector("#package-editor-title");
 const dropInForm = document.querySelector("#dropin-class-form");
 const dropInStudent = document.querySelector("#dropin-student");
 const dropInDate = document.querySelector("#dropin-date");
@@ -261,6 +267,11 @@ const makeupDate = document.querySelector("#makeup-date");
 const makeupLessonTime = document.querySelector("#makeup-lesson-time");
 const makeupNoticeTime = document.querySelector("#makeup-notice-time");
 const makeupNote = document.querySelector("#makeup-note");
+const makeupListStudent = document.querySelector("#makeup-list-student");
+const makeupCreditList = document.querySelector("#makeup-credit-list");
+const lessonHistoryStudent = document.querySelector("#lesson-history-student");
+const lessonHistoryStart = document.querySelector("#lesson-history-start");
+const lessonHistoryEnd = document.querySelector("#lesson-history-end");
 const lessonExtraHistory = document.querySelector("#lesson-extra-history");
 const studentPackagePanel = document.querySelector("#student-package-panel");
 const billingSettingsForm = document.querySelector("#billing-settings-form");
@@ -356,14 +367,14 @@ function formatRestSeconds(value) {
 }
 
 function applyInputMasks(root = document) {
-  root.querySelectorAll("#student-value, #dropin-value, #manual-checkin-value").forEach((input) => {
+  root.querySelectorAll("#student-value, #package-value, #dropin-value, #manual-checkin-value").forEach((input) => {
     input.inputMode = "numeric";
     input.addEventListener("input", () => {
       input.value = formatCurrencyBR(input.value);
     });
   });
 
-  root.querySelectorAll("#student-due, #student-birth-date, #assessment-date, #workout-start-date, #workout-due-date, #package-start, #package-end, #checkin-filter-date, #dropin-date, #makeup-date").forEach((input) => {
+  root.querySelectorAll("#student-due, #student-birth-date, #assessment-date, #workout-start-date, #workout-due-date, #package-start, #package-end, #checkin-filter-date, #dropin-date, #makeup-date, #lesson-history-start, #lesson-history-end").forEach((input) => {
     input.inputMode = "numeric";
     input.addEventListener("input", () => {
       input.value = formatDateBR(input.value);
@@ -1777,8 +1788,11 @@ function normalizeClassPackages(packages) {
       studentId: item.studentId || getStudentIdByName(item.studentName || ""),
       name: item.name || "Pacote de aulas",
       total: Number(item.total) || 0,
+      frequency: item.frequency || "",
+      value: item.value || "",
       startDate: item.startDate || "",
       endDate: item.endDate || "",
+      makeupLimit: Number(item.makeupLimit) || 0,
       days: item.days || "",
       time: item.time || "",
       notes: item.notes || "",
@@ -2078,6 +2092,8 @@ function fillStudentSelects() {
   const selectedManualCheckinStudent = manualCheckinStudent?.value;
   const selectedDropInStudent = dropInStudent?.value;
   const selectedMakeupStudent = makeupStudent?.value;
+  const selectedMakeupListStudent = makeupListStudent?.value;
+  const selectedLessonHistoryStudent = lessonHistoryStudent?.value;
   const selectedCheckinFilterStudent = checkinFilterStudent?.value;
   const selectedLoginStudent = loginStudentSelect?.value || selectedStudentProfile;
   const studentNames = students.map((student) => student.name);
@@ -2098,6 +2114,8 @@ function fillStudentSelects() {
   manualCheckinStudent?.replaceChildren();
   dropInStudent?.replaceChildren();
   makeupStudent?.replaceChildren();
+  makeupListStudent?.replaceChildren();
+  lessonHistoryStudent?.replaceChildren();
   checkinFilterStudent?.replaceChildren();
   loginStudentSelect?.replaceChildren();
 
@@ -2156,6 +2174,14 @@ function fillStudentSelects() {
     makeupOption.textContent = student.name;
     makeupOption.value = student.name;
 
+    const makeupListOption = document.createElement("option");
+    makeupListOption.textContent = student.name;
+    makeupListOption.value = student.name;
+
+    const lessonHistoryOption = document.createElement("option");
+    lessonHistoryOption.textContent = student.name;
+    lessonHistoryOption.value = student.name;
+
     const loginOption = document.createElement("option");
     loginOption.textContent = student.name;
     loginOption.value = student.name;
@@ -2169,6 +2195,8 @@ function fillStudentSelects() {
     manualCheckinStudent?.appendChild(manualCheckinOption);
     dropInStudent?.appendChild(dropInOption);
     makeupStudent?.appendChild(makeupOption);
+    makeupListStudent?.appendChild(makeupListOption);
+    lessonHistoryStudent?.appendChild(lessonHistoryOption);
     checkinFilterStudent?.appendChild(checkinFilterOption);
     loginStudentSelect?.appendChild(loginOption);
   });
@@ -2193,6 +2221,8 @@ function fillStudentSelects() {
   if (manualCheckinStudent) manualCheckinStudent.value = validName(selectedManualCheckinStudent);
   if (dropInStudent) dropInStudent.value = validName(selectedDropInStudent, packageViewStudent?.value || firstStudentName);
   if (makeupStudent) makeupStudent.value = validName(selectedMakeupStudent, packageViewStudent?.value || firstStudentName);
+  if (makeupListStudent) makeupListStudent.value = validName(selectedMakeupListStudent, packageViewStudent?.value || firstStudentName);
+  if (lessonHistoryStudent) lessonHistoryStudent.value = validName(selectedLessonHistoryStudent, packageViewStudent?.value || firstStudentName);
   if (checkinFilterStudent) checkinFilterStudent.value = selectedCheckinFilterStudent && studentNames.includes(selectedCheckinFilterStudent) ? selectedCheckinFilterStudent : "";
   if (loginStudentSelect) loginStudentSelect.value = validName(selectedLoginStudent);
   updateStudentHeader();
@@ -3422,6 +3452,10 @@ function getStudentPackageMakeupLimit(studentName) {
   return normalizeMakeupLimit(student?.makeupLimit, student?.frequency || "3x");
 }
 
+function getPackageMakeupLimit(classPackage, studentName = classPackage?.studentName || "") {
+  return Number(classPackage?.makeupLimit) > 0 ? Number(classPackage.makeupLimit) : getStudentPackageMakeupLimit(studentName);
+}
+
 function getStudentDropIns(studentName) {
   return loadDropInClasses().filter((item) => item.studentName === studentName);
 }
@@ -3657,7 +3691,7 @@ function registerStudentRescheduleNotice({ studentName, classPackage, date, less
   const packageName = classPackage?.name || "";
   const dateKey = parseBrazilianDate(date) ? getDateKey(parseBrazilianDate(date)) : "";
   const noticeDate = formatToday();
-  const limit = getStudentPackageMakeupLimit(studentName);
+  const limit = getPackageMakeupLimit(classPackage, studentName);
   const alreadyGenerated = classPackage
     ? getPackageGeneratedMakeupCount(classPackage, studentName)
     : getStudentMakeupCredits(studentName).filter((credit) => credit.generated !== false && credit.status !== "rejected").length;
@@ -4967,8 +5001,11 @@ function fillPackageForm(classPackage = null, studentName = "") {
   if (packageStudent) packageStudent.value = classPackage?.studentName || studentName || packageStudent.value;
   if (packageName) packageName.value = classPackage?.name || "";
   if (packageTotal) packageTotal.value = classPackage?.total || "";
+  if (packageFrequency) packageFrequency.value = classPackage?.frequency || "";
+  if (packageValue) packageValue.value = classPackage?.value || "";
   if (packageStart) packageStart.value = classPackage?.startDate || "";
   if (packageEnd) packageEnd.value = classPackage?.endDate || "";
+  if (packageMakeupLimit) packageMakeupLimit.value = classPackage?.makeupLimit || "";
   if (packageDays) packageDays.value = classPackage?.days || "";
   if (packageTime) packageTime.value = classPackage?.time || "";
   if (packageNotes) packageNotes.value = classPackage?.notes || "";
@@ -4999,6 +5036,7 @@ function createPackageSummaryCard(classPackage) {
     ["Total", `${classPackage.total} aulas`],
     ["Realizadas", status.completed],
     ["Restantes", status.remaining],
+    ["Valor", classPackage.value || "-"],
     ["Periodo", `${classPackage.startDate} a ${classPackage.endDate}`],
   ].forEach(([label, value]) => {
     const item = document.createElement("span");
@@ -5070,6 +5108,7 @@ function renderPackageAdminList() {
     progress.append(
       createAdminMetric("Usadas / total", `${status.completed}/${classPackage.total}`),
       createAdminMetric("Restantes", status.remaining),
+      createAdminMetric("Valor", classPackage.value || "-"),
       createAdminMetric("Status", status.remaining <= 0 ? "Finalizado" : "Ativo"),
       createAdminMetric("Proxima aula", nextLesson ? `${nextLesson.date} | ${nextLesson.time}` : "Sem aula"),
     );
@@ -5101,6 +5140,43 @@ function renderPackageAdminList() {
   });
   renderLessonBalancePanel(selectedStudent);
   renderLessonExtraHistory(selectedStudent);
+}
+
+function showPackageModuleMenu() {
+  if (packageModuleMenu) packageModuleMenu.hidden = false;
+  packageSubpages.forEach((page) => {
+    page.hidden = true;
+  });
+  if (packageForm) packageForm.hidden = true;
+  editingPackageId = null;
+}
+
+function openPackageSubpage(pageName, mode = "") {
+  if (packageModuleMenu) packageModuleMenu.hidden = true;
+  packageSubpages.forEach((page) => {
+    page.hidden = page.dataset.packagePage !== pageName;
+  });
+
+  if (pageName === "packages") {
+    if (packageEditorTitle) packageEditorTitle.textContent = mode === "create" ? "Criar novo pacote" : "Editar pacote";
+    if (mode === "create") {
+      editingPackageId = null;
+      packageForm?.reset();
+      if (packageViewStudent?.value && packageStudent) packageStudent.value = packageViewStudent.value;
+      if (packageForm) packageForm.hidden = !packageViewStudent?.value;
+    } else if (packageForm) {
+      packageForm.hidden = true;
+    }
+    renderPackageAdminList();
+  }
+
+  if (pageName === "makeup") {
+    renderMakeupCreditList();
+  }
+
+  if (pageName === "history") {
+    renderLessonExtraHistory(lessonHistoryStudent?.value || packageViewStudent?.value || "");
+  }
 }
 
 function renderLessonBalancePanel(studentName = packageViewStudent?.value || "") {
@@ -5156,6 +5232,30 @@ function updateMakeupCreditStatus(creditId, status, extras = {}) {
   return true;
 }
 
+function useMakeupCreditById(creditId, markedBy = "personal") {
+  const credits = loadMakeupCredits();
+  const index = credits.findIndex((credit) => credit.id === creditId && credit.status === "approved");
+  if (index < 0) return false;
+  const credit = credits[index];
+  credits[index] = {
+    ...credit,
+    status: "used",
+    usedAt: new Date().toISOString(),
+    replacementDate: formatToday(),
+    replacementTime: formatCurrentTime(),
+  };
+  saveMakeupCredits(credits);
+
+  const checkins = loadCheckins();
+  checkins.push(createCheckin(credit.studentName, "aula de reposicao", { id: credit.packageId, name: credit.packageName }, markedBy, {
+    lessonType: "makeup",
+    makeupCreditId: credit.id,
+    note: "Reposicao utilizada",
+  }));
+  saveCheckins(checkins);
+  return true;
+}
+
 function createLessonHistoryItem(entry) {
   const card = document.createElement("article");
   card.className = "checkin-history-card";
@@ -5197,6 +5297,14 @@ function createLessonHistoryItem(entry) {
       approve.textContent = "Aprovar reposicao";
       actions.appendChild(approve);
     }
+    if (entry.status === "approved") {
+      const use = document.createElement("button");
+      use.type = "button";
+      use.className = "primary";
+      use.dataset.useMakeup = entry.id;
+      use.textContent = "Marcar como usada";
+      actions.appendChild(use);
+    }
     if (entry.status !== "used" && entry.status !== "expired" && entry.status !== "rejected") {
       const reject = document.createElement("button");
       reject.type = "button";
@@ -5216,6 +5324,7 @@ function getUnifiedLessonHistory(studentName) {
     .map((item) => ({
       timestamp: item.timestamp || 0,
       status: item.status,
+      date: item.date || "",
       title: `${item.date} | ${item.lessonType === "makeup" ? "Reposicao" : item.lessonType === "dropin" ? "Avulsa" : "Pacote"}`,
       detail: `${getCheckinStatusLabel(item)}${item.value ? ` | ${item.value}` : ""}`,
       note: [
@@ -5227,6 +5336,7 @@ function getUnifiedLessonHistory(studentName) {
     }));
   const dropInEntries = getStudentDropIns(studentName).map((item) => ({
     timestamp: item.timestamp || item.createdAt || 0,
+    date: item.date || "",
     title: `${item.date} | Avulsa`,
     detail: `${item.modality} | ${item.status} | ${item.value || "Sem valor"}`,
     note: item.note || "",
@@ -5236,6 +5346,7 @@ function getUnifiedLessonHistory(studentName) {
     kind: "makeup",
     id: item.id,
     status: item.status,
+    date: item.sourceLessonDate || "",
     title: `${item.sourceLessonDate} | Reposicao`,
     detail: `${getMakeupStatusLabel(item.status)} | aula ${item.lessonTime} | aviso ${item.noticeDate || "-"} ${item.noticeTime} | validade ${item.validUntil || "-"}`,
     note: [
@@ -5251,17 +5362,60 @@ function getUnifiedLessonHistory(studentName) {
 function renderLessonExtraHistory(studentName = packageViewStudent?.value || "") {
   if (!lessonExtraHistory) return;
   lessonExtraHistory.innerHTML = "";
-  if (!studentName) {
+  const selectedStudent = studentName || lessonHistoryStudent?.value || "";
+  if (!selectedStudent) {
     lessonExtraHistory.textContent = "";
     return;
   }
 
-  const history = getUnifiedLessonHistory(studentName);
+  const startDate = parseBrazilianDate(lessonHistoryStart?.value || "");
+  const endDate = parseBrazilianDate(lessonHistoryEnd?.value || "");
+  const history = getUnifiedLessonHistory(selectedStudent).filter((entry) => {
+    const entryDate = parseDateLike(entry.date);
+    if (!entryDate) return true;
+    if (startDate && entryDate < startDate) return false;
+    if (endDate && entryDate > endDate) return false;
+    return true;
+  });
   if (!history.length) {
     lessonExtraHistory.textContent = "Nenhum historico de pacote, reposicao ou aula avulsa para este aluno.";
     return;
   }
   history.slice(0, 20).forEach((entry) => lessonExtraHistory.appendChild(createLessonHistoryItem(entry)));
+}
+
+function renderMakeupCreditList(studentName = makeupListStudent?.value || packageViewStudent?.value || "") {
+  if (!makeupCreditList) return;
+  makeupCreditList.innerHTML = "";
+
+  if (!studentName) {
+    makeupCreditList.textContent = "Selecione um aluno para visualizar reposicoes.";
+    return;
+  }
+
+  const credits = getStudentMakeupCredits(studentName).sort((a, b) => (b.timestamp || b.createdAt || 0) - (a.timestamp || a.createdAt || 0));
+  if (!credits.length) {
+    makeupCreditList.textContent = "Nenhuma reposicao registrada para este aluno.";
+    return;
+  }
+
+  credits.forEach((item) => {
+    makeupCreditList.appendChild(createLessonHistoryItem({
+      timestamp: item.timestamp || item.createdAt || 0,
+      kind: "makeup",
+      id: item.id,
+      status: item.status,
+      date: item.sourceLessonDate || "",
+      title: `${item.sourceLessonDate} | Reposicao`,
+      detail: `${getMakeupStatusLabel(item.status)} | validade ${item.validUntil || "-"} | aula ${item.lessonTime || "-"}`,
+      note: [
+        item.reason,
+        item.noticeDate || item.noticeTime ? `Aviso: ${item.noticeDate || "-"} ${item.noticeTime || ""}` : "",
+        item.replacementDate ? `Reposicao em ${item.replacementDate} ${item.replacementTime || ""}` : "",
+        item.note || item.packageName || "",
+      ].filter(Boolean).join(" | "),
+    }));
+  });
 }
 
 function renderPackageListDetails(classPackage, detail) {
@@ -5270,6 +5424,9 @@ function renderPackageListDetails(classPackage, detail) {
   box.className = "package-detail-grid";
   [
     ["Dias", classPackage.days],
+    ["Frequencia", classPackage.frequency || "-"],
+    ["Valor", classPackage.value || "-"],
+    ["Limite reposicoes", classPackage.makeupLimit || "-"],
     ["Horario", classPackage.time],
     ["Inicio", classPackage.startDate],
     ["Termino", classPackage.endDate],
@@ -6030,10 +6187,24 @@ checkinFilterStudent?.addEventListener("change", renderCheckinHistory);
 checkinFilterDate?.addEventListener("input", renderCheckinHistory);
 manualCheckinStudent?.addEventListener("change", fillManualCheckinPackageSelect);
 makeupStudent?.addEventListener("change", fillMakeupPackageSelect);
+makeupListStudent?.addEventListener("change", renderMakeupCreditList);
+lessonHistoryStudent?.addEventListener("change", () => renderLessonExtraHistory(lessonHistoryStudent.value));
+lessonHistoryStart?.addEventListener("input", () => renderLessonExtraHistory(lessonHistoryStudent?.value || ""));
+lessonHistoryEnd?.addEventListener("input", () => renderLessonExtraHistory(lessonHistoryStudent?.value || ""));
 packageViewStudent?.addEventListener("change", () => {
   if (packageForm) packageForm.hidden = true;
   editingPackageId = null;
   renderPackageAdminList();
+});
+
+packageModuleMenu?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-package-page-target]");
+  if (!button) return;
+  openPackageSubpage(button.dataset.packagePageTarget, button.dataset.packageMode || "");
+});
+
+document.querySelectorAll("[data-package-page-back]").forEach((button) => {
+  button.addEventListener("click", showPackageModuleMenu);
 });
 
 newPackageButton?.addEventListener("click", () => {
@@ -6062,8 +6233,11 @@ packageForm?.addEventListener("submit", (event) => {
     studentId: getStudentIdByName(packageStudent?.value || ""),
     name: packageName?.value.trim() || "Pacote de aulas",
     total: Number(packageTotal?.value) || 0,
+    frequency: packageFrequency?.value.trim() || "",
+    value: packageValue?.value.trim() || "",
     startDate: packageStart?.value.trim() || "",
     endDate: packageEnd?.value.trim() || "",
+    makeupLimit: Number(packageMakeupLimit?.value) || 0,
     days: packageDays?.value.trim() || "",
     time: packageTime?.value.trim() || "",
     notes: packageNotes?.value.trim() || "",
@@ -6084,7 +6258,9 @@ packageForm?.addEventListener("submit", (event) => {
   packageForm.hidden = true;
   editingPackageId = null;
   fillManualCheckinPackageSelect();
+  fillMakeupPackageSelect();
   renderPackageAdminList();
+  renderMakeupCreditList();
   renderStudentPackagePanel();
   renderBillingList();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
@@ -6136,6 +6312,7 @@ manualCheckinForm?.addEventListener("submit", (event) => {
   if (manualCheckinNote) manualCheckinNote.value = "";
   renderCheckinHistory();
   renderPackageAdminList();
+  renderMakeupCreditList();
   renderStudentPackagePanel();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
   if (workoutViewStudent?.value === studentName) {
@@ -6188,6 +6365,7 @@ makeupForm?.addEventListener("submit", (event) => {
   fillMakeupPackageSelect();
   renderCheckinHistory();
   renderPackageAdminList();
+  renderMakeupCreditList();
   renderStudentPackagePanel();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
 });
@@ -6196,11 +6374,12 @@ lessonExtraHistory?.addEventListener("click", (event) => {
   const whatsappButton = event.target.closest("[data-send-makeup-whatsapp]");
   const requestButton = event.target.closest("[data-request-makeup]");
   const approveButton = event.target.closest("[data-approve-makeup]");
+  const useButton = event.target.closest("[data-use-makeup]");
   const rejectButton = event.target.closest("[data-reject-makeup]");
-  const button = whatsappButton || requestButton || approveButton || rejectButton;
+  const button = whatsappButton || requestButton || approveButton || useButton || rejectButton;
   if (!button) return;
 
-  const creditId = button.dataset.sendMakeupWhatsapp || button.dataset.requestMakeup || button.dataset.approveMakeup || button.dataset.rejectMakeup;
+  const creditId = button.dataset.sendMakeupWhatsapp || button.dataset.requestMakeup || button.dataset.approveMakeup || button.dataset.useMakeup || button.dataset.rejectMakeup;
   const credit = loadMakeupCredits().find((item) => item.id === creditId);
   if (!credit) return;
 
@@ -6217,9 +6396,46 @@ lessonExtraHistory?.addEventListener("click", (event) => {
 
   if (requestButton) updateMakeupCreditStatus(creditId, "requested");
   if (approveButton) updateMakeupCreditStatus(creditId, "approved");
+  if (useButton) useMakeupCreditById(creditId);
   if (rejectButton && window.confirm("Recusar esta reposicao?")) updateMakeupCreditStatus(creditId, "rejected");
 
   renderPackageAdminList();
+  renderStudentPackagePanel();
+  if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
+});
+
+makeupCreditList?.addEventListener("click", (event) => {
+  const whatsappButton = event.target.closest("[data-send-makeup-whatsapp]");
+  const requestButton = event.target.closest("[data-request-makeup]");
+  const approveButton = event.target.closest("[data-approve-makeup]");
+  const useButton = event.target.closest("[data-use-makeup]");
+  const rejectButton = event.target.closest("[data-reject-makeup]");
+  const button = whatsappButton || requestButton || approveButton || useButton || rejectButton;
+  if (!button) return;
+
+  const creditId = button.dataset.sendMakeupWhatsapp || button.dataset.requestMakeup || button.dataset.approveMakeup || button.dataset.useMakeup || button.dataset.rejectMakeup;
+  const credit = loadMakeupCredits().find((item) => item.id === creditId);
+  if (!credit) return;
+
+  if (whatsappButton) {
+    const student = getStudentByName(credit.studentName);
+    const url = createMakeupWhatsAppUrl(student, credit);
+    if (!url) {
+      window.alert("Cadastre o WhatsApp do aluno para enviar a mensagem.");
+      return;
+    }
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+
+  if (requestButton) updateMakeupCreditStatus(creditId, "requested");
+  if (approveButton) updateMakeupCreditStatus(creditId, "approved");
+  if (useButton) useMakeupCreditById(creditId);
+  if (rejectButton && window.confirm("Recusar esta reposicao?")) updateMakeupCreditStatus(creditId, "rejected");
+
+  renderPackageAdminList();
+  renderMakeupCreditList();
+  renderLessonExtraHistory(lessonHistoryStudent?.value || "");
   renderStudentPackagePanel();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
 });
@@ -6590,10 +6806,13 @@ studentAdminProfile?.addEventListener("click", (event) => {
 
   if (action === "package" || action === "checkin") {
     openAdminModule("checkins");
+    openPackageSubpage(action === "package" ? "packages" : "checkin", action === "package" ? "edit" : "");
+    if (packageViewStudent) packageViewStudent.value = studentName;
     const activePackage = getActivePackage(studentName) || loadClassPackages().filter((item) => item.studentName === studentName).sort((a, b) => b.createdAt - a.createdAt)[0];
     fillPackageForm(action === "package" ? activePackage : null, studentName);
     if (manualCheckinStudent) manualCheckinStudent.value = studentName;
     fillManualCheckinPackageSelect();
+    renderPackageAdminList();
     if (action === "checkin") {
       manualCheckinForm?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
@@ -6630,6 +6849,7 @@ function openAdminModule(moduleName) {
   if (moduleName === "checkins") {
     if (packageViewStudent) packageViewStudent.value = "";
     if (packageForm) packageForm.hidden = true;
+    showPackageModuleMenu();
     renderPackageAdminList();
     fillManualCheckinPackageSelect();
     renderCheckinHistory();
