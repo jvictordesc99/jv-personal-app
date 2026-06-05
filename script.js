@@ -305,6 +305,9 @@ let editingWorkout = null;
 let editingPackageId = null;
 let selectedAdminWorkoutStudent = "";
 let selectedAdminProfileStudent = "";
+let highlightedMakeupCreditId = "";
+let highlightedFeedbackId = "";
+let highlightedStudentStatusName = "";
 const activeWorkoutByStudent = {};
 const activeSessionByWorkout = {};
 let appEventsBound = false;
@@ -1148,7 +1151,12 @@ function renderStudentStatusSummary() {
   studentStatusSummary.innerHTML = "";
   loadStudents().forEach((student) => {
     const tone = student.payment === "Em dia" ? "checkin-ok" : "cancel-late";
-    studentStatusSummary.appendChild(renderSummaryCard(student.name, `${student.payment || "-"} | vencimento ${student.due || "-"}`, tone));
+    const card = renderSummaryCard(student.name, `${student.payment || "-"} | vencimento ${student.due || "-"}`, tone);
+    card.classList.toggle("alert-focus-card", highlightedStudentStatusName === student.name);
+    studentStatusSummary.appendChild(card);
+    if (highlightedStudentStatusName === student.name) {
+      setTimeout(() => card.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+    }
   });
 }
 
@@ -1191,12 +1199,17 @@ function normalizeResolvedAlerts(alerts) {
   return normalizeListData(alerts)
     .filter((item) => item && typeof item === "object" && item.id)
     .map((item) => ({
+      ...item,
       id: String(item.id),
       type: String(item.type || ""),
       title: String(item.title || ""),
       detail: String(item.detail || ""),
       studentName: String(item.studentName || ""),
       tone: String(item.tone || "neutral"),
+      status: item.resolvedAt ? "resolvido" : item.status || "resolvido",
+      destination: item.destination || "",
+      date: item.date || "",
+      studentId: item.studentId || getStudentIdByName(item.studentName || ""),
       resolvedAt: item.resolvedAt || new Date().toISOString(),
     }));
 }
@@ -1225,7 +1238,7 @@ function resolveAdminAlert(alertId) {
   if (!alert) return false;
   const resolved = loadResolvedAlerts();
   if (!resolved.some((item) => item.id === alertId)) {
-    resolved.push({ ...alert, resolvedAt: new Date().toISOString() });
+    resolved.push({ ...alert, status: "resolvido", resolvedAt: new Date().toISOString() });
     saveResolvedAlerts(resolved);
   }
   return true;
@@ -1243,6 +1256,9 @@ function createAdminAlert(type, title, detail, studentName, tone = "warning", id
     title,
     detail,
     studentName,
+    studentId: getStudentIdByName(studentName),
+    date: formatToday(),
+    status: "pendente",
     tone,
     ...extra,
   };
@@ -1275,6 +1291,7 @@ function collectAdminAlerts(options = {}) {
           student.name,
           "warning",
           `online-${lastKey}`,
+          { destination: "evolution-adherence" },
         ));
       }
     }
@@ -1294,6 +1311,12 @@ function collectAdminAlerts(options = {}) {
           student.name,
           generated ? "warning" : "danger",
           checkin.id,
+          {
+            destination: generated ? "packages-makeup" : "packages-checkin",
+            checkinId: checkin.id,
+            packageId: checkin.packageId || "",
+            lessonDateKey: checkin.dateKey || "",
+          },
         ));
       });
 
@@ -1308,6 +1331,7 @@ function collectAdminAlerts(options = {}) {
         student.name,
         "danger",
         feedback.id || feedback.timestamp || `${feedback.date}-${feedback.workoutTitle}-${feedback.painLocation}`,
+        { destination: "evolution-feedbacks", feedbackId: feedback.id || "", date: feedback.date || "" },
       ));
     });
 
@@ -1320,9 +1344,42 @@ function collectAdminAlerts(options = {}) {
           student.name,
         student.payment === "Em dia" ? "warning" : "danger",
         `${student.due || "sem-vencimento"}-${student.payment || "sem-status"}`,
+        { destination: "students-status", dueDate: student.due || "" },
         ));
     }
+
+    const studentWorkouts = loadWorkouts()[student.name] || [];
+    if (!studentWorkouts.length) {
+      alerts.push(createAdminAlert(
+        "Ficha",
+        "Aluno sem ficha de treino",
+        "Nenhuma ficha cadastrada para este aluno.",
+        student.name,
+        "warning",
+        "sem-ficha",
+        { destination: "workouts", studentId: student.id || "" },
+      ));
+    }
   });
+
+  loadMakeupCredits()
+    .filter((credit) => credit.status === "requested")
+    .forEach((credit) => {
+      alerts.push(createAdminAlert(
+        "Reagendamento",
+        "Aluno solicitou reagendamento",
+        `Aula ${credit.sourceLessonDate || "-"} | ${credit.lessonTime || "-"} | validade ${credit.validUntil || "-"}`,
+        credit.studentName,
+        "warning",
+        credit.id,
+        {
+          destination: "packages-makeup",
+          makeupCreditId: credit.id,
+          packageId: credit.packageId || "",
+          date: credit.sourceLessonDate || "",
+        },
+      ));
+    });
 
   const unique = [];
   const seen = new Set();
@@ -1378,15 +1435,24 @@ function renderAdminAlerts() {
 
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "secondary";
-    button.dataset.openAlertStudent = alert.studentName;
-    button.textContent = "Abrir perfil";
+    button.className = "primary";
+    button.dataset.resolveAlertDestination = alert.id;
+    button.textContent = "Resolver";
     actions.appendChild(button);
+
+    if (!isResolved && alert.type === "Vencimento") {
+      const billing = document.createElement("button");
+      billing.type = "button";
+      billing.className = "secondary";
+      billing.dataset.alertBillingStudent = alert.studentName;
+      billing.textContent = "Enviar cobranca WhatsApp";
+      actions.appendChild(billing);
+    }
 
     if (!isResolved) {
       const resolve = document.createElement("button");
       resolve.type = "button";
-      resolve.className = "primary";
+      resolve.className = "secondary";
       resolve.dataset.resolveAlert = alert.id;
       resolve.textContent = "Marcar como resolvido";
       actions.appendChild(resolve);
@@ -1406,6 +1472,73 @@ function renderAdminAlertBadge() {
   badge.className = "admin-alert-badge";
   badge.textContent = count > 99 ? "99+" : String(count);
   adminAlertCard.appendChild(badge);
+}
+
+function createQuickBillingMessage(student) {
+  return `Ola, ${student.name}! Tudo bem?\n\nPassando para lembrar que seu plano venceu em ${student.due || "-"}.\n\nQuando puder, me envie o comprovante ou confirme o pagamento.\n\nObrigado!\nPersonal Joao Victor`;
+}
+
+function openAlertBillingWhatsApp(studentName) {
+  const student = getStudentByName(studentName);
+  const phone = normalizeWhatsAppPhone(student?.phone);
+  if (!student || !phone) {
+    window.alert("Cadastre o WhatsApp do aluno para enviar cobranca.");
+    return;
+  }
+  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(createQuickBillingMessage(student))}`, "_blank", "noopener");
+}
+
+function resolveAlertDestination(alertId) {
+  const alert = collectAdminAlerts({ includeResolved: true }).find((item) => item.id === alertId) || loadResolvedAlerts().find((item) => item.id === alertId);
+  if (!alert) return;
+  const studentName = alert.studentName || "";
+
+  if (alert.destination === "evolution-adherence") {
+    openAdminModule("evolution");
+    if (adminEvolutionStudent) adminEvolutionStudent.value = studentName;
+    openAdminSubpage("evolution-adherence");
+    renderAdminEvolution();
+    return;
+  }
+
+  if (alert.destination === "evolution-feedbacks") {
+    highlightedFeedbackId = alert.feedbackId || "";
+    openAdminModule("evolution");
+    if (adminEvolutionStudent) adminEvolutionStudent.value = studentName;
+    openAdminSubpage("evolution-feedbacks");
+    renderAdminEvolution();
+    return;
+  }
+
+  if (alert.destination === "students-status") {
+    highlightedStudentStatusName = studentName;
+    openAdminModule("students");
+    openAdminSubpage("students-status");
+    renderStudentStatusSummary();
+    return;
+  }
+
+  if (alert.destination === "packages-checkin" || alert.destination === "packages-makeup") {
+    openAdminModule("checkins");
+    if (packageViewStudent) packageViewStudent.value = studentName;
+    if (makeupListStudent) makeupListStudent.value = studentName;
+    if (manualCheckinStudent) manualCheckinStudent.value = studentName;
+    highlightedMakeupCreditId = alert.makeupCreditId || "";
+    openPackageSubpage(alert.destination === "packages-makeup" ? "makeup" : "checkin");
+    fillManualCheckinPackageSelect();
+    fillMakeupPackageSelect();
+    renderPackageAdminList();
+    renderMakeupCreditList(studentName);
+    return;
+  }
+
+  if (alert.destination === "workouts") {
+    openAdminModule("workouts");
+    openWorkoutStudentWorkspace(studentName);
+    return;
+  }
+
+  openAdminStudentProfile(studentName);
 }
 
 function exportAppData() {
@@ -4712,12 +4845,17 @@ function renderAdminFeedbacks(studentName) {
   feedbacks.forEach((feedback) => {
     const item = document.createElement("article");
     item.className = "feedback-card";
+    item.classList.toggle("alert-focus-card", highlightedFeedbackId === feedback.id);
     item.innerHTML = `<strong>${feedback.date} | ${feedback.workoutTitle}</strong><span>${feedback.studentName} | Nota ${feedback.rating || "-"} | ${feedback.difficulty || "Sem intensidade"} | Dor: ${feedback.pain ? feedback.painLocation || "sim" : "nao"}</span><small>${feedback.note || "Sem observacao."}</small>`;
     adminFeedbackHistory.appendChild(item);
+    if (highlightedFeedbackId === feedback.id) {
+      setTimeout(() => item.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+    }
 
     if (feedback.note || feedback.painLocation) {
       const note = document.createElement("article");
       note.className = "feedback-card";
+      note.classList.toggle("alert-focus-card", highlightedFeedbackId === feedback.id);
       note.innerHTML = `<strong>${feedback.studentName} | ${feedback.date}</strong><small>${feedback.note || feedback.painLocation}</small>`;
       adminFeedbackNotes.appendChild(note);
     }
@@ -5401,6 +5539,7 @@ function updateMakeupCreditStatus(creditId, status, extras = {}) {
   if (status === "approved") credits[index].approvedAt = new Date().toISOString();
   if (status === "rejected") credits[index].rejectedAt = new Date().toISOString();
   saveMakeupCredits(credits);
+  renderAdminAlertBadge();
   return true;
 }
 
@@ -5572,7 +5711,7 @@ function renderMakeupCreditList(studentName = makeupListStudent?.value || packag
   }
 
   credits.forEach((item) => {
-    makeupCreditList.appendChild(createLessonHistoryItem({
+    const card = createLessonHistoryItem({
       timestamp: item.timestamp || item.createdAt || 0,
       kind: "makeup",
       id: item.id,
@@ -5586,7 +5725,12 @@ function renderMakeupCreditList(studentName = makeupListStudent?.value || packag
         item.replacementDate ? `Reposicao em ${item.replacementDate} ${item.replacementTime || ""}` : "",
         item.note || item.packageName || "",
       ].filter(Boolean).join(" | "),
-    }));
+    });
+    card.classList.toggle("alert-focus-card", highlightedMakeupCreditId === item.id);
+    makeupCreditList.appendChild(card);
+    if (highlightedMakeupCreditId === item.id) {
+      setTimeout(() => card.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+    }
   });
 }
 
@@ -7318,6 +7462,18 @@ adminBackButtons.forEach((button) => {
 });
 
 adminAlertsList?.addEventListener("click", (event) => {
+  const destinationButton = event.target.closest("[data-resolve-alert-destination]");
+  if (destinationButton) {
+    resolveAlertDestination(destinationButton.dataset.resolveAlertDestination);
+    return;
+  }
+
+  const billingButton = event.target.closest("[data-alert-billing-student]");
+  if (billingButton) {
+    openAlertBillingWhatsApp(billingButton.dataset.alertBillingStudent);
+    return;
+  }
+
   const resolveButton = event.target.closest("[data-resolve-alert]");
   if (resolveButton) {
     resolveAdminAlert(resolveButton.dataset.resolveAlert);

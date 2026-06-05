@@ -2023,6 +2023,11 @@ h3 {
   opacity: 0.72;
 }
 
+.alert-focus-card {
+  border-color: rgba(184, 255, 56, 0.85) !important;
+  box-shadow: 0 0 0 3px rgba(184, 255, 56, 0.18), 0 14px 30px rgba(7, 23, 35, 0.12);
+}
+
 .alert-actions {
   margin-top: 4px;
 }
