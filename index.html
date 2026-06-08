@@ -17,10 +17,10 @@
     <section class="login-screen" id="login-screen">
       <div class="login-card">
         <img class="login-logo" src="assets/joao-victor-logo.jpeg" alt="Logo Joao Victor Personal Trainer" />
-        <p class="eyebrow">Acesso local</p>
+        <p class="eyebrow">Login real</p>
         <h1>Joao Victor Personal Trainer</h1>
-        <p>Escolha como deseja entrar. Os dados serao sincronizados online quando o Supabase estiver disponivel.</p>
-        <form class="supabase-login-form" id="supabase-login-form" hidden>
+        <p>Entre com seu e-mail e senha. O acesso local fica disponivel apenas para teste.</p>
+        <form class="supabase-login-form" id="supabase-login-form">
           <label>E-mail
             <input id="supabase-login-email" type="email" placeholder="seu@email.com" autocomplete="email" />
           </label>
@@ -57,8 +57,8 @@
         <nav class="nav" aria-label="Navegação principal">
           <button class="nav-item active" data-view="treino" data-student-only>Treino</button>
           <button class="nav-item" data-view="agenda" data-student-only>Agendamento</button>
-          <button class="nav-item" data-view="avaliacao" data-student-only>Avaliacao</button>
-          <button class="nav-item" data-view="evolucao" data-student-only>Evolucao</button>
+          <button class="nav-item" data-view="avaliacao" data-student-only>Avaliação</button>
+          <button class="nav-item" data-view="evolucao" data-student-only>Evolução</button>
           <button class="nav-item" data-view="perfil" data-student-only>Perfil</button>
           <button class="nav-item" data-view="admin" data-admin-only>Administrativo</button>
         </nav>
@@ -91,7 +91,7 @@
           <div class="hero">
             <div>
               <p class="eyebrow" id="today-label">Hoje</p>
-              <h2>Seu treino, sua evolucao e sua agenda em um so lugar.</h2>
+              <h2>Seu treino, sua evolução e sua agenda em um só lugar.</h2>
               <p>
                 Um painel direto para acompanhar treino, aulas, pagamentos, beach tennis e resultado corporal.
               </p>
@@ -105,9 +105,9 @@
 
           <div class="metrics-grid">
             <article class="metric">
-              <span>Frequencia</span>
+              <span>Frequência</span>
               <strong>86%</strong>
-              <small>+12% no mes</small>
+              <small>+12% no mês</small>
             </article>
             <article class="metric">
               <span>Treinos concluidos</span>
@@ -134,8 +134,8 @@
               </div>
               <ul class="timeline">
                 <li><strong>Funcional</strong><span>Hoje, 18:00</span></li>
-                <li><strong>Beach tennis</strong><span>Amanha, 07:30</span></li>
-                <li><strong>Avaliacao fisica</strong><span>Segunda, 16:00</span></li>
+                <li><strong>Beach tennis</strong><span>Amanhã, 07:30</span></li>
+                <li><strong>Avaliação física</strong><span>Segunda, 16:00</span></li>
               </ul>
             </section>
             <section class="panel">
@@ -173,8 +173,8 @@
             </div>
 
             <div class="workout-block exercise-result-block">
-              <p class="eyebrow">Treinos e exercicios</p>
-              <h3>Exercicios da ficha</h3>
+              <p class="eyebrow">Treinos e exercícios</p>
+              <h3>Exercícios da ficha</h3>
               <div class="saved-workout" id="current-workout"></div>
             </div>
           </section>
@@ -184,10 +184,10 @@
         <section class="view" id="videos">
           <div class="section-title">
             <p class="eyebrow">Biblioteca</p>
-            <h2>Videos dos exercicios</h2>
+            <h2>Vídeos dos exercícios</h2>
           </div>
           <div class="video-grid">
-            <article><img src="assets/video-squat.png" alt="Video de agachamento" /><strong>Agachamento</strong><span>Tecnica e seguranca</span></article>
+            <article><img src="assets/video-squat.png" alt="Vídeo de agachamento" /><strong>Agachamento</strong><span>Técnica e segurança</span></article>
             <article><img src="assets/video-core.png" alt="Video de core" /><strong>Core</strong><span>Postura e respiracao</span></article>
             <article><img src="assets/video-beach.png" alt="Video de beach tennis" /><strong>Saque beach</strong><span>Movimento completo</span></article>
           </div>
@@ -195,8 +195,8 @@
 
         <section class="view" id="avaliacao">
           <div class="section-title">
-            <p class="eyebrow">Avaliacao fisica</p>
-            <h2>Bioimpedancia e evolucao corporal</h2>
+            <p class="eyebrow">Avaliação física</p>
+            <h2>Bioimpedância e evolução corporal</h2>
           </div>
           <div class="assessment-student-panel">
             <div class="assessment-summary-grid" id="student-assessment-summary"></div>
@@ -206,27 +206,27 @@
 
         <section class="view" id="evolucao">
           <div class="section-title">
-            <p class="eyebrow">Evolucao de carga</p>
-            <h2>Historico por exercicio</h2>
+            <p class="eyebrow">Evolução de carga</p>
+            <h2>Histórico por exercício</h2>
           </div>
           <div class="student-evolution-panel" id="student-load-history">
             <div class="evolution-toolbar">
               <div>
-                <p class="eyebrow">Exercicio</p>
+                <p class="eyebrow">Exercício</p>
                 <h3>Escolha o movimento</h3>
               </div>
-              <label>Exercicio
+              <label>Exercício
                 <select id="student-load-exercise"></select>
               </label>
-              <label>Visualizacao
+              <label>Visualização
                 <select id="student-load-chart-mode"></select>
               </label>
             </div>
             <div class="evolution-chart-card">
               <div class="load-history-head">
                 <div>
-                  <strong id="student-load-chart-title">Evolucao</strong>
-                  <small id="student-load-chart-subtitle">Selecione um exercicio para visualizar.</small>
+                  <strong id="student-load-chart-title">Evolução</strong>
+                  <small id="student-load-chart-subtitle">Selecione um exercício para visualizar.</small>
                 </div>
                 <span id="student-load-chart-badge"></span>
               </div>
@@ -243,9 +243,9 @@
           </div>
           <div class="checkin-card">
             <div>
-              <p class="eyebrow">Presenca</p>
+              <p class="eyebrow">Presença</p>
               <h3>Check-in de hoje</h3>
-              <span id="student-checkin-status">Registre sua presenca na aula presencial.</span>
+              <span id="student-checkin-status">Registre sua presença na aula presencial.</span>
             </div>
             <button type="button" class="primary" id="student-checkin-button">Fazer check-in de hoje</button>
           </div>
@@ -300,9 +300,9 @@
             <article><strong>Alunos</strong><span>Cadastro, plano, valor manual e status.</span><button data-admin-target="students">Abrir</button></article>
             <article><strong>Fichas de treino</strong><span>Criar, copiar, editar e remover fichas.</span><button data-admin-target="workouts">Abrir</button></article>
             <article id="admin-alert-card"><strong>Alertas</strong><span>Dores, cancelamentos e vencimentos.</span><button data-admin-target="alerts">Abrir</button></article>
-            <article><strong>Evolucao</strong><span>Cargas, recordes, frequencia e feedbacks.</span><button data-admin-target="evolution">Abrir</button></article>
-            <article><strong>Avaliacoes</strong><span>Registrar medidas e fotos de evolucao.</span><button data-admin-target="assessments">Abrir</button></article>
-            <article><strong>Pacotes e Check-ins</strong><span>Pacotes de aulas, agenda e presencas.</span><button data-admin-target="checkins">Abrir</button></article>
+            <article><strong>Evolução</strong><span>Cargas, recordes, frequência e feedbacks.</span><button data-admin-target="evolution">Abrir</button></article>
+            <article><strong>Avaliações</strong><span>Registrar medidas e fotos de evolução.</span><button data-admin-target="assessments">Abrir</button></article>
+            <article><strong>Pacotes e Check-ins</strong><span>Pacotes de aulas, agenda e presenças.</span><button data-admin-target="checkins">Abrir</button></article>
             <article><strong>Financeiro</strong><span>Mensalidades, vencimentos e pagamentos.</span><button data-admin-target="finance">Abrir</button></article>
             <article class="payment-blocked-panel" id="payment-blocked-panel"></article>
           </div>
@@ -341,7 +341,7 @@
               <div class="workout-form-block workout-form-intro">
                 <div>
                   <p class="eyebrow">Dados da ficha</p>
-                  <h3>1. Informacoes gerais</h3>
+                  <h3>1. Informações gerais</h3>
                   <span>Defina o nome, objetivo e validade da ficha.</span>
                 </div>
                 <label class="workout-student-field">Aluno
@@ -361,15 +361,15 @@
                 </div>
                 <label>Nome da ficha<input id="workout-title" required placeholder="Ex: Treino A - Inferiores" /></label>
                 <label>Objetivo<input id="workout-goal" required placeholder="Ex: hipertrofia, emagrecimento" /></label>
-                <label>Frequencia semanal<input id="workout-frequency" required placeholder="Ex: 3x por semana" /></label>
-                <label>Data de inicio<input id="workout-start-date" required placeholder="Ex: 01/05" /></label>
+                <label>Frequência semanal<input id="workout-frequency" required placeholder="Ex: 3x por semana" /></label>
+                <label>Data de início<input id="workout-start-date" required placeholder="Ex: 01/05" /></label>
                 <label>Data de validade<input id="workout-due-date" required placeholder="Ex: 30/06" /></label>
               </div>
               <div class="workout-form-block workout-import-block">
                 <div>
                   <p class="eyebrow">Importar treino por texto</p>
                   <h3>Colar e organizar</h3>
-                  <span>Cole uma lista de exercicios para preencher os campos automaticamente.</span>
+                  <span>Cole uma lista de exercícios para preencher os campos automaticamente.</span>
                 </div>
                 <label>Texto do treino
                   <textarea id="workout-import-text" placeholder="Ex:&#10;Treino A - Inferiores&#10;Agachamento livre 3x12 carga 80kg&#10;Cadeira extensora 3x15 descanso 60s"></textarea>
@@ -379,17 +379,17 @@
               <div class="workout-form-block exercise-builder">
                 <div>
                   <p class="eyebrow">Treinos da ficha</p>
-                  <h3>3. Treinos e exercicios</h3>
+                  <h3>3. Treinos e exercícios</h3>
                 </div>
                 <div id="workout-exercises"></div>
                 <button type="button" class="secondary" id="add-exercise-button">Adicionar treino</button>
               </div>
               <div class="workout-form-block workout-notes-block">
                 <div>
-                  <p class="eyebrow">Observacoes</p>
-                  <h3>4. Orientacoes gerais</h3>
+                  <p class="eyebrow">Observações</p>
+                  <h3>4. Orientações gerais</h3>
                 </div>
-                <label>Observacoes do personal<textarea id="workout-notes" placeholder="Orientacoes, cuidados ou ajustes para o aluno"></textarea></label>
+                <label>Observações do personal<textarea id="workout-notes" placeholder="Orientações, cuidados ou ajustes para o aluno"></textarea></label>
               </div>
               <div class="workout-actions">
                 <button type="submit" id="save-workout-button">Salvar ficha</button>
@@ -399,7 +399,7 @@
             <p class="save-message" id="workout-message" role="status"></p>
             <div class="workout-expiration-panel" id="workout-expiration-panel"></div>
             <div class="table-panel" id="workout-table-panel" hidden>
-              <div class="table-row workout-head"><span>Aluno</span><span>Ficha salva</span><span>Validade</span><span>Status</span><span>Exercicios</span><span>Acoes</span></div>
+              <div class="table-row workout-head"><span>Aluno</span><span>Ficha salva</span><span>Validade</span><span>Status</span><span>Exercícios</span><span>Ações</span></div>
               <div id="workout-list"></div>
             </div>
           </div>
@@ -413,7 +413,7 @@
           <div class="nav-card-grid" data-subpage-menu="students">
             <button type="button" class="nav-card" data-subpage-target="students-register"><span class="nav-card-icon">+</span><strong>Cadastrar aluno</strong><small>Novo aluno, plano, valor e pagamento.</small><em>Abrir</em></button>
             <button type="button" class="nav-card" data-subpage-target="students-list"><span class="nav-card-icon">≡</span><strong>Lista de alunos</strong><small>Abrir, editar ou excluir cadastros.</small><em>Abrir</em></button>
-            <button type="button" class="nav-card" data-subpage-target="students-plans"><span class="nav-card-icon">$</span><strong>Planos e valores</strong><small>Plano, valor, frequencia e vencimento.</small><em>Abrir</em></button>
+            <button type="button" class="nav-card" data-subpage-target="students-plans"><span class="nav-card-icon">$</span><strong>Planos e valores</strong><small>Plano, valor, frequência e vencimento.</small><em>Abrir</em></button>
             <button type="button" class="nav-card" data-subpage-target="students-status"><span class="nav-card-icon">!</span><strong>Status e vencimentos</strong><small>Em dia, pendentes e vencidos.</small><em>Abrir</em></button>
           </div>
           <section class="admin-subpage" data-subpage="students-register" hidden>
@@ -422,7 +422,7 @@
             <div>
               <p class="eyebrow">Backup</p>
               <h3>Exportar dados</h3>
-              <span>Baixe um arquivo JSON com alunos, fichas, avaliacoes, evolucao, feedbacks e check-ins.</span>
+              <span>Baixe um arquivo JSON com alunos, fichas, avaliações, evolução, feedbacks e check-ins.</span>
             </div>
             <button type="button" class="secondary" id="export-data-button">Exportar dados</button>
           </section>
@@ -435,10 +435,11 @@
             <label>Aluno<input id="student-name" required placeholder="Nome do aluno" /></label>
             <label>E-mail do login<input id="student-email" type="email" placeholder="email do aluno no Supabase" /></label>
             <label>Senha inicial<input id="student-temp-password" type="password" placeholder="Senha provisoria" /></label>
+            <button type="button" class="secondary" id="create-student-access-button">Criar acesso do aluno</button>
             <label>Telefone WhatsApp<input id="student-phone" placeholder="Ex: 19992782696" /></label>
             <label>Data de nascimento<input id="student-birth-date" placeholder="Ex: 15/08/1995" /></label>
             <label>Plano<input id="student-plan" required placeholder="Ex: Personal, Beach" /></label>
-            <label>Frequencia semanal
+            <label>Frequência semanal
               <select id="student-frequency">
                 <option value="1x">1x por semana</option>
                 <option value="2x">2x por semana</option>
@@ -447,7 +448,7 @@
                 <option value="5x">5x por semana</option>
               </select>
             </label>
-            <label>Limite de reposicoes por pacote<input id="student-makeup-limit" type="number" min="0" placeholder="Ex: 3" /></label>
+            <label>Limite de reposições por pacote<input id="student-makeup-limit" type="number" min="0" placeholder="Ex: 3" /></label>
             <label>Valor mensal<input id="student-value" required placeholder="R$ 250,00" /></label>
             <label>Vencimento<input id="student-due" required placeholder="05/06" /></label>
             <label>Status
@@ -464,11 +465,16 @@
           </section>
           <section class="admin-subpage" data-subpage="students-list" hidden>
           <button type="button" class="secondary package-page-back" data-subpage-back="students">Voltar</button>
-          <section class="student-admin-profile" id="student-admin-profile" hidden></section>
-          <div class="table-panel">
-            <div class="table-row head"><span>Aluno</span><span>Plano</span><span>Valor manual</span><span>Status</span><span>Pagamento</span><span>Acoes</span></div>
-            <div id="student-list"></div>
+          <div class="student-list-tools">
+            <label>Buscar aluno
+              <input id="student-list-search" placeholder="Buscar por nome, telefone, WhatsApp ou e-mail..." />
+            </label>
           </div>
+          <div class="student-card-list" id="student-list"></div>
+          </section>
+          <section class="admin-subpage" data-subpage="students-profile" hidden>
+          <button type="button" class="secondary package-page-back" data-subpage-target="students-list">Voltar para lista de alunos</button>
+          <section class="student-admin-profile" id="student-admin-profile" hidden></section>
           </section>
           <section class="admin-subpage" data-subpage="students-plans" hidden>
             <button type="button" class="secondary package-page-back" data-subpage-back="students">Voltar</button>
@@ -499,23 +505,23 @@
           <section class="admin-module" id="admin-module-assessments" hidden>
             <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
             <div class="section-title compact-title">
-              <p class="eyebrow">Avaliacoes</p>
-              <h2>Avaliacao fisica</h2>
+              <p class="eyebrow">Avaliações</p>
+              <h2>Avaliação física</h2>
             </div>
             <div class="nav-card-grid" data-subpage-menu="assessments">
-              <button type="button" class="nav-card" data-subpage-target="assessment-new"><span class="nav-card-icon">+</span><strong>Nova avaliacao</strong><small>Registrar bioimpedancia e observacoes.</small><em>Abrir</em></button>
-              <button type="button" class="nav-card" data-subpage-target="assessment-history"><span class="nav-card-icon">≡</span><strong>Historico de avaliacoes</strong><small>Avaliacoes salvas em cards.</small><em>Abrir</em></button>
-              <button type="button" class="nav-card" data-subpage-target="assessment-charts"><span class="nav-card-icon">↗</span><strong>Graficos corporais</strong><small>Peso, gordura e massa muscular.</small><em>Abrir</em></button>
-              <button type="button" class="nav-card" data-subpage-target="assessment-photos"><span class="nav-card-icon">□</span><strong>Fotos de evolucao</strong><small>Anexos e imagens cadastradas.</small><em>Abrir</em></button>
-              <button type="button" class="nav-card" data-subpage-target="assessment-compare"><span class="nav-card-icon">⇄</span><strong>Comparativo</strong><small>Comparar avaliacao inicial e final.</small><em>Abrir</em></button>
+              <button type="button" class="nav-card" data-subpage-target="assessment-new"><span class="nav-card-icon">+</span><strong>Nova avaliação</strong><small>Registrar bioimpedância e observações.</small><em>Abrir</em></button>
+              <button type="button" class="nav-card" data-subpage-target="assessment-history"><span class="nav-card-icon">≡</span><strong>Histórico de avaliações</strong><small>Avaliações salvas em cards.</small><em>Abrir</em></button>
+              <button type="button" class="nav-card" data-subpage-target="assessment-charts"><span class="nav-card-icon">↗</span><strong>Gráficos corporais</strong><small>Peso, gordura e massa muscular.</small><em>Abrir</em></button>
+              <button type="button" class="nav-card" data-subpage-target="assessment-photos"><span class="nav-card-icon">□</span><strong>Fotos de evolução</strong><small>Anexos e imagens cadastradas.</small><em>Abrir</em></button>
+              <button type="button" class="nav-card" data-subpage-target="assessment-compare"><span class="nav-card-icon">⇄</span><strong>Comparativo</strong><small>Comparar avaliação inicial e final.</small><em>Abrir</em></button>
             </div>
             <section class="admin-subpage" data-subpage="assessment-new" hidden>
             <button type="button" class="secondary package-page-back" data-subpage-back="assessments">Voltar</button>
             <form class="assessment-form" id="assessment-form">
               <div class="assessment-form-head">
                 <div>
-                  <p class="eyebrow">Avaliacao fisica</p>
-                  <h3>Registrar bioimpedancia</h3>
+                  <p class="eyebrow">Avaliação física</p>
+                  <h3>Registrar bioimpedância</h3>
                   <span>Salve peso, gordura, massa muscular, IMC e anexo do exame.</span>
                 </div>
                 <label>Aluno
@@ -523,15 +529,15 @@
                 </label>
               </div>
               <div class="assessment-fields">
-                <label>Data da avaliacao<input id="assessment-date" required placeholder="Ex: 28/05/2026" /></label>
+                <label>Data da avaliação<input id="assessment-date" required placeholder="Ex: 28/05/2026" /></label>
                 <label>Peso<input id="assessment-weight" required placeholder="Ex: 82,4 kg" /></label>
                 <label>Gordura corporal<input id="assessment-fat" required placeholder="Ex: 18%" /></label>
                 <label>Massa muscular<input id="assessment-muscle" required placeholder="Ex: 39 kg" /></label>
                 <label>IMC<input id="assessment-imc" required placeholder="Ex: 24,8" /></label>
-                <label>Anexo bioimpedancia<input id="assessment-file" type="file" accept="image/*,.pdf" /></label>
-                <label class="assessment-notes">Observacoes<textarea id="assessment-notes" placeholder="Resumo, orientacoes ou pontos de atencao"></textarea></label>
+                <label>Anexo bioimpedância<input id="assessment-file" type="file" accept="image/*,.pdf" /></label>
+                <label class="assessment-notes">Observações<textarea id="assessment-notes" placeholder="Resumo, orientações ou pontos de atenção"></textarea></label>
               </div>
-              <button type="submit" class="primary">Salvar avaliacao</button>
+              <button type="submit" class="primary">Salvar avaliação</button>
             </form>
             <p class="save-message" id="assessment-message" role="status"></p>
             </section>
@@ -556,15 +562,15 @@
             <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
             <div class="evolution-admin-panel">
               <div class="section-title compact-title">
-                <p class="eyebrow">Evolucao</p>
+                <p class="eyebrow">Evolução</p>
                 <h2>Desempenho dos alunos</h2>
               </div>
               <div class="nav-card-grid" data-subpage-menu="evolution">
-                <button type="button" class="nav-card" data-subpage-target="evolution-loads"><span class="nav-card-icon">↗</span><strong>Evolucao de cargas</strong><small>Acompanhe graficos e progresso.</small><em>Abrir</em></button>
-                <button type="button" class="nav-card" data-subpage-target="evolution-records"><span class="nav-card-icon">★</span><strong>Recordes pessoais</strong><small>Maior carga por aluno e exercicio.</small><em>Abrir</em></button>
-                <button type="button" class="nav-card" data-subpage-target="evolution-feedbacks"><span class="nav-card-icon">✎</span><strong>Feedbacks dos alunos</strong><small>Notas, dores e observacoes.</small><em>Abrir</em></button>
-                <button type="button" class="nav-card" data-subpage-target="evolution-adherence"><span class="nav-card-icon">✓</span><strong>Frequencia e adesao</strong><small>Treinos e check-ins realizados.</small><em>Abrir</em></button>
-                <button type="button" class="nav-card" data-subpage-target="evolution-notes"><span class="nav-card-icon">≡</span><strong>Observacoes</strong><small>Historico cronologico dos alunos.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-subpage-target="evolution-loads"><span class="nav-card-icon">↗</span><strong>Evolução de cargas</strong><small>Acompanhe gráficos e progresso.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-subpage-target="evolution-records"><span class="nav-card-icon">★</span><strong>Recordes pessoais</strong><small>Maior carga por aluno e exercício.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-subpage-target="evolution-feedbacks"><span class="nav-card-icon">✎</span><strong>Feedbacks dos alunos</strong><small>Notas, dores e observações.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-subpage-target="evolution-adherence"><span class="nav-card-icon">✓</span><strong>Frequência e adesão</strong><small>Treinos e check-ins realizados.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-subpage-target="evolution-notes"><span class="nav-card-icon">≡</span><strong>Observações</strong><small>Histórico cronológico dos alunos.</small><em>Abrir</em></button>
               </div>
               <section class="admin-subpage" data-subpage="evolution-loads" hidden>
               <button type="button" class="secondary package-page-back" data-subpage-back="evolution">Voltar</button>
@@ -576,18 +582,18 @@
                 <label>Aluno
                   <select id="admin-evolution-student"></select>
                 </label>
-                <label>Exercicio
+                <label>Exercício
                   <select id="admin-evolution-exercise"></select>
                 </label>
-                <label>Visualizacao
+                <label>Visualização
                   <select id="admin-evolution-chart-mode"></select>
                 </label>
               </div>
               <div class="evolution-chart-card">
                 <div class="load-history-head">
                   <div>
-                    <strong id="admin-evolution-chart-title">Evolucao de cargas</strong>
-                    <small id="admin-evolution-chart-subtitle">Selecione aluno e exercicio.</small>
+                    <strong id="admin-evolution-chart-title">Evolução de cargas</strong>
+                    <small id="admin-evolution-chart-subtitle">Selecione aluno e exercício.</small>
                   </div>
                   <span id="admin-evolution-chart-badge"></span>
                 </div>
@@ -602,7 +608,7 @@
                 </section>
                 <section class="admin-subpage load-history-card" data-subpage="evolution-adherence" hidden>
                   <button type="button" class="secondary package-page-back" data-subpage-back="evolution">Voltar</button>
-                  <div class="load-history-head"><strong>Frequencia e adesao</strong></div>
+                  <div class="load-history-head"><strong>Frequência e adesão</strong></div>
                   <div id="admin-adherence-summary"></div>
                 </section>
                 <section class="admin-subpage load-history-card" data-subpage="evolution-feedbacks" hidden>
@@ -612,7 +618,7 @@
                 </section>
                 <section class="admin-subpage load-history-card" data-subpage="evolution-notes" hidden>
                   <button type="button" class="secondary package-page-back" data-subpage-back="evolution">Voltar</button>
-                  <div class="load-history-head"><strong>Observacoes gerais</strong></div>
+                  <div class="load-history-head"><strong>Observações gerais</strong></div>
                   <div id="admin-feedback-notes"></div>
                 </section>
               </div>
@@ -629,10 +635,10 @@
               <div class="package-module-menu nav-card-grid" id="package-module-menu">
                 <button type="button" class="nav-card" data-package-page-target="packages" data-package-mode="create"><span class="nav-card-icon">+</span><strong>Criar novo pacote</strong><small>Cadastrar pacote de aulas.</small><em>Abrir</em></button>
                 <button type="button" class="nav-card" data-package-page-target="packages" data-package-mode="edit"><span class="nav-card-icon">✎</span><strong>Editar pacote</strong><small>Alterar pacote atual.</small><em>Abrir</em></button>
-                <button type="button" class="nav-card" data-package-page-target="dropin"><span class="nav-card-icon">$</span><strong>Aula avulsa</strong><small>Lancar aula sem consumir pacote.</small><em>Abrir</em></button>
-                <button type="button" class="nav-card" data-package-page-target="checkin"><span class="nav-card-icon">✓</span><strong>Check-in / Cancelamento</strong><small>Presenca, falta ou desmarcacao.</small><em>Abrir</em></button>
-                <button type="button" class="nav-card" data-package-page-target="makeup"><span class="nav-card-icon">↺</span><strong>Reagendamento / Reposicao</strong><small>Aprovar, recusar e usar reposicoes.</small><em>Abrir</em></button>
-                <button type="button" class="nav-card" data-package-page-target="history"><span class="nav-card-icon">≡</span><strong>Historico</strong><small>Consultar registros por aluno.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-package-page-target="dropin"><span class="nav-card-icon">$</span><strong>Aula avulsa</strong><small>Lançar aula sem consumir pacote.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-package-page-target="checkin"><span class="nav-card-icon">✓</span><strong>Check-in / Cancelamento</strong><small>Presença, falta ou desmarcação.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-package-page-target="makeup"><span class="nav-card-icon">↺</span><strong>Reagendamento / Reposição</strong><small>Aprovar, recusar e usar reposições.</small><em>Abrir</em></button>
+                <button type="button" class="nav-card" data-package-page-target="history"><span class="nav-card-icon">≡</span><strong>Histórico</strong><small>Consultar registros por aluno.</small><em>Abrir</em></button>
               </div>
               <section class="package-subpage" data-package-page="packages" hidden>
                 <button type="button" class="secondary package-page-back" data-package-page-back>Voltar</button>
@@ -641,45 +647,48 @@
                   <h3 id="package-editor-title">Criar ou editar pacote</h3>
                 </div>
                 <div class="package-student-selector">
-                <label>Aluno
-                  <select id="package-view-student"></select>
+                <label>Buscar aluno
+                  <input id="package-student-search" placeholder="Buscar por nome, telefone ou e-mail..." />
                 </label>
+                <select id="package-view-student" hidden></select>
+                <div class="package-student-results" id="package-student-results"></div>
                 <button type="button" class="primary" id="new-package-button">Novo pacote</button>
                 </div>
                 <div class="package-empty-state" id="package-empty-state">Selecione um aluno para visualizar os check-ins e pacotes.</div>
                 <form class="package-form" id="package-form" hidden>
-                <label>Aluno
+                <label hidden>Aluno
                   <select id="package-student"></select>
                 </label>
                 <label>Nome do pacote
-                  <input id="package-name" required placeholder="Ex: Personal 12 aulas" />
+                  <input id="package-name" required list="package-model-list" placeholder="Ex: Musculação 3x" />
+                  <datalist id="package-model-list"></datalist>
                 </label>
                 <label>Total de aulas
                   <input id="package-total" required inputmode="numeric" placeholder="Ex: 12" />
                 </label>
-                <label>Frequencia semanal
+                <label>Frequência semanal
                   <input id="package-frequency" placeholder="Ex: 3x por semana" />
                 </label>
                 <label>Valor do pacote
                   <input id="package-value" placeholder="R$ 600,00" />
                 </label>
-                <label>Data de inicio
+                <label>Data de início
                   <input id="package-start" required placeholder="Ex: 01/06" />
                 </label>
                 <label>Data de vencimento
                   <input id="package-end" required placeholder="Ex: 30/06" />
                 </label>
-                <label>Limite de reposicoes
+                <label>Limite de reposições
                   <input id="package-makeup-limit" inputmode="numeric" placeholder="Ex: 3" />
                 </label>
                 <label>Dias da semana
                   <input id="package-days" required placeholder="Ex: segunda, quarta e sexta" />
                 </label>
-                <label>Horario
+                <label>Horário
                   <input id="package-time" required placeholder="Ex: 9h" />
                 </label>
-                <label class="package-notes">Observacoes
-                  <textarea id="package-notes" placeholder="Orientacoes ou combinados do pacote"></textarea>
+                <label class="package-notes">Observações
+                  <textarea id="package-notes" placeholder="Orientações ou combinados do pacote"></textarea>
                 </label>
                 <button type="submit" class="primary">Salvar pacote</button>
                 </form>
@@ -702,7 +711,7 @@
                 <label>Tipo de aula
                   <select id="manual-checkin-type">
                     <option value="package">Aula do pacote</option>
-                    <option value="makeup">Aula de reposicao aprovada</option>
+                    <option value="makeup">Aula de reposição aprovada</option>
                     <option value="dropin">Aula avulsa</option>
                   </select>
                 </label>
@@ -712,7 +721,7 @@
                 <label>Observacao
                   <input id="manual-checkin-note" placeholder="Ex: aula extra de musculacao" />
                 </label>
-                <button type="submit" class="primary">Marcar presenca manual</button>
+                <button type="submit" class="primary">Marcar presença manual</button>
                 </form>
                 <section class="lesson-extra-panel">
                   <div>
@@ -730,16 +739,16 @@
                     <label>Data da aula
                       <input id="makeup-date" required placeholder="Ex: 10/06/2026" />
                     </label>
-                    <label>Horario da aula
+                    <label>Horário da aula
                       <input id="makeup-lesson-time" required placeholder="Ex: 18:00" />
                     </label>
-                    <label>Horario do aviso
+                    <label>Horário do aviso
                       <input id="makeup-notice-time" required placeholder="Ex: 15:30" />
                     </label>
                     <label class="package-notes">Observacao
                       <textarea id="makeup-note" placeholder="Ex: avisou pelo WhatsApp"></textarea>
                     </label>
-                    <button type="submit" class="primary">Registrar desmarcacao</button>
+                    <button type="submit" class="primary">Registrar desmarcação</button>
                   </form>
                 </section>
               </section>
@@ -781,10 +790,35 @@
               <section class="package-subpage" data-package-page="makeup" hidden>
                 <button type="button" class="secondary package-page-back" data-package-page-back>Voltar</button>
                 <div>
-                  <p class="eyebrow">Reagendamento / Reposicao</p>
-                  <h3>Reposicoes disponiveis</h3>
+                  <p class="eyebrow">Reagendamento / Reposição</p>
+                  <h3>Reposições disponíveis</h3>
                   <span>Aprove, recuse, envie WhatsApp ou marque como usada.</span>
                 </div>
+                <section class="lesson-extra-panel">
+                  <div>
+                    <p class="eyebrow">Remarcação pelo personal</p>
+                    <h3>Remarcar aula</h3>
+                    <span>Use quando a aula precisar ser remarcada pelo personal sem descontar do pacote.</span>
+                  </div>
+                  <form class="dropin-form" id="personal-reschedule-form">
+                    <label>Aluno
+                      <select id="personal-reschedule-student"></select>
+                    </label>
+                    <label>Pacote
+                      <select id="personal-reschedule-package"></select>
+                    </label>
+                    <label>Data original
+                      <input id="personal-reschedule-date" required placeholder="Ex: 10/06/2026" />
+                    </label>
+                    <label>Horário original
+                      <input id="personal-reschedule-time" required placeholder="Ex: 18:00" />
+                    </label>
+                    <label class="package-notes">Motivo
+                      <textarea id="personal-reschedule-reason" placeholder="Ex: personal precisou remarcar a aula"></textarea>
+                    </label>
+                    <button type="submit" class="primary">Registrar remarcação</button>
+                  </form>
+                </section>
                 <label class="package-history-filter">Aluno
                   <select id="makeup-list-student"></select>
                 </label>
@@ -793,18 +827,18 @@
               <section class="package-subpage" data-package-page="history" hidden>
                 <button type="button" class="secondary package-page-back" data-package-page-back>Voltar</button>
                 <div>
-                  <p class="eyebrow">Historico</p>
+                  <p class="eyebrow">Histórico</p>
                   <h3>Registros por aluno</h3>
-                  <span>Aulas do pacote, avulsas, cancelamentos, reposicoes e check-ins.</span>
+                  <span>Aulas do pacote, avulsas, cancelamentos, reposições e check-ins.</span>
                 </div>
                 <div class="checkin-filters package-history-filters">
                   <label>Aluno
                     <select id="lesson-history-student"></select>
                   </label>
-                  <label>Periodo inicial
+                  <label>Período inicial
                     <input id="lesson-history-start" placeholder="Ex: 01/06/2026" />
                   </label>
-                  <label>Periodo final
+                  <label>Período final
                     <input id="lesson-history-end" placeholder="Ex: 30/06/2026" />
                   </label>
                 </div>
@@ -827,14 +861,14 @@
             <div class="finance-panel">
               <form class="billing-settings" id="billing-settings-form">
                 <div>
-                  <p class="eyebrow">Configuracoes de cobranca</p>
+                  <p class="eyebrow">Configurações de cobrança</p>
                   <h3>WhatsApp e Pix</h3>
                   <span>Configure a mensagem padrao enviada manualmente pelo WhatsApp.</span>
                 </div>
                 <label>Chave Pix<input id="billing-pix-key" placeholder="CPF, telefone, e-mail ou chave aleatoria" /></label>
                 <label>Identificacao<input id="billing-sender-name" placeholder="Ex: Personal Joao Victor" /></label>
-                <label class="billing-message-field">Mensagem padrao<textarea id="billing-default-message" placeholder="Ex: Para manter seu acesso aos treinos e acompanhamento..."></textarea></label>
-                <button type="submit">Salvar configuracoes</button>
+                <label class="billing-message-field">Mensagem padrão<textarea id="billing-default-message" placeholder="Ex: Para manter seu acesso aos treinos e acompanhamento..."></textarea></label>
+                <button type="submit">Salvar configurações</button>
                 <p class="save-message" id="billing-settings-message" role="status"></p>
               </form>
               <section class="billing-list-panel">

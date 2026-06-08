@@ -1913,29 +1913,53 @@ h3 {
   position: relative;
   padding: 18px;
   display: grid;
-  gap: 10px;
+  grid-template-rows: auto minmax(40px, 1fr) auto;
+  gap: 14px;
   align-content: start;
   min-height: 150px;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(7, 23, 35, 0.08);
 }
 
 .admin-alert-badge {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  min-width: 24px;
-  height: 24px;
-  display: inline-grid;
+  top: 8px;
+  right: 8px;
+  min-width: 30px;
+  width: auto;
+  height: 30px;
+  padding: 0 8px;
+  display: grid;
   place-items: center;
   border-radius: 999px;
   color: #fff;
-  background: #dc2626;
-  font-size: 12px;
+  background: #ef123f;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  font-size: 13px;
   font-weight: 950;
-  box-shadow: 0 8px 18px rgba(220, 38, 38, 0.32);
+  line-height: 1;
+  text-align: center;
+  box-shadow: 0 10px 22px rgba(239, 18, 63, 0.42);
+  z-index: 5;
 }
 
 .admin-grid button {
   width: fit-content;
+}
+
+.admin-grid article strong {
+  display: block;
+  line-height: 1.2;
+}
+
+.admin-grid article span {
+  display: block;
+  line-height: 1.4;
+}
+
+.admin-grid article button {
+  align-self: end;
+  min-height: 44px;
 }
 
 .alerts-panel,
@@ -2176,6 +2200,101 @@ h3 {
   color: #07506b;
 }
 
+.student-list-tools {
+  margin: 12px 0 16px;
+}
+
+.student-list-tools label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.student-list-tools input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 14px;
+  box-sizing: border-box;
+}
+
+.student-card-list {
+  display: grid;
+  gap: 14px;
+}
+
+.student-list-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 12px 26px rgba(7, 23, 35, 0.08);
+  max-width: 100%;
+}
+
+.student-list-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.student-list-card-head strong {
+  color: #071723;
+  font-size: 18px;
+}
+
+.student-list-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.student-status-pill {
+  display: inline-grid;
+  place-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.student-status-pill.ok {
+  background: rgba(184, 255, 56, 0.2);
+  color: #315600;
+}
+
+.student-status-pill.pending {
+  background: rgba(255, 190, 80, 0.2);
+  color: #805000;
+}
+
+.student-status-pill.danger {
+  background: rgba(239, 18, 63, 0.13);
+  color: #b30f2f;
+}
+
+.student-profile-actions-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(184, 255, 56, 0.28);
+  border-radius: 12px;
+  background: #071723;
+  box-shadow: 0 12px 26px rgba(7, 23, 35, 0.12);
+}
+
+.student-profile-actions-panel button {
+  min-height: 42px;
+}
+
 .student-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2279,6 +2398,22 @@ h3 {
   grid-template-columns: minmax(180px, 1fr) auto;
 }
 
+.package-student-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+
+.package-student-results:empty {
+  display: none;
+}
+
+.package-student-results button {
+  min-height: 38px;
+  white-space: normal;
+}
+
 .package-empty-state {
   background: #f6fbfc;
   border: 1px dashed var(--line);
@@ -2309,16 +2444,17 @@ h3 {
 
 .nav-card,
 .package-module-menu button {
-  min-height: 118px;
+  min-height: 148px;
   align-items: flex-start;
   display: grid;
-  gap: 8px;
+  grid-template-rows: auto auto minmax(34px, 1fr) auto;
+  gap: 12px;
   justify-items: start;
-  padding: 18px;
+  padding: 20px;
   text-align: left;
   white-space: normal;
   border: 1px solid rgba(184, 255, 56, 0.22);
-  border-radius: 8px;
+  border-radius: 12px;
   background: linear-gradient(145deg, #ffffff, #f6fbfc);
   box-shadow: 0 12px 28px rgba(7, 23, 35, 0.08);
   color: var(--ink);
@@ -2340,9 +2476,9 @@ h3 {
 .nav-card-icon {
   display: inline-grid;
   place-items: center;
-  min-width: 46px;
-  min-height: 46px;
-  border-radius: 8px;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
   color: #071723;
   background: var(--lime);
   font-size: 17px;
@@ -2353,6 +2489,7 @@ h3 {
 .package-module-menu button strong {
   color: inherit;
   font-size: 17px;
+  line-height: 1.2;
 }
 
 .nav-card small,
@@ -2361,6 +2498,7 @@ h3 {
   color: inherit;
   line-height: 1.35;
   opacity: 0.72;
+  display: block;
 }
 
 .student-agenda-menu {
@@ -2372,16 +2510,35 @@ h3 {
 }
 
 .nav-card em {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--green);
   font-size: 13px;
   font-style: normal;
   font-weight: 900;
+  line-height: 1;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(7, 23, 35, 0.08);
+  width: 100%;
+}
+
+.nav-card em::after {
+  content: "→";
 }
 
 .admin-subpage,
 .package-subpage {
   display: grid;
   gap: 16px;
+}
+
+.admin-subpage:not([hidden]),
+.package-subpage:not([hidden]),
+.package-expand-panel:not([hidden]) {
+  width: 100%;
+  max-width: 100%;
 }
 
 .package-page-back {
@@ -2886,6 +3043,7 @@ h3 {
   .profile-grid,
   .student-admin-profile-grid,
   .student-history-grid,
+  .student-list-card-grid,
   .package-compact-grid,
   .package-card-summary,
   .package-summary-metrics,
@@ -3007,6 +3165,11 @@ h3 {
   .student-admin-profile-head {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .student-list-card-head,
+  .student-profile-actions-panel {
+    display: grid;
   }
 
   .profile-hero-card {
@@ -3549,8 +3712,42 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .nav-card,
+  .package-module-menu button {
+    min-height: 152px;
+    padding: 18px;
+    gap: 12px;
+  }
+
+  .admin-alert-badge {
+    min-width: 30px;
+    height: 30px;
+    top: 8px;
+    right: 8px;
+    font-size: 12px;
+  }
+
+  .nav-card em {
+    min-height: 32px;
+    align-items: center;
+  }
+
+  .nav-card-grid[hidden],
+  .package-module-menu[hidden],
+  .student-agenda-menu[hidden] {
+    display: none !important;
+  }
+
   .backup-panel button,
-  .alert-card button {
+  .alert-card button,
+  .package-page-back,
+  .package-lesson button,
+  .package-card button {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .nav-card {
     width: 100%;
   }
 }
