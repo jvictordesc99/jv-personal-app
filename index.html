@@ -434,8 +434,9 @@
             </div>
             <label>Aluno<input id="student-name" required placeholder="Nome do aluno" /></label>
             <label>E-mail do login<input id="student-email" type="email" placeholder="email do aluno no Supabase" /></label>
-            <label>Senha inicial<input id="student-temp-password" type="password" placeholder="Senha provisoria" /></label>
-            <button type="button" class="secondary" id="create-student-access-button">Criar acesso do aluno</button>
+            <label hidden>Senha inicial<input id="student-temp-password" type="password" placeholder="Nao sera salva no app" /></label>
+            <button type="button" class="secondary" id="create-student-access-button">Enviar convite de acesso</button>
+            <p class="save-message">Use um e-mail real, pois o aluno receberá um link para definir a senha.</p>
             <label>Telefone WhatsApp<input id="student-phone" placeholder="Ex: 19992782696" /></label>
             <label>Data de nascimento<input id="student-birth-date" placeholder="Ex: 15/08/1995" /></label>
             <label>Plano<input id="student-plan" required placeholder="Ex: Personal, Beach" /></label>

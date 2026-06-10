@@ -796,17 +796,27 @@ function findStudentFromSupabaseUser(user) {
   const email = String(user?.email || "").toLowerCase();
   const authUserId = String(user?.id || "");
   const students = loadStudents();
+  console.info("Buscando aluno vinculado no app_state/localStorage.", {
+    email,
+    auth_user_id: authUserId,
+    totalAlunos: students.length,
+    alunos: students.map((student) => ({
+      id: student.id,
+      nome: student.name,
+      email: student.email,
+      email_login: student.email_login || "",
+      auth_user_id: student.auth_user_id || student.authUserId || student.supabaseUserId || "",
+    })),
+  });
 
   return students.find((student) => (
       student.authUserId === authUserId
       || student.supabaseUserId === authUserId
       || student.auth_user_id === authUserId
     ))
+    || students.find((student) => student.email_login && student.email_login.toLowerCase() === email)
     || students.find((student) => student.email && student.email.toLowerCase() === email)
     || students.find((student) => student.name === metadataName)
-    || students.find((student) => (
-      student.phone && email && normalizeWhatsAppPhone(student.phone) === normalizeWhatsAppPhone(email)
-    ))
     || null;
 }
 
@@ -823,11 +833,30 @@ function saveSupabaseStudentLink(studentName, user) {
   students[index] = {
     ...students[index],
     email: students[index].email || email,
+    email_login: email,
     supabaseUserId: user.id,
     authUserId: user.id,
     auth_user_id: user.id,
+    role: "aluno",
   };
   saveStudents(students);
+}
+
+function isLikelyRealEmail(email) {
+  const value = String(email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value)) return false;
+  const domain = value.split("@")[1] || "";
+  if (!domain || !domain.includes(".")) return false;
+  if (/(teste|test|fake|falso|exemplo|example|email|sememail|naotem|noemail)/i.test(value)) return false;
+  if (["example.com", "example.com.br", "teste.com", "test.com", "email.com", "dominio.com"].includes(domain)) return false;
+  return true;
+}
+
+function createTemporaryInvitePassword() {
+  const random = typeof crypto !== "undefined" && crypto.getRandomValues
+    ? Array.from(crypto.getRandomValues(new Uint32Array(4))).map((part) => part.toString(36)).join("")
+    : `${Date.now()}${Math.random()}`.replace(/\D/g, "");
+  return `Jv@${random.slice(0, 18)}9a`;
 }
 
 async function createStudentAuthUser(email, password, studentName) {
@@ -849,12 +878,20 @@ async function createStudentAuthUser(email, password, studentName) {
       password,
       options: {
         data: {
-          role: "student",
+          role: "aluno",
           student_name: studentName,
         },
       },
     });
 
+    console.info("Criacao de acesso do aluno no Supabase Auth.", {
+      email,
+      aluno: studentName,
+      userId: data?.user?.id || "",
+      confirmationSentAt: data?.user?.confirmation_sent_at || "",
+      emailConfirmedAt: data?.user?.email_confirmed_at || "",
+      error,
+    });
     return { userId: data?.user?.id || "", error };
   } catch (error) {
     console.error("Erro ao criar usuario do aluno no Supabase Auth.", {
@@ -897,6 +934,11 @@ async function applySupabaseUser(user) {
     return true;
   }
 
+  console.info("Tentativa de login aluno: carregando app_state antes de procurar vinculo.", {
+    email: userEmail,
+    auth_user_id: user.id,
+  });
+  await loadSupabaseAppState();
   const student = findStudentFromSupabaseUser(user);
   if (!student) {
     console.warn("Aluno nao encontrado para usuario Supabase.", {
@@ -909,7 +951,7 @@ async function applySupabaseUser(user) {
         auth_user_id: item.auth_user_id || item.authUserId || item.supabaseUserId || "",
       })),
     });
-    showSupabaseLoginMessage("Login realizado, mas este usuário ainda não está vinculado a um aluno.", "error");
+    showSupabaseLoginMessage("Seu login existe, mas ainda não está vinculado ao seu cadastro. Fale com o personal.", "error");
     return false;
   }
 
@@ -922,6 +964,10 @@ async function applySupabaseUser(user) {
   saveSupabaseStudentLink(student.name, user);
   enterTestMode("student", student.name);
   safeSetText(document.querySelector("#user-mode"), `Aluno | ${user.email || student.name}`);
+  console.info("Redirecionando aluno autenticado para area do aluno.", {
+    aluno: student.name,
+    auth_user_id: user.id,
+  });
   restoreNavigationState();
   return true;
 }
@@ -958,6 +1004,10 @@ function normalizeStudentsData(students) {
         auth_user_id: String(student.auth_user_id || student.authUserId || student.supabaseUserId || "").trim(),
         name: String(student.name || "").trim(),
         email: String(student.email || "").trim().toLowerCase(),
+        email_login: String(student.email_login || student.email || "").trim().toLowerCase(),
+        role: String(student.role || "aluno").trim().toLowerCase(),
+        acesso_status: String(student.acesso_status || "").trim(),
+        convite_enviado_em: student.convite_enviado_em || "",
         phone: String(student.phone || student.whatsapp || "").trim(),
         birthDate: String(student.birthDate || student.birth_date || "").trim(),
         plan: String(student.plan || "Plano nao informado").trim(),
@@ -1202,6 +1252,19 @@ function renderAssessmentSupportSummaries() {
     } else {
       assessmentCompareSummary.textContent = "Cadastre pelo menos duas avaliações para comparar.";
     }
+  }
+}
+
+async function sendStudentPasswordInvite(email) {
+  const client = getSupabaseClient();
+  if (!client || !email) return { error: new Error("Supabase nao configurado.") };
+
+  try {
+    return await client.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.href.split("#")[0],
+    });
+  } catch (error) {
+    return { error };
   }
 }
 
@@ -7002,6 +7065,8 @@ studentForm?.addEventListener("submit", async (event) => {
     auth_user_id: students[editingStudentIndex]?.auth_user_id || students[editingStudentIndex]?.authUserId || students[editingStudentIndex]?.supabaseUserId || "",
     name: nameInput.value.trim(),
     email: emailInput?.value.trim().toLowerCase() || "",
+    email_login: students[editingStudentIndex]?.email_login || emailInput?.value.trim().toLowerCase() || "",
+    role: students[editingStudentIndex]?.role || "aluno",
     phone: phoneInput?.value.trim() || "",
     birthDate: birthDateInput?.value.trim() || "",
     plan: planInput.value.trim(),
@@ -7063,7 +7128,10 @@ async function createOrLinkStudentAccessFromForm() {
       aluno: name,
       erro: error,
     });
-    showMessage(`Nao foi possivel criar o acesso no Supabase: ${error?.message || "usuario nao retornado"}.`, "error");
+    const alreadyExists = /already|registered|exists|user.*exist/i.test(error?.message || "");
+    showMessage(alreadyExists
+      ? "Usuário já existe. Vincule manualmente ou use o mesmo email."
+      : `Nao foi possivel criar o acesso no Supabase: ${error?.message || "usuario nao retornado"}.`, "error");
     createStudentAccessButton.disabled = false;
     safeSetText(createStudentAccessButton, "Criar acesso do aluno");
     return;
@@ -7074,6 +7142,8 @@ async function createOrLinkStudentAccessFromForm() {
     supabaseUserId: userId,
     authUserId: userId,
     auth_user_id: userId,
+    email_login: email,
+    role: "aluno",
     name,
     email,
     phone: phoneInput?.value.trim() || students[existingIndex]?.phone || "",
@@ -7104,7 +7174,82 @@ async function createOrLinkStudentAccessFromForm() {
   safeSetText(createStudentAccessButton, "Criar acesso do aluno");
 }
 
-createStudentAccessButton?.addEventListener("click", createOrLinkStudentAccessFromForm);
+async function sendStudentAccessInviteFromForm() {
+  const name = nameInput?.value.trim() || "";
+  const email = emailInput?.value.trim().toLowerCase() || "";
+
+  if (!name || !isLikelyRealEmail(email)) {
+    showMessage("Informe um e-mail real para enviar o convite de acesso.", "error");
+    emailInput?.focus();
+    return;
+  }
+
+  const students = loadStudents();
+  const existingIndex = editingStudentIndex !== null
+    ? editingStudentIndex
+    : students.findIndex((student) => student.name.toLowerCase() === name.toLowerCase() || student.email === email || student.email_login === email);
+
+  createStudentAccessButton.disabled = true;
+  safeSetText(createStudentAccessButton, "Enviando convite...");
+
+  const { userId, error } = await createStudentAuthUser(email, createTemporaryInvitePassword(), name);
+  const alreadyExists = /already|registered|exists|user.*exist|already registered/i.test(error?.message || "");
+  if (error && !alreadyExists) {
+    console.error("Falha ao criar acesso do aluno no Supabase Auth.", { email, aluno: name, erro: error });
+    showMessage(`Nao foi possivel criar o convite no Supabase: ${error?.message || "usuario nao retornado"}.`, "error");
+    createStudentAccessButton.disabled = false;
+    safeSetText(createStudentAccessButton, "Enviar convite de acesso");
+    return;
+  }
+
+  const inviteResult = await sendStudentPasswordInvite(email);
+  if (inviteResult?.error) {
+    console.error("Falha ao enviar e-mail de definicao de senha.", { email, aluno: name, erro: inviteResult.error });
+    showMessage("Acesso preparado, mas o e-mail de convite nao foi enviado. Tente reenviar em alguns minutos.", "error");
+  }
+
+  const linkedStudent = {
+    id: existingIndex >= 0 ? students[existingIndex].id : createId(),
+    supabaseUserId: userId || students[existingIndex]?.supabaseUserId || "",
+    authUserId: userId || students[existingIndex]?.authUserId || "",
+    auth_user_id: userId || students[existingIndex]?.auth_user_id || "",
+    email_login: email,
+    role: "aluno",
+    acesso_status: "convite_enviado",
+    convite_enviado_em: new Date().toISOString(),
+    name,
+    email,
+    phone: phoneInput?.value.trim() || students[existingIndex]?.phone || "",
+    birthDate: birthDateInput?.value.trim() || students[existingIndex]?.birthDate || "",
+    plan: planInput?.value.trim() || students[existingIndex]?.plan || "Plano nao informado",
+    frequency: frequencyInput?.value || students[existingIndex]?.frequency || "3x",
+    makeupLimit: normalizeMakeupLimit(makeupLimitInput?.value || students[existingIndex]?.makeupLimit, frequencyInput?.value || students[existingIndex]?.frequency || "3x"),
+    value: valueInput?.value.trim() || students[existingIndex]?.value || "",
+    due: dueInput?.value.trim() || students[existingIndex]?.due || "",
+    payment: paymentInput?.value || students[existingIndex]?.payment || "Em dia",
+  };
+
+  if (existingIndex >= 0) {
+    students[existingIndex] = { ...students[existingIndex], ...linkedStudent };
+    editingStudentIndex = existingIndex;
+  } else {
+    students.push(linkedStudent);
+    editingStudentIndex = students.length - 1;
+  }
+
+  saveStudents(students);
+  if (tempPasswordInput) tempPasswordInput.value = "";
+  renderStudents();
+  fillStudentSelects();
+  if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
+  showMessage(alreadyExists
+    ? "Usuário já existe. Convite reenviado. Se o aluno não receber, peça para verificar spam/lixo eletrônico ou usar Esqueci senha."
+    : "Convite enviado. O aluno deve acessar o e-mail e definir a senha.");
+  createStudentAccessButton.disabled = false;
+  safeSetText(createStudentAccessButton, "Enviar convite de acesso");
+}
+
+createStudentAccessButton?.addEventListener("click", sendStudentAccessInviteFromForm);
 
 workoutForm?.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -8318,6 +8463,7 @@ supabaseLoginForm?.addEventListener("submit", async (event) => {
     return;
   }
 
+  console.info("Tentativa de login Supabase.", { email });
   showSupabaseLoginMessage("Entrando...");
   const { data, error } = await client.auth.signInWithPassword({ email, password });
   if (error) {
@@ -8328,9 +8474,20 @@ supabaseLoginForm?.addEventListener("submit", async (event) => {
       message: error.message,
       supabaseUrl: getSupabaseConfig().url,
     });
-    showSupabaseLoginMessage("Nao foi possivel entrar. Confira e-mail e senha.", "error");
+    const invalidCredentials = /invalid login credentials/i.test(error.message || "");
+    showSupabaseLoginMessage(
+      invalidCredentials
+        ? "E-mail ou senha incorretos. Use o link enviado por e-mail ou clique em Esqueci senha para definir sua senha."
+        : "Nao foi possivel entrar. Confira e-mail e senha.",
+      "error",
+    );
     return;
   }
+  console.info("Supabase Auth autenticou usuario.", {
+    emailInformado: email,
+    userId: data?.user?.id || "",
+    userEmail: data?.user?.email || "",
+  });
 
   if (await applySupabaseUser(data.user)) {
     supabaseLoginForm.reset();
