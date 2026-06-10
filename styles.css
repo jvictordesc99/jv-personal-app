@@ -1835,6 +1835,61 @@ h3 {
   font-weight: 800;
 }
 
+.account-security-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(22, 39, 32, 0.05);
+}
+
+.account-security-card h3 {
+  margin: 0;
+  color: var(--ink);
+}
+
+.temporary-password-notice {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(184, 255, 56, 0.16);
+  border: 1px solid rgba(184, 255, 56, 0.4);
+  color: #173600;
+}
+
+.temporary-password-notice span {
+  color: #446000;
+}
+
+.account-security-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.account-security-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.account-security-form input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+}
+
+.account-security-form .save-message {
+  grid-column: 1 / -1;
+}
+
 .save-message {
   min-height: 22px;
   margin: 10px 0 0;
@@ -3041,6 +3096,7 @@ h3 {
   .assessment-summary-grid,
   .assessment-mini-grid,
   .profile-grid,
+  .account-security-form,
   .student-admin-profile-grid,
   .student-history-grid,
   .student-list-card-grid,
