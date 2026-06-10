@@ -3573,7 +3573,7 @@ function createWorkoutRow(studentName, workout) {
   status.appendChild(createWorkoutStatusBadge(expiration));
 
   const total = document.createElement("span");
-  total.textContent = `${workout.exercises.length} exercicios`;
+  total.textContent = `${workout.exercises.length} exercícios`;
 
   const actions = document.createElement("span");
   actions.className = "student-actions";
@@ -3731,7 +3731,7 @@ function createExerciseFormRow(exercise = {}) {
   row.className = "exercise-form-row";
 
   const fields = [
-    ["name", "Nome do exercicio", true],
+    ["name", "Nome do exercício", true],
     ["currentLoad", "Carga prescrita", false],
     ["reps", "Ex: 12", false],
     ["sets", "Ex: 4", false],
@@ -3783,7 +3783,7 @@ function createTrainingSessionBlock(session = {}) {
   addExercise.type = "button";
   addExercise.className = "secondary";
   addExercise.dataset.addSessionExercise = "true";
-  addExercise.textContent = "Adicionar exercicio";
+  addExercise.textContent = "Adicionar exercício";
 
   const removeSession = document.createElement("button");
   removeSession.type = "button";
@@ -3931,7 +3931,7 @@ function importWorkoutFromText() {
 
   if (!filledSessions.length) {
     if (workoutMessage) {
-      workoutMessage.textContent = "Nao encontrei exercicios no texto. Revise o formato e tente novamente.";
+      workoutMessage.textContent = "Não encontrei exercícios no texto. Revise o formato e tente novamente.";
       workoutMessage.classList.add("error");
     }
     return;
@@ -3939,7 +3939,7 @@ function importWorkoutFromText() {
 
   resetTrainingSessions(filledSessions);
   if (workoutMessage) {
-    workoutMessage.textContent = `${exerciseCount} exercicio(s) em ${filledSessions.length} treino(s) organizados. Revise os campos antes de salvar.`;
+    workoutMessage.textContent = `${exerciseCount} exercício(s) em ${filledSessions.length} treino(s) organizados. Revise os campos antes de salvar.`;
     workoutMessage.classList.remove("error");
   }
 }
@@ -4997,7 +4997,7 @@ function renderCurrentWorkout() {
   const visibleEntries = getWorkoutExerciseEntries({ ...workout, sessions })
     .filter((entry) => entry.session.id === activeSession?.id)
   if (!visibleEntries.length) {
-    list.textContent = "Nenhum exercicio cadastrado neste treino.";
+    list.textContent = "Nenhum exercício cadastrado neste treino.";
   }
 
   visibleEntries.forEach(({ exercise: normalizedExercise, index: flatIndex }) => {
@@ -5015,7 +5015,7 @@ function renderCurrentWorkout() {
     const name = document.createElement("strong");
     name.textContent = normalizedExercise.name;
     const details = document.createElement("small");
-    details.textContent = `${normalizedExercise.sets || "-"} series | ${normalizedExercise.reps || "-"} reps | descanso ${normalizedExercise.rest || "-"}`;
+    details.textContent = `${normalizedExercise.sets || "-"} séries | ${normalizedExercise.reps || "-"} reps | descanso ${normalizedExercise.rest || "-"}`;
     title.append(name, details);
     header.append(title, createProgressBadge(progress));
 
@@ -5048,7 +5048,7 @@ function renderCurrentWorkout() {
 
     const last = document.createElement("small");
     last.className = "last-load-note";
-    last.textContent = lastRecord ? `Ultima carga: ${lastRecord.load} em ${lastRecord.date}` : "Nenhuma carga registrada ainda.";
+    last.textContent = lastRecord ? `Última carga: ${lastRecord.load} em ${lastRecord.date}` : "Nenhuma carga registrada ainda.";
 
     card.append(header, form, last);
     list.appendChild(card);
@@ -5126,7 +5126,7 @@ function createWorkoutFeedbackPanel(studentName, workout) {
   const pain = document.createElement("div");
   pain.className = "feedback-pain";
   pain.innerHTML = `
-    <label class="feedback-chip"><input type="radio" name="pain" value="nao" checked> Nao senti dor</label>
+    <label class="feedback-chip"><input type="radio" name="pain" value="nao" checked> Não senti dor</label>
     <label class="feedback-chip"><input type="radio" name="pain" value="sim"> Senti dor</label>
   `;
 
@@ -5304,9 +5304,9 @@ function renderStudentLoadEvolution() {
 
   if (!groups.length) {
     studentLoadChartTitle.textContent = "Sem registros";
-    studentLoadChartSubtitle.textContent = "Salve uma carga dentro do treino para gerar o grafico.";
+    studentLoadChartSubtitle.textContent = "Salve uma carga dentro do treino para gerar o gráfico.";
     const option = document.createElement("option");
-    option.textContent = "Nenhum exercicio registrado";
+    option.textContent = "Nenhum exercício registrado";
     option.value = "";
     studentLoadExercise.appendChild(option);
     return;
@@ -5345,7 +5345,7 @@ function fillAdminEvolutionExercises() {
   if (!groups.length) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "Nenhum exercicio";
+    option.textContent = "Nenhum exercício";
     adminEvolutionExercise.appendChild(option);
     return;
   }
@@ -5414,13 +5414,13 @@ function renderPersonalRecords(studentName, exerciseKey) {
   adminPersonalRecords.innerHTML = "";
 
   if (!studentName || !exerciseKey) {
-    adminPersonalRecords.textContent = "Selecione um aluno e um exercicio para visualizar recordes.";
+    adminPersonalRecords.textContent = "Selecione um aluno e um exercício para visualizar recordes.";
     return;
   }
 
   const group = groupProgressByExercise(studentName)[exerciseKey];
   if (!group) {
-    adminPersonalRecords.textContent = "Nenhum registro para este exercicio.";
+    adminPersonalRecords.textContent = "Nenhum registro para este exercício.";
     return;
   }
 
@@ -5431,7 +5431,7 @@ function renderPersonalRecords(studentName, exerciseKey) {
   const executedRecords = numericRecords.filter((item) => !item.record.prescribed);
   const recordPool = executedRecords.length ? executedRecords : numericRecords;
   if (!recordPool.length) {
-    adminPersonalRecords.textContent = "Nenhuma carga numerica registrada para este exercicio.";
+    adminPersonalRecords.textContent = "Nenhuma carga numérica registrada para este exercício.";
     return;
   }
 
@@ -5461,16 +5461,16 @@ function renderPersonalRecords(studentName, exerciseKey) {
 
   const note = document.createElement("div");
   note.className = "record-feedback-note";
-  note.innerHTML = `<strong>Observacao/feedback</strong><span>${feedback?.note || feedback?.painLocation || best.record.note || "Nenhuma observacao vinculada a este recorde."}</span>`;
+  note.innerHTML = `<strong>Observação/feedback</strong><span>${feedback?.note || feedback?.painLocation || best.record.note || "Nenhuma observação vinculada a este recorde."}</span>`;
 
   const historyTitle = document.createElement("strong");
-  historyTitle.textContent = "Ultimos registros deste exercicio";
+  historyTitle.textContent = "Últimos registros deste exercício";
   const historyList = document.createElement("div");
   historyList.className = "record-history-list";
   history.forEach(({ record }) => {
     const item = document.createElement("div");
     item.className = "evolution-mini-row";
-    item.innerHTML = `<strong>${record.date}</strong><span>${record.load} | ${record.sets || "-"} series | ${record.reps || "-"} reps</span>`;
+    item.innerHTML = `<strong>${record.date}</strong><span>${record.load} | ${record.sets || "-"} séries | ${record.reps || "-"} reps</span>`;
     historyList.appendChild(item);
   });
 
@@ -5489,9 +5489,9 @@ function renderAdherenceSummary(studentName) {
   const adherence = prescribed ? Math.min(100, Math.round((completed / prescribed) * 100)) : 0;
 
   [
-    ["Treinos concluidos no mes", completed],
+    ["Treinos concluídos no mês", completed],
     ["Treinos prescritos", prescribed],
-    ["Adesao", `${adherence}%`],
+    ["Adesão", `${adherence}%`],
     ["Check-ins realizados", checkins.filter(isConsumedLesson).length],
   ].forEach(([label, value]) => {
     adminAdherenceSummary.appendChild(createAdminMetric(label, value));
@@ -5509,7 +5509,7 @@ function renderAdminFeedbacks(studentName) {
 
   if (!feedbacks.length) {
     adminFeedbackHistory.textContent = "Nenhum feedback registrado ainda.";
-    adminFeedbackNotes.textContent = "Nenhuma observacao enviada.";
+    adminFeedbackNotes.textContent = "Nenhuma observação enviada.";
     return;
   }
 
@@ -5517,7 +5517,7 @@ function renderAdminFeedbacks(studentName) {
     const item = document.createElement("article");
     item.className = "feedback-card";
     item.classList.toggle("alert-focus-card", highlightedFeedbackId === feedback.id);
-    item.innerHTML = `<strong>${feedback.date} | ${feedback.workoutTitle}</strong><span>${feedback.studentName} | Nota ${feedback.rating || "-"} | ${feedback.difficulty || "Sem intensidade"} | Dor: ${feedback.pain ? feedback.painLocation || "sim" : "nao"}</span><small>${feedback.note || "Sem observacao."}</small>`;
+    item.innerHTML = `<strong>${feedback.date} | ${feedback.workoutTitle}</strong><span>${feedback.studentName} | Nota ${feedback.rating || "-"} | ${feedback.difficulty || "Sem intensidade"} | Dor: ${feedback.pain ? feedback.painLocation || "sim" : "não"}</span><small>${feedback.note || "Sem observação."}</small>`;
     adminFeedbackHistory.appendChild(item);
     if (highlightedFeedbackId === feedback.id) {
       setTimeout(() => item.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
@@ -5621,7 +5621,7 @@ function renderLoadChart(container, records, mode = "last10") {
 
   const values = numericRecords.map((item) => item.value);
   if (!values.length) {
-    container.textContent = "Registros sem carga numerica para montar o grafico.";
+    container.textContent = "Registros sem carga numérica para montar o gráfico.";
     return;
   }
 
@@ -5667,7 +5667,7 @@ function renderLoadChart(container, records, mode = "last10") {
     const fill = document.createElement("span");
     fill.tabIndex = 0;
     fill.setAttribute("role", "button");
-    fill.setAttribute("aria-label", `${record.exerciseName || "Exercicio"} ${record.date} ${record.load}`);
+    fill.setAttribute("aria-label", `${record.exerciseName || "Exercício"} ${record.date} ${record.load}`);
     const load = document.createElement("strong");
     load.textContent = record.load;
     const date = document.createElement("small");
@@ -5676,10 +5676,10 @@ function renderLoadChart(container, records, mode = "last10") {
     const showTooltip = () => {
       tooltip.innerHTML = "";
       [
-        record.exerciseName || "Exercicio",
+        record.exerciseName || "Exercício",
         `Data: ${record.date}`,
         `Carga: ${record.load}`,
-        `Series: ${record.sets || "-"}`,
+        `Séries: ${record.sets || "-"}`,
         `Repeticoes: ${record.reps || "-"}`,
         `Treino: ${record.workoutTitle || "-"}`,
       ].forEach((text, index) => {
@@ -5895,7 +5895,7 @@ function renderStudentCheckinStatus() {
   }
 
   if (!todayLesson) {
-    studentCheckinStatus.textContent = "Nao ha aula prevista para hoje no pacote ativo.";
+    studentCheckinStatus.textContent = "Não há aula prevista para hoje no pacote ativo.";
     studentCheckinButton.textContent = "Sem aula hoje";
     studentCheckinButton.disabled = true;
     return;

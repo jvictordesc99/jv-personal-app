@@ -1890,6 +1890,64 @@ h3 {
   grid-column: 1 / -1;
 }
 
+@media (max-width: 480px) {
+  .topbar {
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .nav {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+
+  .nav-item {
+    flex: 0 0 auto;
+    min-height: 44px;
+    min-width: 112px;
+    padding: 10px 12px;
+    text-align: center;
+  }
+
+  .nav-card-grid,
+  .package-module-menu {
+    grid-template-columns: 1fr !important;
+    gap: 14px;
+  }
+
+  .nav-card,
+  .package-module-menu button {
+    min-height: 164px;
+    padding: 18px;
+  }
+
+  .nav-card small,
+  .package-module-menu button small {
+    margin-bottom: 10px;
+  }
+
+  .nav-card em {
+    min-height: 36px;
+    padding-top: 12px;
+  }
+
+  .student-actions,
+  .actions,
+  .confirm-actions {
+    gap: 10px;
+  }
+
+  .student-actions button,
+  .actions button,
+  .confirm-actions button {
+    min-height: 46px;
+    white-space: normal;
+  }
+}
+
 .save-message {
   min-height: 22px;
   margin: 10px 0 0;
@@ -2502,8 +2560,8 @@ h3 {
   min-height: 148px;
   align-items: flex-start;
   display: grid;
-  grid-template-rows: auto auto minmax(34px, 1fr) auto;
-  gap: 12px;
+  grid-template-rows: auto auto minmax(44px, 1fr) auto;
+  gap: 14px;
   justify-items: start;
   padding: 20px;
   text-align: left;
@@ -2554,6 +2612,8 @@ h3 {
   line-height: 1.35;
   opacity: 0.72;
   display: block;
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
 }
 
 .student-agenda-menu {
@@ -2573,8 +2633,8 @@ h3 {
   font-style: normal;
   font-weight: 900;
   line-height: 1;
-  margin-top: 2px;
-  padding-top: 8px;
+  margin-top: auto;
+  padding-top: 10px;
   border-top: 1px solid rgba(7, 23, 35, 0.08);
   width: 100%;
 }
@@ -3805,5 +3865,50 @@ textarea {
 
   .nav-card {
     width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .nav {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .nav-item {
+    flex: 0 0 auto;
+    min-width: 112px;
+    min-height: 44px;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .nav-card-grid,
+  .package-module-menu {
+    grid-template-columns: 1fr !important;
+    gap: 14px;
+  }
+
+  .nav-card,
+  .package-module-menu button {
+    min-height: 164px;
+  }
+
+  .nav-card small,
+  .package-module-menu button small {
+    margin-bottom: 10px;
+  }
+
+  .nav-card em {
+    min-height: 36px;
+    padding-top: 12px;
+  }
+
+  .student-actions button,
+  .actions button,
+  .confirm-actions button {
+    min-height: 46px;
+    white-space: normal;
   }
 }
