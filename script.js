@@ -905,7 +905,15 @@ async function getSupabaseProfileByUser(user) {
 
 async function upsertSupabaseProfile(profile) {
   const client = getSupabaseClient();
-  if (!client || !profile?.auth_user_id) return { data: null, error: new Error("Supabase nao configurado.") };
+  if (!client || !profile?.auth_user_id) {
+    const error = new Error("Supabase nao configurado ou auth_user_id ausente.");
+    console.error("Profile nao foi salvo: configuracao invalida.", {
+      supabaseConfigurado: Boolean(client),
+      auth_user_id: profile?.auth_user_id || "",
+      profileRecebido: profile,
+    });
+    return { data: null, error };
+  }
 
   const payload = {
     id: profile.id || profile.auth_user_id,
@@ -919,6 +927,12 @@ async function upsertSupabaseProfile(profile) {
   };
 
   try {
+    console.info("Tentando salvar profile no Supabase.", {
+      tabela: supabaseTables.profiles,
+      payload,
+      supabaseUrl: getSupabaseConfig().url,
+    });
+
     const { data, error } = await client
       .from(supabaseTables.profiles)
       .upsert(payload, { onConflict: "id" })
@@ -926,14 +940,37 @@ async function upsertSupabaseProfile(profile) {
       .maybeSingle();
 
     if (error) {
-      console.error("Erro ao salvar profile no Supabase.", { payload, erro: error });
+      console.error("Erro ao salvar profile no Supabase.", {
+        tabela: supabaseTables.profiles,
+        payload,
+        erro: error,
+        code: error.code || "",
+        message: error.message || "",
+        details: error.details || "",
+        hint: error.hint || "",
+        possivelCausa: "Verifique se a tabela profiles existe, se auth_user_id/email/role/student_id/first_login existem e se as policies/RLS permitem upsert/select.",
+      });
       return { data: null, error };
     }
 
-    console.info("Profile salvo no Supabase.", data || payload);
+    console.info("Profile salvo no Supabase.", {
+      tabela: supabaseTables.profiles,
+      auth_user_id: (data || payload).auth_user_id,
+      email: (data || payload).email,
+      role: (data || payload).role,
+      student_id: (data || payload).student_id,
+      first_login: (data || payload).first_login,
+      retorno: data || payload,
+    });
     return { data: data || payload, error: null };
   } catch (error) {
-    console.error("Erro inesperado ao salvar profile.", error);
+    console.error("Erro inesperado ao salvar profile.", {
+      tabela: supabaseTables.profiles,
+      payload,
+      erro: error,
+      message: error?.message || "",
+      stack: error?.stack || "",
+    });
     return { data: null, error };
   }
 }
@@ -1065,16 +1102,36 @@ async function createStudentAccessForRecord(student) {
     first_login: student.first_login === false ? false : true,
   };
 
-  const profileResult = await upsertSupabaseProfile({
+  const profilePayload = {
     auth_user_id: authUserId,
     email,
     role: "aluno",
     student_id: linkedStudent.id,
     name,
     first_login: true,
+  };
+
+  console.info("Preparando profile do aluno para gravar.", {
+    profilePayload,
+    alunoLocal: {
+      id: linkedStudent.id,
+      name: linkedStudent.name,
+      email: linkedStudent.email,
+      auth_user_id: linkedStudent.auth_user_id,
+      role: linkedStudent.role,
+      first_login: linkedStudent.first_login,
+    },
   });
 
+  const profileResult = await upsertSupabaseProfile(profilePayload);
+
   if (profileResult.error) {
+    console.error("Acesso Auth criado, mas gravação em profiles falhou.", {
+      profilePayload,
+      erro: profileResult.error,
+      aluno: linkedStudent.name,
+      auth_user_id: authUserId,
+    });
     return { student, temporaryPassword, created: false, error: profileResult.error };
   }
 
@@ -1102,6 +1159,14 @@ async function applySupabaseUser(user) {
   const userEmail = String(user.email || "").trim().toLowerCase();
   const profile = await getSupabaseProfileByUser(user);
   currentSupabaseProfile = profile;
+  if (!profile) {
+    console.warn("Login Supabase sem profile vinculado.", {
+      auth_user_id: user.id,
+      email: userEmail,
+      tabelaEsperada: supabaseTables.profiles,
+      buscaRealizadaPor: "auth_user_id",
+    });
+  }
   const profileRole = String(profile?.role || "").toLowerCase();
   const role = userEmail === personalAdminEmail || profileRole === "personal"
     ? "admin"
@@ -1115,6 +1180,11 @@ async function applySupabaseUser(user) {
   });
 
   if (role === "admin") {
+    console.info("Redirecionando login Supabase para area Personal/Admin.", {
+      email: userEmail,
+      auth_user_id: user.id,
+      motivo: userEmail === personalAdminEmail ? "email_admin_configurado" : "profile_role_personal",
+    });
     if (userEmail === personalAdminEmail && (!profile || profile.role !== "personal")) {
       await upsertSupabaseProfile({
         auth_user_id: user.id,
