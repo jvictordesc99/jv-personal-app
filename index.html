@@ -615,11 +615,30 @@
                 <section class="admin-subpage load-history-card" data-subpage="evolution-feedbacks" hidden>
                   <button type="button" class="secondary package-page-back" data-subpage-back="evolution">Voltar</button>
                   <div class="load-history-head"><strong>Feedbacks dos alunos</strong></div>
+                  <div class="evolution-toolbar compact-filter">
+                    <label>Aluno
+                      <select id="admin-feedback-student-filter"></select>
+                    </label>
+                    <label>Tipo
+                      <select id="admin-feedback-type-filter">
+                        <option value="all">Todos</option>
+                        <option value="pain">Dor</option>
+                        <option value="difficulty">Dificuldade</option>
+                        <option value="note">Observação</option>
+                        <option value="incomplete">Treino não concluído</option>
+                      </select>
+                    </label>
+                  </div>
                   <div id="admin-feedback-history"></div>
                 </section>
                 <section class="admin-subpage load-history-card" data-subpage="evolution-notes" hidden>
                   <button type="button" class="secondary package-page-back" data-subpage-back="evolution">Voltar</button>
                   <div class="load-history-head"><strong>Observações gerais</strong></div>
+                  <div class="evolution-toolbar compact-filter">
+                    <label>Aluno
+                      <select id="admin-notes-student-filter"></select>
+                    </label>
+                  </div>
                   <div id="admin-feedback-notes"></div>
                 </section>
               </div>

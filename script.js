@@ -208,6 +208,9 @@ const adminPersonalRecords = document.querySelector("#admin-personal-records");
 const adminAdherenceSummary = document.querySelector("#admin-adherence-summary");
 const adminFeedbackHistory = document.querySelector("#admin-feedback-history");
 const adminFeedbackNotes = document.querySelector("#admin-feedback-notes");
+const adminFeedbackStudentFilter = document.querySelector("#admin-feedback-student-filter");
+const adminFeedbackTypeFilter = document.querySelector("#admin-feedback-type-filter");
+const adminNotesStudentFilter = document.querySelector("#admin-notes-student-filter");
 const assessmentForm = document.querySelector("#assessment-form");
 const assessmentStudent = document.querySelector("#assessment-student");
 const assessmentDate = document.querySelector("#assessment-date");
@@ -347,6 +350,16 @@ function updateTodayLabel() {
   const day = String(today.getDate()).padStart(2, "0");
   const month = today.toLocaleDateString("pt-BR", { month: "long" });
   todayLabel.textContent = `Hoje, ${day} de ${month}`;
+}
+
+function updateEvolutionNavigationLabels() {
+  const recordsCard = document.querySelector('[data-subpage-target="evolution-records"]');
+  const recordsTitle = recordsCard?.querySelector("strong");
+  const recordsDescription = recordsCard?.querySelector("small");
+  if (recordsTitle) recordsTitle.textContent = "Progressão de Cargas";
+  if (recordsDescription) recordsDescription.textContent = "Maior carga, carga anterior e histórico.";
+  const recordsHeader = document.querySelector('[data-subpage="evolution-records"] .load-history-head strong');
+  if (recordsHeader) recordsHeader.textContent = "Progressão de Cargas";
 }
 
 function fillLoadChartModeSelect(select) {
@@ -1659,7 +1672,8 @@ function collectAdminAlerts(options = {}) {
       .filter((feedback) => feedback.studentName === student.name)
       .sort((a, b) => b.timestamp - a.timestamp);
 
-    if (isOnlineStudentPlan(student)) {
+    const onlinePlan = isOnlineStudentPlan(student);
+    if (onlinePlan) {
       const completedDates = studentFeedbacks
         .map((feedback) => parseDateLike(feedback.date) || new Date(feedback.timestamp || 0))
         .filter((date) => date && !Number.isNaN(date.getTime()))
@@ -1678,6 +1692,31 @@ function collectAdminAlerts(options = {}) {
           { destination: "evolution-adherence" },
         ));
       }
+    }
+
+    const analytics = getStudentWorkoutAnalytics(student);
+    if (!onlinePlan && analytics.daysSinceLast !== null && analytics.daysSinceLast >= 7) {
+      alerts.push(createAdminAlert(
+        "Frequencia",
+        `${student.name} está há ${analytics.daysSinceLast} dias sem concluir treino`,
+        `Último treino: ${analytics.lastFeedback?.workoutTitle || "sem registro"} em ${analytics.lastFeedback?.date || "-"}`,
+        student.name,
+        "warning",
+        `sem-treino-${analytics.lastFeedback?.date || "sem-data"}`,
+        { destination: "evolution-adherence" },
+      ));
+    }
+
+    if (analytics.completed7 <= 1 && analytics.feedbacks.length) {
+      alerts.push(createAdminAlert(
+        "Baixa frequencia",
+        `${student.name} concluiu apenas ${analytics.completed7} treino(s) nos últimos 7 dias`,
+        `Adesão mensal estimada: ${analytics.adherence}% | risco ${analytics.risk}`,
+        student.name,
+        "warning",
+        `baixa-frequencia-${analytics.completed7}-${analytics.lastFeedback?.date || "sem-data"}`,
+        { destination: "evolution-adherence" },
+      ));
     }
 
     checkins
@@ -1726,13 +1765,27 @@ function collectAdminAlerts(options = {}) {
         "Vencimento do plano",
         `Vencimento ${student.due || "-"} | pagamento ${student.payment || "Status nao informado"}`,
           student.name,
-        student.payment === "Em dia" ? "warning" : "danger",
+        student.payment === "Em dia" ? "success" : "danger",
         `${student.due || "sem-vencimento"}-${student.payment || "sem-status"}`,
         { destination: "students-status", dueDate: student.due || "" },
         ));
     }
 
     const studentWorkouts = loadWorkouts()[student.name] || [];
+    studentWorkouts.forEach((workout) => {
+      const workoutStatus = getWorkoutPeriodStatus(workout);
+      if (workoutStatus.state === "expired" || (workoutStatus.state === "active" && workoutStatus.days !== null && workoutStatus.days <= 7)) {
+        alerts.push(createAdminAlert(
+          "Ficha",
+          workoutStatus.state === "expired" ? `${student.name} está com ficha vencida` : `${student.name} tem ficha vencendo em ${workoutStatus.days} dia(s)`,
+          `${workout.title || "Ficha"} | vencimento ${workout.dueDate || "-"}`,
+          student.name,
+          "warning",
+          `ficha-${workout.id}-${workout.dueDate || "sem-data"}`,
+          { destination: "workouts", workoutId: workout.id },
+        ));
+      }
+    });
     if (!studentWorkouts.length) {
       alerts.push(createAdminAlert(
         "Ficha",
@@ -2163,6 +2216,89 @@ function enterModeForSessionRestore(role, studentName = "") {
   }
 }
 
+function getWorkoutNavigationState() {
+  if (activeAdminModule !== "workouts") return null;
+
+  const formOpen = !!workoutForm && workoutForm.hidden === false;
+  const selectedStudent = selectedAdminWorkoutStudent || workoutStudent?.value || "";
+  const draft = formOpen
+    ? {
+        title: workoutTitle?.value || "",
+        goal: workoutGoal?.value || "",
+        frequency: workoutFrequency?.value || "",
+        startDate: workoutStartDate?.value || "",
+        dueDate: workoutDueDate?.value || "",
+        notes: workoutNotes?.value || "",
+        sessions: collectTrainingSessions(),
+      }
+    : null;
+
+  return {
+    selectedStudent,
+    formOpen,
+    mode: editingWorkout ? "edit" : formOpen ? "create" : selectedStudent ? "student" : "directory",
+    editingWorkout: editingWorkout ? { ...editingWorkout } : null,
+    draft,
+  };
+}
+
+function restoreWorkoutNavigationState(workoutFlow = null) {
+  if (!workoutFlow || activeAdminModule !== "workouts") return;
+
+  const selectedStudent = workoutFlow.selectedStudent || workoutFlow.editingWorkout?.studentName || "";
+  if (!selectedStudent) {
+    showWorkoutStudentDirectory({ preserveNavigation: true });
+    return;
+  }
+
+  openWorkoutStudentWorkspace(selectedStudent);
+
+  if (!workoutFlow.formOpen) return;
+
+  workoutForm.hidden = false;
+  workoutStudent.value = selectedStudent;
+  workoutStudent.disabled = true;
+
+  if (workoutFlow.editingWorkout?.id) {
+    const workout = (loadWorkouts()[workoutFlow.editingWorkout.studentName] || []).find(
+      (item) => item.id === workoutFlow.editingWorkout.id,
+    );
+    if (workout) {
+      editingWorkout = { studentName: workoutFlow.editingWorkout.studentName, id: workout.id };
+      workoutTitle.value = workout.title || "";
+      workoutGoal.value = workout.goal || "";
+      workoutFrequency.value = workout.frequency || "";
+      workoutStartDate.value = workout.startDate || "";
+      workoutDueDate.value = workout.dueDate || "";
+      workoutNotes.value = workout.notes || "";
+      resetTrainingSessions(workout.sessions || [{ title: "Treino principal", exercises: [{}] }]);
+      safeSetText(saveWorkoutButton, "Salvar alteracao");
+      if (cancelWorkoutEditButton) cancelWorkoutEditButton.hidden = false;
+      if (workoutMessage) {
+        workoutMessage.textContent = "Editando treino. Altere os campos e salve.";
+        workoutMessage.classList.remove("error");
+      }
+    }
+  }
+
+  if (workoutFlow.draft) {
+    workoutTitle.value = workoutFlow.draft.title ?? workoutTitle.value ?? "";
+    workoutGoal.value = workoutFlow.draft.goal ?? workoutGoal.value ?? "";
+    workoutFrequency.value = workoutFlow.draft.frequency ?? workoutFrequency.value ?? "";
+    workoutStartDate.value = workoutFlow.draft.startDate ?? workoutStartDate.value ?? "";
+    workoutDueDate.value = workoutFlow.draft.dueDate ?? workoutDueDate.value ?? "";
+    workoutNotes.value = workoutFlow.draft.notes ?? workoutNotes.value ?? "";
+    if (Array.isArray(workoutFlow.draft.sessions) && workoutFlow.draft.sessions.length) {
+      resetTrainingSessions(workoutFlow.draft.sessions);
+    }
+  }
+
+  if (!editingWorkout) {
+    safeSetText(saveWorkoutButton, "Salvar ficha");
+    if (cancelWorkoutEditButton) cancelWorkoutEditButton.hidden = false;
+  }
+}
+
 function saveNavigationState(options = {}) {
   if (isRestoringNavigation || !currentUserType) return;
   const state = {
@@ -2174,6 +2310,7 @@ function saveNavigationState(options = {}) {
     selectedStudentProfile,
     selectedAdminProfileStudent,
     selectedAdminWorkoutStudent,
+    workoutFlow: getWorkoutNavigationState(),
     packageViewStudent: packageViewStudent?.value || "",
     packageStudent: packageStudent?.value || "",
     packageId: editingPackageId || "",
@@ -2235,6 +2372,9 @@ function restoreNavigationState() {
       }
       if (state.adminModule === "checkins" && state.packageSubpage) {
         openPackageSubpage(state.packageSubpage, state.packageMode || "");
+      }
+      if (state.adminModule === "workouts") {
+        restoreWorkoutNavigationState(state.workoutFlow);
       }
     }
     return true;
@@ -2710,6 +2850,8 @@ function normalizeWorkoutFeedbacks(feedbacks) {
       pain: item.pain === true || item.pain === "Sim" || item.pain === "sim",
       painLocation: String(item.painLocation || "").trim(),
       note: String(item.note || item.observation || "").trim(),
+      skipped: item.skipped === true,
+      status: String(item.status || "").trim(),
       date: item.date || formatToday(),
     }));
 }
@@ -3791,10 +3933,13 @@ function openWorkoutStudentWorkspace(studentName) {
     : "Aluno selecionado");
   workoutStudent.value = studentName;
   renderWorkouts();
+  saveNavigationState();
 }
 
-function showWorkoutStudentDirectory() {
+function showWorkoutStudentDirectory(options = {}) {
   if (!workoutStudentDirectory || !workoutStudentWorkspace || !workoutForm || !workoutTablePanel || !workoutStudent) return;
+
+  if (isRestoringNavigation && options.preserveNavigation !== true) return;
 
   selectedAdminWorkoutStudent = "";
   workoutStudentDirectory.hidden = false;
@@ -3804,6 +3949,7 @@ function showWorkoutStudentDirectory() {
   workoutStudent.disabled = false;
   editingWorkout = null;
   renderWorkouts();
+  saveNavigationState();
 }
 
 function showWorkoutFormForStudent(studentName, mode = "create") {
@@ -3825,6 +3971,7 @@ function showWorkoutFormForStudent(studentName, mode = "create") {
     }
   }
   workoutTitle?.focus();
+  saveNavigationState();
 }
 
 function normalizeExercise(exercise) {
@@ -5519,8 +5666,86 @@ function renderAdminEvolution() {
   }
 
   renderPersonalRecords(studentName, activeKey);
-  renderAdherenceSummary(studentName);
-  renderAdminFeedbacks(studentName);
+  renderAdherenceSummary();
+  renderAdminFeedbacks();
+}
+
+function getFeedbackDate(feedback) {
+  return parseDateLike(feedback.date) || new Date(feedback.timestamp || 0);
+}
+
+function isFeedbackDifficultyHigh(feedback) {
+  const text = String(feedback?.difficulty || "").toLowerCase();
+  const rating = Number(feedback?.rating || 0);
+  return text.includes("pesado") || text.includes("dificil") || text.includes("difícil") || rating > 0 && rating <= 3;
+}
+
+function getWorkoutFrequencyTarget(student, days = 7) {
+  const source = `${student?.frequency || ""} ${student?.plan || ""}`;
+  const match = source.match(/(\d+)\s*x/i);
+  const weekly = match ? Number(match[1]) : 3;
+  return Math.max(1, Math.round((weekly || 3) * (days / 7)));
+}
+
+function getStudentWorkoutAnalytics(student) {
+  const now = new Date();
+  const since7 = new Date(now);
+  since7.setDate(now.getDate() - 7);
+  const since30 = new Date(now);
+  since30.setDate(now.getDate() - 30);
+
+  const feedbacks = loadWorkoutFeedbacks()
+    .filter((feedback) => feedback.studentName === student.name)
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const progress = loadProgressRecords()
+    .filter((record) => record.studentName === student.name)
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const completedKeys = new Set(feedbacks.map((feedback) => `${feedback.workoutId || feedback.workoutTitle || ""}|${feedback.date || ""}`));
+  const startedKeys = new Set(progress.map((record) => `${record.workoutId || record.workoutTitle || ""}|${record.date || ""}`));
+  const unfinished = [...startedKeys].filter((key) => !completedKeys.has(key)).length;
+  const feedbacks7 = feedbacks.filter((feedback) => {
+    const date = getFeedbackDate(feedback);
+    return date && !Number.isNaN(date.getTime()) && date >= since7;
+  });
+  const feedbacks30 = feedbacks.filter((feedback) => {
+    const date = getFeedbackDate(feedback);
+    return date && !Number.isNaN(date.getTime()) && date >= since30;
+  });
+  const lastFeedback = feedbacks[0] || null;
+  const lastDate = lastFeedback ? getFeedbackDate(lastFeedback) : null;
+  const daysSinceLast = lastDate && !Number.isNaN(lastDate.getTime()) ? getDaysSince(lastDate) : null;
+  const monthlyTarget = getWorkoutFrequencyTarget(student, 30);
+  const weeklyTarget = getWorkoutFrequencyTarget(student, 7);
+  const adherence = monthlyTarget ? Math.min(100, Math.round((feedbacks30.length / monthlyTarget) * 100)) : 0;
+  const activeWorkout = getCurrentWorkoutForStudent(student.name);
+  const workoutStatus = activeWorkout ? getWorkoutPeriodStatus(activeWorkout) : { label: "Sem ficha", state: "missing", days: null };
+  const hasPain = feedbacks.some((feedback) => feedback.pain);
+  const hasDifficulty = feedbacks.some(isFeedbackDifficultyHigh);
+  const hasNote = feedbacks.some((feedback) => String(feedback.note || "").trim());
+  const risk = daysSinceLast === null || daysSinceLast >= 7 || unfinished >= 3 || adherence < 40
+    ? "alto"
+    : daysSinceLast >= 4 || adherence < 70 || feedbacks7.length < Math.max(1, Math.floor(weeklyTarget / 2))
+      ? "médio"
+      : "baixo";
+
+  return {
+    feedbacks,
+    progress,
+    lastFeedback,
+    lastDate,
+    daysSinceLast,
+    completed7: feedbacks7.length,
+    completed30: feedbacks30.length,
+    unfinished,
+    adherence,
+    risk,
+    workoutStatus,
+    paymentStatus: student.payment || "Sem status",
+    planStatus: student.due || "Sem vencimento",
+    hasPain,
+    hasDifficulty,
+    hasNote,
+  };
 }
 
 function getFeedbackForLoadRecord(studentName, record) {
@@ -5564,18 +5789,23 @@ function renderPersonalRecords(studentName, exerciseKey) {
   const history = [...recordPool]
     .sort((a, b) => (b.record.timestamp || 0) - (a.record.timestamp || 0))
     .slice(0, 5);
+  const current = history[0] || best;
+  const previous = history[1] || null;
+  const evolutionKg = previous ? current.value - previous.value : 0;
 
   const card = document.createElement("article");
   card.className = "personal-record-card";
 
   const title = document.createElement("div");
   title.className = "load-history-head";
-  title.innerHTML = `<div><strong>${group.exerciseName}</strong><small>${studentName}</small></div><span class="status-ok">Recorde</span>`;
+  title.innerHTML = `<div><strong>${group.exerciseName}</strong><small>${studentName}</small></div><span class="status-ok">Progressão</span>`;
 
   const metrics = document.createElement("div");
   metrics.className = "record-metrics-grid";
   [
     ["Maior carga registrada", `${best.value.toLocaleString("pt-BR")} kg`],
+    ["Carga anterior", previous ? `${previous.value.toLocaleString("pt-BR")} kg` : "-"],
+    ["Evolução recente", `${evolutionKg > 0 ? "+" : ""}${evolutionKg.toLocaleString("pt-BR")} kg`],
     ["Data do recorde", best.record.date || "-"],
     ["Treino", best.record.workoutTitle || group.workoutTitle || "-"],
     ["Series e repeticoes", `${best.record.sets || "-"} x ${best.record.reps || "-"}`],
@@ -5654,6 +5884,153 @@ function renderAdminFeedbacks(studentName) {
       note.innerHTML = `<strong>${feedback.studentName} | ${feedback.date}</strong><small>${feedback.note || feedback.painLocation}</small>`;
       adminFeedbackNotes.appendChild(note);
     }
+  });
+}
+
+function renderAdherenceSummary() {
+  if (!adminAdherenceSummary) return;
+  adminAdherenceSummary.innerHTML = "";
+
+  const students = loadStudents();
+  if (!students.length) {
+    adminAdherenceSummary.textContent = "Nenhum aluno cadastrado.";
+    return;
+  }
+
+  students.forEach((student) => {
+    const data = getStudentWorkoutAnalytics(student);
+    const checkins = loadCheckins().filter((item) => item.studentName === student.name && isConsumedLesson(item));
+    const card = document.createElement("article");
+    card.className = `feedback-card adherence-card risk-${data.risk}`;
+    const riskLabel = data.risk === "alto" ? "Risco alto" : data.risk === "médio" ? "Risco médio" : "Risco baixo";
+    card.innerHTML = `
+      <strong>${student.name}</strong>
+      <span>Último treino: ${data.lastFeedback?.workoutTitle || "sem treino finalizado"} | ${data.daysSinceLast === null ? "sem registro" : `${data.daysSinceLast} dia(s)`}</span>
+      <div class="record-metrics-grid">
+        ${[
+          ["7 dias", data.completed7],
+          ["30 dias", data.completed30],
+          ["Adesão", `${data.adherence}%`],
+          ["Não finalizados", data.unfinished],
+          ["Check-ins", checkins.length],
+          ["Status", riskLabel],
+          ["Dor", data.hasPain ? "Sim" : "Não"],
+          ["Dificuldade", data.hasDifficulty ? "Atenção" : "Normal"],
+          ["Observação", data.hasNote ? "Sim" : "Não"],
+        ].map(([label, value]) => `<span class="admin-profile-metric"><strong>${value}</strong><small>${label}</small></span>`).join("")}
+      </div>
+      <small>Ficha: ${data.workoutStatus.label} | Plano: ${student.plan || "-"} | Pagamento: ${data.paymentStatus}</small>
+    `;
+    adminAdherenceSummary.appendChild(card);
+  });
+}
+
+function fillEvolutionFilterSelect(select, selectedValue = "", includeAll = true) {
+  if (!select) return;
+  const previous = selectedValue || select.value || "";
+  select.replaceChildren();
+  if (includeAll) {
+    const all = document.createElement("option");
+    all.value = "";
+    all.textContent = "Todos os alunos";
+    select.appendChild(all);
+  }
+  loadStudents().forEach((student) => {
+    const option = document.createElement("option");
+    option.value = student.name;
+    option.textContent = student.name;
+    select.appendChild(option);
+  });
+  select.value = [...select.options].some((option) => option.value === previous) ? previous : "";
+}
+
+function matchesFeedbackType(feedback, type) {
+  if (!type || type === "all") return true;
+  if (type === "pain") return feedback.pain;
+  if (type === "difficulty") return isFeedbackDifficultyHigh(feedback);
+  if (type === "note") return !!String(feedback.note || "").trim();
+  if (type === "incomplete") return feedback.status === "nao_finalizado";
+  return true;
+}
+
+function getIncompleteWorkoutItems(studentFilter = "") {
+  const feedbackKeys = new Set(loadWorkoutFeedbacks().map((feedback) => `${feedback.studentName}|${feedback.workoutId || feedback.workoutTitle || ""}|${feedback.date || ""}`));
+  const grouped = new Map();
+  loadProgressRecords()
+    .filter((record) => !studentFilter || record.studentName === studentFilter)
+    .forEach((record) => {
+      const key = `${record.studentName}|${record.workoutId || record.workoutTitle || ""}|${record.date || ""}`;
+      if (feedbackKeys.has(key) || grouped.has(key)) return;
+      grouped.set(key, {
+        id: `incomplete-${key}`,
+        studentName: record.studentName,
+        workoutTitle: record.workoutTitle || "Treino iniciado",
+        date: record.date || "-",
+        timestamp: record.timestamp || 0,
+        rating: "",
+        difficulty: "Treino não concluído",
+        pain: false,
+        painLocation: "",
+        note: "Há carga registrada, mas o treino não foi finalizado com feedback.",
+        status: "nao_finalizado",
+      });
+    });
+  return [...grouped.values()];
+}
+
+function renderAdminFeedbacks() {
+  if (!adminFeedbackHistory || !adminFeedbackNotes) return;
+  fillEvolutionFilterSelect(adminFeedbackStudentFilter, adminFeedbackStudentFilter?.value || "");
+  fillEvolutionFilterSelect(adminNotesStudentFilter, adminNotesStudentFilter?.value || "");
+
+  const studentFilter = adminFeedbackStudentFilter?.value || "";
+  const typeFilter = adminFeedbackTypeFilter?.value || "all";
+  const baseFeedbacks = loadWorkoutFeedbacks()
+    .filter((feedback) => !studentFilter || feedback.studentName === studentFilter)
+    .filter((feedback) => matchesFeedbackType(feedback, typeFilter))
+    .concat(typeFilter === "incomplete" || typeFilter === "all" ? getIncompleteWorkoutItems(studentFilter) : []);
+  const feedbacks = baseFeedbacks
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+  adminFeedbackHistory.innerHTML = "";
+  adminFeedbackNotes.innerHTML = "";
+
+  if (!feedbacks.length) {
+    adminFeedbackHistory.textContent = "Nenhum feedback encontrado para os filtros atuais.";
+  } else {
+    feedbacks.forEach((feedback) => {
+      const item = document.createElement("article");
+      const isPain = feedback.pain;
+      const isHard = isFeedbackDifficultyHigh(feedback);
+      item.className = `feedback-card ${feedback.status === "nao_finalizado" ? "feedback-neutral" : isPain ? "feedback-danger" : isHard ? "feedback-warning" : ""}`;
+      item.classList.toggle("alert-focus-card", highlightedFeedbackId === feedback.id);
+      item.innerHTML = `
+        <strong>${feedback.studentName} | ${feedback.date || "-"}</strong>
+        <span>${feedback.workoutTitle || "Treino"} | Nota ${feedback.rating || "-"} | ${feedback.difficulty || "Sem intensidade"}</span>
+        <small>${isPain ? `Dor: ${feedback.painLocation || "local não informado"}` : "Sem dor relatada"}${feedback.note ? ` | ${feedback.note}` : ""}</small>
+      `;
+      adminFeedbackHistory.appendChild(item);
+      if (highlightedFeedbackId === feedback.id) {
+        setTimeout(() => item.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+      }
+    });
+  }
+
+  const notesStudent = adminNotesStudentFilter?.value || "";
+  const notes = loadWorkoutFeedbacks()
+    .filter((feedback) => !notesStudent || feedback.studentName === notesStudent)
+    .filter((feedback) => feedback.note || feedback.painLocation)
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  if (!notes.length) {
+    adminFeedbackNotes.textContent = "Nenhuma observação enviada.";
+    return;
+  }
+  notes.forEach((feedback) => {
+    const note = document.createElement("article");
+    note.className = `feedback-card ${feedback.pain ? "feedback-danger" : ""}`;
+    note.classList.toggle("alert-focus-card", highlightedFeedbackId === feedback.id);
+    note.innerHTML = `<strong>${feedback.studentName} | ${feedback.date || "-"}</strong><span>${feedback.workoutTitle || "Treino"}</span><small>${feedback.note || feedback.painLocation}</small>`;
+    adminFeedbackNotes.appendChild(note);
   });
 }
 
@@ -7878,6 +8255,7 @@ workoutForm?.addEventListener("submit", (event) => {
   editingWorkout = null;
   saveWorkoutButton.textContent = "Salvar ficha";
   cancelWorkoutEditButton.hidden = true;
+  saveNavigationState();
 });
 
 function readAssessmentAttachment(file) {
@@ -7953,7 +8331,26 @@ currentWorkout?.addEventListener("click", (event) => {
   if (skipFeedbackButton) {
     const form = skipFeedbackButton.closest(".workout-feedback-form");
     if (form) {
+      const feedbacks = loadWorkoutFeedbacks();
+      feedbacks.push({
+        id: createId(),
+        studentName: form.dataset.studentName,
+        studentId: getStudentIdByName(form.dataset.studentName),
+        workoutId: form.dataset.workoutId,
+        workoutTitle: form.dataset.workoutTitle,
+        rating: "",
+        difficulty: "Sem feedback",
+        pain: false,
+        painLocation: "",
+        note: "",
+        skipped: true,
+        status: "sem_feedback",
+        date: formatToday(),
+        timestamp: Date.now(),
+      });
+      saveWorkoutFeedbacks(feedbacks);
       form.innerHTML = "<strong>Treino finalizado.</strong><small>Feedback pulado. Suas cargas salvas continuam no histórico.</small>";
+      renderAdminEvolution();
       renderStudentProfile();
     }
     return;
@@ -8091,6 +8488,9 @@ adminEvolutionStudent?.addEventListener("change", () => {
 });
 adminEvolutionExercise?.addEventListener("change", renderAdminEvolution);
 adminEvolutionChartMode?.addEventListener("change", renderAdminEvolution);
+adminFeedbackStudentFilter?.addEventListener("change", renderAdminFeedbacks);
+adminFeedbackTypeFilter?.addEventListener("change", renderAdminFeedbacks);
+adminNotesStudentFilter?.addEventListener("change", renderAdminFeedbacks);
 assessmentStudent?.addEventListener("change", () => {
   renderAdminAssessments();
   renderAssessmentSupportSummaries();
@@ -8654,6 +9054,7 @@ workoutList?.addEventListener("click", (event) => {
     workoutTitle.focus();
     workoutMessage.textContent = "Editando treino. Altere os campos e salve.";
     workoutMessage.classList.remove("error");
+    saveNavigationState();
     return;
   }
 
@@ -8665,6 +9066,7 @@ workoutList?.addEventListener("click", (event) => {
     workoutStudent.disabled = true;
     workoutStudent.value = selectedAdminWorkoutStudent || copyButton.dataset.copyWorkoutStudent;
     workoutStudent.focus();
+    saveNavigationState();
     return;
   }
 
@@ -8689,6 +9091,7 @@ cancelWorkoutEditButton?.addEventListener("click", () => {
   cancelWorkoutEditButton.hidden = true;
   workoutMessage.textContent = "Edicao de treino cancelada.";
   workoutMessage.classList.remove("error");
+  saveNavigationState();
 });
 
 studentList?.addEventListener("click", async (event) => {
@@ -9241,6 +9644,7 @@ function initializeApp() {
   currentUserType = null;
   console.info(`Supabase URL utilizada: ${getSupabaseConfig().url}`);
   updateTodayLabel();
+  updateEvolutionNavigationLabels();
   fillLoadChartModeSelect(studentLoadChartMode);
   fillLoadChartModeSelect(adminEvolutionChartMode);
   fillPackageModelList();

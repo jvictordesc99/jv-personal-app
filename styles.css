@@ -1451,6 +1451,44 @@ h3 {
   border-bottom: 0;
 }
 
+.feedback-card {
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.feedback-danger {
+  border: 1px solid rgba(255, 79, 79, 0.42);
+  background: rgba(255, 79, 79, 0.08);
+}
+
+.feedback-warning {
+  border: 1px solid rgba(255, 194, 74, 0.44);
+  background: rgba(255, 194, 74, 0.1);
+}
+
+.feedback-neutral {
+  border: 1px solid rgba(123, 140, 154, 0.28);
+  background: rgba(123, 140, 154, 0.08);
+}
+
+.adherence-card {
+  border: 1px solid rgba(184, 255, 56, 0.18);
+  background: #fbfeff;
+}
+
+.adherence-card.risk-alto {
+  border-color: rgba(255, 79, 79, 0.42);
+}
+
+.adherence-card.risk-médio,
+.adherence-card.risk-medio {
+  border-color: rgba(255, 194, 74, 0.44);
+}
+
+.compact-filter {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .personal-record-card,
 .record-history-list,
 .record-feedback-note {
