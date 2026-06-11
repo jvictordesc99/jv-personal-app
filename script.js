@@ -94,6 +94,7 @@ const makeupStorageKey = "joao-victor-makeup-credits";
 const feedbackStorageKey = "joao-victor-workout-feedbacks";
 const resolvedAlertsStorageKey = "joao-victor-resolved-alerts";
 const appDataStorageKey = "joao-victor-app-data";
+const appSessionStorageKey = "joao-victor-login-session";
 const billingSettingsStorageKey = "joao-victor-billing-settings";
 const packageModelStorageKey = "joao-victor-package-models";
 const navigationStateStorageKey = "joao-victor-navigation-state";
@@ -1194,7 +1195,13 @@ async function applySupabaseUser(user) {
         first_login: false,
       });
     }
-    enterTestMode("admin");
+    enterTestMode("admin", "", { persist: false });
+    saveAppLoginSession({
+      role: "admin",
+      provider: "supabase",
+      email: userEmail,
+      authUserId: user.id,
+    });
     safeSetText(document.querySelector("#user-mode"), `Personal | ${user.email || "Supabase"}`);
     restoreNavigationState();
     return true;
@@ -1231,7 +1238,14 @@ async function applySupabaseUser(user) {
     auth_user_id: student.auth_user_id || student.authUserId || student.supabaseUserId || "",
   });
   saveSupabaseStudentLink(student.name, user);
-  enterTestMode("student", student.name);
+  enterTestMode("student", student.name, { persist: false });
+  saveAppLoginSession({
+    role: "student",
+    studentName: student.name,
+    provider: "supabase",
+    email: userEmail,
+    authUserId: user.id,
+  });
   safeSetText(document.querySelector("#user-mode"), `Aluno | ${user.email || student.name}`);
   console.info("Redirecionando aluno autenticado para area do aluno.", {
     aluno: student.name,
@@ -1245,17 +1259,22 @@ async function restoreSupabaseSession() {
   const client = getSupabaseClient();
   if (!client) {
     showSupabaseLoginMessage("Supabase ainda nao configurado. Use o acesso local temporario.");
-    return;
+    return false;
   }
 
   const { data } = await client.auth.getSession();
   if (data?.session?.user) {
-    await applySupabaseUser(data.session.user);
+    const restored = await applySupabaseUser(data.session.user);
+    client.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) await applySupabaseUser(session.user);
+    });
+    return restored;
   }
 
   client.auth.onAuthStateChange(async (_event, session) => {
     if (session?.user) await applySupabaseUser(session.user);
   });
+  return false;
 }
 
 function normalizeStudentsData(students) {
@@ -2055,6 +2074,59 @@ function getLocalJson(key, fallback = null) {
   } catch {
     return fallback;
   }
+}
+
+function saveAppLoginSession({ role, studentName = "", provider = "local", email = "", authUserId = "" } = {}) {
+  if (!["admin", "student"].includes(role)) return;
+  const session = {
+    active: true,
+    role,
+    userType: role,
+    studentName: role === "student" ? studentName : "",
+    provider,
+    email,
+    auth_user_id: authUserId,
+    savedAt: Date.now(),
+  };
+
+  try {
+    localStorage.setItem(appSessionStorageKey, JSON.stringify(session));
+    localStorage.setItem("user-type", role);
+    if (role === "student" && studentName) localStorage.setItem("student-profile", studentName);
+  } catch (error) {
+    console.warn("Nao foi possivel salvar sessao local do app.", error);
+  }
+}
+
+function clearAppLoginSession() {
+  removeLocalValue(appSessionStorageKey);
+  removeLocalValue("user-type");
+  removeLocalValue("student-profile");
+}
+
+function restoreLocalAppSession() {
+  const session = getLocalJson(appSessionStorageKey, null);
+  if (!session?.active || !["admin", "student"].includes(session.role)) return false;
+
+  if (session.role === "admin") {
+    console.info("Sessao local encontrada. Abrindo area Personal/Admin.", session);
+    enterTestMode("admin", "", { persist: false });
+    return true;
+  }
+
+  const student = findStudentByIdentifier(session.studentName || selectedStudentProfile);
+  if (!student) {
+    console.warn("Sessao local de aluno invalida. Aluno nao encontrado.", session);
+    clearAppLoginSession();
+    return false;
+  }
+
+  console.info("Sessao local encontrada. Abrindo area do aluno.", {
+    aluno: student.name,
+    provider: session.provider,
+  });
+  enterTestMode("student", student.name, { persist: false });
+  return true;
 }
 
 function saveNavigationState() {
@@ -8921,8 +8993,10 @@ function applyUserPermissions() {
 
 const logoutButton = document.querySelector("#logout-button");
 
-function enterTestMode(role, studentName = "") {
+function enterTestMode(role, studentName = "", options = {}) {
   if (!["student", "admin"].includes(role)) return;
+  const shouldPersist = options.persist !== false;
+  const provider = options.provider || "local";
 
   Object.keys(activeWorkoutByStudent).forEach((key) => delete activeWorkoutByStudent[key]);
   Object.keys(activeSessionByWorkout).forEach((key) => delete activeSessionByWorkout[key]);
@@ -8935,6 +9009,14 @@ function enterTestMode(role, studentName = "") {
     selectedStudentProfile = students.some((student) => student.name === requestedStudent) ? requestedStudent : students[0]?.name || "";
     setLocalValue("student-profile", selectedStudentProfile);
     if (workoutViewStudent) workoutViewStudent.value = selectedStudentProfile;
+  }
+
+  if (shouldPersist) {
+    saveAppLoginSession({
+      role,
+      studentName: role === "student" ? selectedStudentProfile : "",
+      provider,
+    });
   }
 
   fillStudentSelects();
@@ -9033,9 +9115,10 @@ logoutButton?.addEventListener("click", async () => {
   }
 
   currentUserType = null;
+  selectedStudentProfile = "";
   Object.keys(activeWorkoutByStudent).forEach((key) => delete activeWorkoutByStudent[key]);
   Object.keys(activeSessionByWorkout).forEach((key) => delete activeSessionByWorkout[key]);
-  removeLocalValue("user-type");
+  clearAppLoginSession();
   if (appShell) appShell.hidden = true;
   if (loginScreen) loginScreen.hidden = false;
   fillStudentSelects();
@@ -9080,7 +9163,7 @@ function initializeApp() {
   applyInputMasks();
   normalizeStoredAppData();
 
-  if (loginScreen) loginScreen.hidden = false;
+  if (loginScreen) loginScreen.hidden = true;
   if (appShell) appShell.hidden = true;
   if (!assessmentDate?.value && assessmentDate) assessmentDate.value = formatToday();
 
@@ -9107,8 +9190,13 @@ function initializeApp() {
     .catch((error) => {
       console.warn("Supabase app_state nao carregou. App local continua funcionando.", error);
     })
-    .finally(() => {
-      restoreSupabaseSession();
+    .finally(async () => {
+      const supabaseRestored = await restoreSupabaseSession();
+      const localRestored = supabaseRestored ? true : restoreLocalAppSession();
+      if (!localRestored) {
+        if (loginScreen) loginScreen.hidden = false;
+        if (appShell) appShell.hidden = true;
+      }
     });
 }
 
