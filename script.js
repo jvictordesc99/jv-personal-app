@@ -37,7 +37,7 @@ try {
   selectedStudentProfile = "";
 }
 
-function openView(id) {
+function openView(id, options = {}) {
   if (!currentUserType) return;
 
   if (currentUserType === "student" && id === "admin") {
@@ -53,7 +53,7 @@ function openView(id) {
   activeViewId = id;
   safeSetText(pageTitle, titles[id] || "Painel inicial");
   if (id === "admin" && !isRestoringNavigation && typeof showAdminDashboard === "function") {
-    showAdminDashboard();
+    showAdminDashboard({ persistDashboard: options.userInitiated === true });
   }
   if (id === "evolucao" && typeof renderStudentLoadEvolution === "function") {
     renderStudentLoadEvolution();
@@ -76,11 +76,11 @@ function openView(id) {
 }
 
 navButtons.forEach((button) => {
-  button.addEventListener("click", () => openView(button.dataset.view));
+  button.addEventListener("click", () => openView(button.dataset.view, { userInitiated: true }));
 });
 
 document.querySelectorAll("[data-jump]").forEach((button) => {
-  button.addEventListener("click", () => openView(button.dataset.jump));
+  button.addEventListener("click", () => openView(button.dataset.jump, { userInitiated: true }));
 });
 
 const studentStorageKey = "joao-victor-students";
@@ -2163,7 +2163,7 @@ function enterModeForSessionRestore(role, studentName = "") {
   }
 }
 
-function saveNavigationState() {
+function saveNavigationState(options = {}) {
   if (isRestoringNavigation || !currentUserType) return;
   const state = {
     view: activeViewId || "",
@@ -2179,6 +2179,24 @@ function saveNavigationState() {
     packageId: editingPackageId || "",
     savedAt: Date.now(),
   };
+
+  const isAdminDashboardState = currentUserType === "admin"
+    && state.view === "admin"
+    && !state.adminModule
+    && !state.adminSubpage
+    && !state.packageSubpage;
+  if (isAdminDashboardState && options.allowDashboardState !== true) {
+    const previousState = getLocalJson(navigationStateStorageKey, null);
+    const previousWasAdminSubpage = previousState?.view === "admin"
+      && (previousState.adminModule || previousState.adminSubpage || previousState.packageSubpage);
+    if (previousWasAdminSubpage) {
+      console.info("Estado de navegacao mantido: reset automatico para dashboard ignorado.", {
+        estadoAnterior: previousState,
+      });
+      return;
+    }
+  }
+
   try {
     localStorage.setItem(navigationStateStorageKey, JSON.stringify(state));
   } catch {
@@ -8136,6 +8154,17 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+window.addEventListener("pagehide", () => {
+  if (currentUserType) saveNavigationState();
+});
+
+window.addEventListener("pageshow", () => {
+  if (currentUserType && !isRestoringNavigation) {
+    const restored = restoreNavigationState();
+    console.info("Navegacao restaurada apos reexibir pagina.", { restored });
+  }
+});
+
 newPackageButton?.addEventListener("click", () => {
   if (!packageViewStudent?.value) {
     if (packageEmptyState) {
@@ -8865,7 +8894,7 @@ function openAdminModule(moduleName) {
   saveNavigationState();
 }
 
-function showAdminDashboard() {
+function showAdminDashboard(options = {}) {
   if (!adminDashboard) return;
 
   if (isRestoringNavigation) return;
@@ -8880,7 +8909,7 @@ function showAdminDashboard() {
   });
   renderAdminAlerts();
   window.scrollTo({ top: 0, behavior: "smooth" });
-  saveNavigationState();
+  saveNavigationState({ allowDashboardState: options.persistDashboard === true });
 }
 
 newStudentButton?.addEventListener("click", () => {
@@ -8904,7 +8933,7 @@ adminModuleButtons.forEach((button) => {
 });
 
 adminBackButtons.forEach((button) => {
-  button.addEventListener("click", showAdminDashboard);
+  button.addEventListener("click", () => showAdminDashboard({ persistDashboard: true }));
 });
 
 adminAlertsList?.addEventListener("click", (event) => {
