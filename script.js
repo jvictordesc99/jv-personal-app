@@ -52,7 +52,7 @@ function openView(id) {
   views.forEach((view) => view.classList.toggle("active", view.id === id));
   activeViewId = id;
   safeSetText(pageTitle, titles[id] || "Painel inicial");
-  if (id === "admin" && typeof showAdminDashboard === "function") {
+  if (id === "admin" && !isRestoringNavigation && typeof showAdminDashboard === "function") {
     showAdminDashboard();
   }
   if (id === "evolucao" && typeof renderStudentLoadEvolution === "function") {
@@ -1217,7 +1217,7 @@ async function applySupabaseUser(user) {
         first_login: false,
       });
     }
-    enterTestMode("admin", "", { persist: false });
+    enterModeForSessionRestore("admin");
     saveAppLoginSession({
       role: "admin",
       provider: "supabase",
@@ -1260,7 +1260,7 @@ async function applySupabaseUser(user) {
     auth_user_id: student.auth_user_id || student.authUserId || student.supabaseUserId || "",
   });
   saveSupabaseStudentLink(student.name, user);
-  enterTestMode("student", student.name, { persist: false });
+  enterModeForSessionRestore("student", student.name);
   saveAppLoginSession({
     role: "student",
     studentName: student.name,
@@ -2132,7 +2132,8 @@ function restoreLocalAppSession() {
 
   if (session.role === "admin") {
     console.info("Sessao local encontrada. Abrindo area Personal/Admin.", session);
-    enterTestMode("admin", "", { persist: false });
+    enterModeForSessionRestore("admin");
+    restoreNavigationState();
     return true;
   }
 
@@ -2147,8 +2148,19 @@ function restoreLocalAppSession() {
     aluno: student.name,
     provider: session.provider,
   });
-  enterTestMode("student", student.name, { persist: false });
+  enterModeForSessionRestore("student", student.name);
+  restoreNavigationState();
   return true;
+}
+
+function enterModeForSessionRestore(role, studentName = "") {
+  const previousRestoringState = isRestoringNavigation;
+  isRestoringNavigation = true;
+  try {
+    enterTestMode(role, studentName, { persist: false });
+  } finally {
+    isRestoringNavigation = previousRestoringState;
+  }
 }
 
 function saveNavigationState() {
@@ -8113,8 +8125,14 @@ document.querySelectorAll("[data-package-page-back]").forEach((button) => {
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && currentUserType) {
-    restoreNavigationState();
+  if (document.visibilityState === "hidden" && currentUserType) {
+    saveNavigationState();
+    return;
+  }
+
+  if (document.visibilityState === "visible" && currentUserType && !isRestoringNavigation) {
+    const restored = restoreNavigationState();
+    console.info("Navegacao restaurada apos retorno da aba.", { restored });
   }
 });
 
@@ -8818,8 +8836,10 @@ function openAdminModule(moduleName) {
       if (packageStudentSearch) packageStudentSearch.value = "";
       if (packageStudentResults) packageStudentResults.innerHTML = "";
     }
-    if (packageForm) packageForm.hidden = true;
-    showPackageModuleMenu();
+    if (!isRestoringNavigation) {
+      if (packageForm) packageForm.hidden = true;
+      showPackageModuleMenu();
+    }
     renderPackageAdminList();
     fillManualCheckinPackageSelect();
     renderCheckinHistory();
@@ -8847,6 +8867,8 @@ function openAdminModule(moduleName) {
 
 function showAdminDashboard() {
   if (!adminDashboard) return;
+
+  if (isRestoringNavigation) return;
 
   activeAdminModule = "";
   activeAdminSubpage = "";
