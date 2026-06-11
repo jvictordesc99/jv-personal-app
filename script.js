@@ -869,6 +869,11 @@ function hasStudentAppAccess(student = {}) {
   return Boolean(getStudentAuthUserId(student));
 }
 
+function isSupabaseRlsError(error) {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLowerCase();
+  return text.includes("row-level security") || text.includes("rls") || text.includes("42501");
+}
+
 async function getSupabaseProfileByUser(user) {
   const client = getSupabaseClient();
   if (!client || !user?.id) return null;
@@ -941,6 +946,16 @@ async function upsertSupabaseProfile(profile) {
       .maybeSingle();
 
     if (error) {
+      if (isSupabaseRlsError(error)) {
+        console.warn("Profile nao foi salvo por RLS. Auth e app_state continuam funcionando.", {
+          auth_user_id: payload.auth_user_id,
+          email: payload.email,
+          role: payload.role,
+          student_id: payload.student_id,
+          message: error.message || "",
+        });
+        return { data: null, error };
+      }
       console.error("Erro ao salvar profile no Supabase.", {
         tabela: supabaseTables.profiles,
         payload,
@@ -1127,13 +1142,20 @@ async function createStudentAccessForRecord(student) {
   const profileResult = await upsertSupabaseProfile(profilePayload);
 
   if (profileResult.error) {
-    console.error("Acesso Auth criado, mas gravação em profiles falhou.", {
+    console.warn("Acesso Auth criado, mas gravação em profiles falhou. O login do aluno segue válido pelo auth_user_id salvo no app_state/localStorage.", {
       profilePayload,
       erro: profileResult.error,
       aluno: linkedStudent.name,
       auth_user_id: authUserId,
     });
-    return { student, temporaryPassword, created: false, error: profileResult.error };
+    return {
+      student: linkedStudent,
+      temporaryPassword,
+      created: true,
+      profileCreated: false,
+      profileError: profileResult.error,
+      error: null,
+    };
   }
 
   console.info("Acesso do aluno criado/vinculado.", {
@@ -1143,7 +1165,7 @@ async function createStudentAccessForRecord(student) {
     senhaTemporariaGeradaPorWhatsApp: "gerada_e_exibida_apenas_na_mensagem_de_sucesso",
   });
 
-  return { student: linkedStudent, temporaryPassword, created: true, error: null };
+  return { student: linkedStudent, temporaryPassword, created: true, profileCreated: true, error: null };
 }
 
 function showSupabaseLoginMessage(text, type = "success") {
@@ -7491,6 +7513,15 @@ studentForm?.addEventListener("submit", async (event) => {
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
   if (accessResult?.created) {
     showMessage(`Aluno cadastrado e acesso criado com sucesso.\n\nEmail: ${student.email_login || student.email}\nSenha temporária: ${accessResult.temporaryPassword}`);
+    if (accessResult.profileCreated === false) {
+      console.warn("Profile do aluno nao foi salvo, mas o acesso Auth foi criado e o aluno foi vinculado localmente.", {
+        aluno: student.name,
+        email: student.email_login || student.email,
+        auth_user_id: getStudentAuthUserId(student),
+        erro: accessResult.profileError,
+        observacao: "Se quiser usar profiles como fonte de permissao, ajuste as policies/RLS ou crie trigger no Supabase. O app tambem localiza aluno por auth_user_id/email no app_state.",
+      });
+    }
   } else if (accessResult?.error) {
     showMessage(`Aluno salvo, mas o acesso ao aplicativo não foi criado: ${accessResult.error.message}`, "error");
   } else {
@@ -7729,10 +7760,12 @@ async function createStudentTemporaryAccessFromForm() {
   });
 
   if (profileResult.error) {
-    showMessage("Usuário criado, mas o profile não foi salvo. Verifique a tabela/policy profiles.", "error");
-    createStudentAccessButton.disabled = false;
-    safeSetText(createStudentAccessButton, "Criar acesso do aluno");
-    return;
+    console.warn("Acesso Auth criado, mas profile nao foi salvo. O login segue valido pelo auth_user_id salvo no aluno.", {
+      email,
+      auth_user_id: authUserId,
+      erro: profileResult.error,
+      observacao: "Ajuste policies/RLS ou trigger de profiles se quiser manter essa tabela sincronizada.",
+    });
   }
 
   if (existingIndex >= 0) {
