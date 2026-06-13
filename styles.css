@@ -1471,6 +1471,41 @@ h3 {
   background: rgba(123, 140, 154, 0.08);
 }
 
+.feedback-card em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 0.82rem;
+}
+
+.feedback-workout-detail {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(184, 255, 56, 0.18);
+  background: rgba(184, 255, 56, 0.06);
+}
+
+.feedback-workout-detail[hidden] {
+  display: none;
+}
+
+.recommended-workout-banner {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(184, 255, 56, 0.35);
+  border-radius: 8px;
+  background: rgba(184, 255, 56, 0.1);
+}
+
+.recommended-workout-tab {
+  border-color: var(--lime) !important;
+  box-shadow: 0 0 0 2px rgba(184, 255, 56, 0.16);
+}
+
 .adherence-card {
   border: 1px solid rgba(184, 255, 56, 0.18);
   background: #fbfeff;

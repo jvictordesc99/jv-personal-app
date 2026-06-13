@@ -360,6 +360,10 @@ function updateEvolutionNavigationLabels() {
   if (recordsDescription) recordsDescription.textContent = "Maior carga, carga anterior e histórico.";
   const recordsHeader = document.querySelector('[data-subpage="evolution-records"] .load-history-head strong');
   if (recordsHeader) recordsHeader.textContent = "Progressão de Cargas";
+  const notesCard = document.querySelector('[data-subpage-target="evolution-notes"]');
+  const notesPage = document.querySelector('[data-subpage="evolution-notes"]');
+  if (notesCard) notesCard.hidden = true;
+  if (notesPage) notesPage.hidden = true;
 }
 
 function fillLoadChartModeSelect(select) {
@@ -1507,6 +1511,7 @@ function showAdminSubpageMenu(menuName) {
 }
 
 function openAdminSubpage(pageName) {
+  if (pageName === "evolution-notes") pageName = "evolution-feedbacks";
   const page = document.querySelector(`[data-subpage="${pageName}"]`);
   if (!page) return;
   activeAdminSubpage = pageName;
@@ -2311,6 +2316,8 @@ function saveNavigationState(options = {}) {
     selectedAdminProfileStudent,
     selectedAdminWorkoutStudent,
     workoutFlow: getWorkoutNavigationState(),
+    activeWorkoutByStudent: { ...activeWorkoutByStudent },
+    activeSessionByWorkout: { ...activeSessionByWorkout },
     packageViewStudent: packageViewStudent?.value || "",
     packageStudent: packageStudent?.value || "",
     packageId: editingPackageId || "",
@@ -2347,6 +2354,13 @@ function restoreNavigationState() {
 
   isRestoringNavigation = true;
   try {
+    if (state.activeWorkoutByStudent && typeof state.activeWorkoutByStudent === "object") {
+      Object.assign(activeWorkoutByStudent, state.activeWorkoutByStudent);
+    }
+    if (state.activeSessionByWorkout && typeof state.activeSessionByWorkout === "object") {
+      Object.assign(activeSessionByWorkout, state.activeSessionByWorkout);
+    }
+
     if (state.selectedStudentProfile && currentUserType === "student") {
       const student = findStudentByIdentifier(state.selectedStudentProfile);
       if (student) {
@@ -2845,6 +2859,8 @@ function normalizeWorkoutFeedbacks(feedbacks) {
     .map((item) => normalizeStudentLinkedRecord({
       ...item,
       workoutTitle: item.workoutTitle || item.workout || "Treino",
+      sessionId: String(item.sessionId || "").trim(),
+      sessionTitle: String(item.sessionTitle || "").trim(),
       rating: String(item.rating || "").trim(),
       difficulty: String(item.difficulty || "").trim(),
       pain: item.pain === true || item.pain === "Sim" || item.pain === "sim",
@@ -2975,6 +2991,7 @@ function normalizeWorkout(workout, studentName = "") {
     (session, index) => ({
       id: session.id || createId(),
       title: session.title || `Treino ${index + 1}`,
+      order: Number(session.order || index + 1),
       exercises: (session.exercises || []).map(normalizeExercise),
     }),
   );
@@ -4047,6 +4064,17 @@ function createTrainingSessionBlock(session = {}) {
   input.value = session.title || "";
   label.appendChild(input);
 
+  const orderLabel = document.createElement("label");
+  orderLabel.textContent = "Ordem";
+  const orderInput = document.createElement("input");
+  orderInput.type = "number";
+  orderInput.min = "1";
+  orderInput.step = "1";
+  orderInput.dataset.sessionOrder = "true";
+  orderInput.placeholder = "1";
+  orderInput.value = session.order || "";
+  orderLabel.appendChild(orderInput);
+
   const actions = document.createElement("div");
   actions.className = "student-actions";
 
@@ -4063,7 +4091,7 @@ function createTrainingSessionBlock(session = {}) {
   removeSession.textContent = "Remover treino";
 
   actions.append(addExercise, removeSession);
-  head.append(label, actions);
+  head.append(label, orderLabel, actions);
 
   const list = document.createElement("div");
   list.className = "training-session-exercises";
@@ -4284,6 +4312,7 @@ function collectTrainingSessions() {
     .map((session, index) => ({
       id: session.dataset.sessionId || createId(),
       title: session.querySelector("[data-session-title]")?.value.trim() || `Treino ${index + 1}`,
+      order: Number(session.querySelector("[data-session-order]")?.value || index + 1),
       exercises: [...session.querySelectorAll(".exercise-form-row")]
         .map((row) => ({
           name: row.querySelector('[data-exercise-field="name"]')?.value.trim() || "",
@@ -5249,8 +5278,9 @@ function renderCurrentWorkout() {
 
   const sessionTabs = document.createElement("div");
   sessionTabs.className = "workout-tabs training-tabs";
-  const sessions = workout.sessions?.length ? workout.sessions : [{ id: createId(), title: "Treino principal", exercises: [] }];
-  const activeSessionId = activeSessionByWorkout[workout.id] || sessions[0]?.id;
+  const sessions = getOrderedWorkoutSessions(workout);
+  const recommendedSessionId = getRecommendedSessionId(selectedStudent, workout, sessions);
+  const activeSessionId = activeSessionByWorkout[workout.id] || recommendedSessionId || sessions[0]?.id;
   const activeSession = sessions.find((session) => session.id === activeSessionId) || sessions[0];
   activeSessionByWorkout[workout.id] = activeSession?.id;
 
@@ -5259,9 +5289,17 @@ function renderCurrentWorkout() {
     button.type = "button";
     button.dataset.sessionTab = session.id;
     button.className = session.id === activeSession?.id ? "active" : "";
-    button.textContent = session.title;
+    if (session.id === recommendedSessionId) button.classList.add("recommended-workout-tab");
+    button.textContent = session.id === recommendedSessionId ? `${session.title} - Treino recomendado` : session.title;
     sessionTabs.appendChild(button);
   });
+
+  if (activeSession) {
+    const recommendation = document.createElement("div");
+    recommendation.className = "recommended-workout-banner";
+    recommendation.innerHTML = `<strong>Treino de hoje</strong><span>${activeSession.id === recommendedSessionId ? activeSession.title : `${activeSession.title} selecionado manualmente`}</span>`;
+    currentWorkout.appendChild(recommendation);
+  }
 
   currentWorkout.appendChild(sessionTabs);
 
@@ -5295,6 +5333,8 @@ function renderCurrentWorkout() {
     form.dataset.studentName = selectedStudent;
     form.dataset.workoutId = workout.id;
     form.dataset.workoutTitle = workout.title;
+    form.dataset.sessionId = activeSession?.id || "";
+    form.dataset.sessionTitle = activeSession?.title || "";
     form.dataset.exerciseKey = exerciseKey;
     form.dataset.exerciseName = normalizedExercise.name;
     form.dataset.sets = normalizedExercise.sets || "";
@@ -5326,12 +5366,36 @@ function renderCurrentWorkout() {
   });
 
   currentWorkout.append(list);
-  currentWorkout.appendChild(createWorkoutFeedbackPanel(selectedStudent, workout));
+  currentWorkout.appendChild(createWorkoutFeedbackPanel(selectedStudent, workout, activeSession));
   renderStudentLoadEvolution();
   renderAdminLoadEvolution();
 }
 
-function createWorkoutFeedbackPanel(studentName, workout) {
+function getOrderedWorkoutSessions(workout) {
+  const sessions = workout?.sessions?.length ? workout.sessions : [{ id: createId(), title: "Treino principal", order: 1, exercises: [] }];
+  return [...sessions].sort((a, b) => (Number(a.order || 999) - Number(b.order || 999)) || String(a.title || "").localeCompare(String(b.title || "")));
+}
+
+function getRecommendedSessionId(studentName, workout, sessions = getOrderedWorkoutSessions(workout)) {
+  if (!studentName || !workout?.id || !sessions.length) return sessions[0]?.id || "";
+  const completed = loadWorkoutFeedbacks()
+    .filter((feedback) => feedback.studentName === studentName && feedback.workoutId === workout.id && feedback.sessionId)
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const lastSessionId = completed[0]?.sessionId;
+  if (!lastSessionId) return sessions[0]?.id || "";
+  const currentIndex = sessions.findIndex((session) => session.id === lastSessionId);
+  if (currentIndex < 0) return sessions[0]?.id || "";
+  return sessions[(currentIndex + 1) % sessions.length]?.id || sessions[0]?.id || "";
+}
+
+function getNextSessionIdAfterCompletion(workout, sessionId) {
+  const sessions = getOrderedWorkoutSessions(workout);
+  const currentIndex = sessions.findIndex((session) => session.id === sessionId);
+  if (currentIndex < 0) return sessions[0]?.id || "";
+  return sessions[(currentIndex + 1) % sessions.length]?.id || sessions[0]?.id || "";
+}
+
+function createWorkoutFeedbackPanel(studentName, workout, session = null) {
   const panel = document.createElement("section");
   panel.className = "workout-feedback-panel";
 
@@ -5346,6 +5410,8 @@ function createWorkoutFeedbackPanel(studentName, workout) {
   form.dataset.studentName = studentName;
   form.dataset.workoutId = workout.id;
   form.dataset.workoutTitle = workout.title;
+  form.dataset.sessionId = session?.id || "";
+  form.dataset.sessionTitle = session?.title || "";
 
   const title = document.createElement("div");
   title.className = "workout-feedback-head";
@@ -6024,12 +6090,17 @@ function renderAdminFeedbacks() {
       const isPain = feedback.pain;
       const isHard = isFeedbackDifficultyHigh(feedback);
       item.className = `feedback-card ${feedback.status === "nao_finalizado" ? "feedback-neutral" : isPain ? "feedback-danger" : isHard ? "feedback-warning" : ""}`;
+      item.dataset.feedbackCard = feedback.id;
       item.classList.toggle("alert-focus-card", highlightedFeedbackId === feedback.id);
       item.innerHTML = `
         <strong>${feedback.studentName} | ${feedback.date || "-"}</strong>
-        <span>${feedback.workoutTitle || "Treino"} | Nota ${feedback.rating || "-"} | ${feedback.difficulty || "Sem intensidade"}</span>
+        <span>${feedback.sessionTitle || feedback.workoutTitle || "Treino"} | Nota ${feedback.rating || "-"} | ${feedback.difficulty || "Sem intensidade"}</span>
         <small>${isPain ? `Dor: ${feedback.painLocation || "local não informado"}` : "Sem dor relatada"}${feedback.note ? ` | ${feedback.note}` : ""}</small>
+        <em>Clique para ver os detalhes do treino executado.</em>
       `;
+      const detail = renderFeedbackWorkoutDetail(feedback);
+      detail.hidden = true;
+      item.appendChild(detail);
       adminFeedbackHistory.appendChild(item);
       if (highlightedFeedbackId === feedback.id) {
         setTimeout(() => item.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
@@ -6053,6 +6124,50 @@ function renderAdminFeedbacks() {
     note.innerHTML = `<strong>${feedback.studentName} | ${feedback.date || "-"}</strong><span>${feedback.workoutTitle || "Treino"}</span><small>${feedback.note || feedback.painLocation}</small>`;
     adminFeedbackNotes.appendChild(note);
   });
+}
+
+function renderFeedbackWorkoutDetail(feedback) {
+  const detail = document.createElement("div");
+  detail.className = "feedback-workout-detail";
+  const workout = (loadWorkouts()[feedback.studentName] || []).find((item) => item.id === feedback.workoutId);
+  const sessions = getOrderedWorkoutSessions(workout || {});
+  const session = sessions.find((item) => item.id === feedback.sessionId)
+    || sessions.find((item) => item.title === feedback.sessionTitle)
+    || sessions[0];
+  const records = loadProgressRecords().filter((record) =>
+    record.studentName === feedback.studentName &&
+    (!feedback.workoutId || record.workoutId === feedback.workoutId) &&
+    (!feedback.sessionId || record.sessionId === feedback.sessionId) &&
+    record.date === feedback.date,
+  );
+
+  const title = document.createElement("strong");
+  title.textContent = `${feedback.sessionTitle || session?.title || feedback.workoutTitle || "Treino"} | ${feedback.date || "-"}`;
+  detail.appendChild(title);
+
+  if (!session?.exercises?.length) {
+    const empty = document.createElement("small");
+    empty.textContent = "Ficha original não encontrada. Exibindo apenas cargas registradas.";
+    detail.appendChild(empty);
+  }
+
+  const list = document.createElement("div");
+  list.className = "record-history-list";
+  const exercises = session?.exercises?.length
+    ? session.exercises.map((exercise, index) => ({ exercise: normalizeExercise(exercise), index }))
+    : records.map((record, index) => ({ exercise: { name: record.exerciseName, sets: record.sets, reps: record.reps, progressNote: record.note }, index }));
+
+  exercises.forEach(({ exercise, index }) => {
+    const exerciseKey = getExerciseKey(feedback.workoutId || "feedback", exercise.name, index);
+    const record = records.find((item) => item.exerciseKey === exerciseKey || item.exerciseName === exercise.name);
+    const row = document.createElement("div");
+    row.className = "evolution-mini-row";
+    row.innerHTML = `<strong>${exercise.name || "Exercício"}</strong><span>${exercise.sets || record?.sets || "-"} séries | ${exercise.reps || record?.reps || "-"} reps | carga ${record?.load || exercise.currentLoad || exercise.weight || "-"}</span><small>${record?.note || exercise.progressNote || "Sem observação."}</small>`;
+    list.appendChild(row);
+  });
+
+  detail.appendChild(list);
+  return detail;
 }
 
 function getRecordMonthKey(record) {
@@ -8348,6 +8463,7 @@ workoutTabs?.addEventListener("click", (event) => {
   if (!tab) return;
 
   activeWorkoutByStudent[workoutViewStudent.value] = tab.dataset.workoutTab;
+  saveNavigationState();
   renderCurrentWorkout();
 });
 
@@ -8355,6 +8471,7 @@ currentWorkout?.addEventListener("click", (event) => {
   const sessionTab = event.target.closest("[data-session-tab]");
   if (sessionTab) {
     activeSessionByWorkout[activeWorkoutByStudent[workoutViewStudent.value]] = sessionTab.dataset.sessionTab;
+    saveNavigationState();
     renderCurrentWorkout();
     return;
   }
@@ -8370,6 +8487,8 @@ currentWorkout?.addEventListener("click", (event) => {
         studentId: getStudentIdByName(form.dataset.studentName),
         workoutId: form.dataset.workoutId,
         workoutTitle: form.dataset.workoutTitle,
+        sessionId: form.dataset.sessionId || "",
+        sessionTitle: form.dataset.sessionTitle || "",
         rating: "",
         difficulty: "Sem feedback",
         pain: false,
@@ -8381,6 +8500,9 @@ currentWorkout?.addEventListener("click", (event) => {
         timestamp: Date.now(),
       });
       saveWorkoutFeedbacks(feedbacks);
+      const completedWorkout = (loadWorkouts()[form.dataset.studentName] || []).find((item) => item.id === form.dataset.workoutId);
+      if (completedWorkout) activeSessionByWorkout[completedWorkout.id] = getNextSessionIdAfterCompletion(completedWorkout, form.dataset.sessionId);
+      saveNavigationState();
       form.innerHTML = "<strong>Treino finalizado.</strong><small>Feedback pulado. Suas cargas salvas continuam no histórico.</small>";
       renderAdminEvolution();
       renderStudentProfile();
@@ -8408,6 +8530,8 @@ currentWorkout?.addEventListener("click", (event) => {
     studentId: getStudentIdByName(form.dataset.studentName),
     workoutId: form.dataset.workoutId,
     workoutTitle: form.dataset.workoutTitle,
+    sessionId: form.dataset.sessionId || "",
+    sessionTitle: form.dataset.sessionTitle || "",
     exerciseKey: form.dataset.exerciseKey,
     exerciseName: form.dataset.exerciseName,
     load,
@@ -8438,6 +8562,8 @@ currentWorkout?.addEventListener("submit", (event) => {
     studentId: getStudentIdByName(form.dataset.studentName),
     workoutId: form.dataset.workoutId,
     workoutTitle: form.dataset.workoutTitle,
+    sessionId: form.dataset.sessionId || "",
+    sessionTitle: form.dataset.sessionTitle || "",
     rating: form.querySelector('[name="rating"]:checked')?.value || "",
     difficulty: form.querySelector('[name="difficulty"]:checked')?.value || "",
     pain,
@@ -8447,6 +8573,9 @@ currentWorkout?.addEventListener("submit", (event) => {
     timestamp: Date.now(),
   });
   saveWorkoutFeedbacks(feedbacks);
+  const completedWorkout = (loadWorkouts()[form.dataset.studentName] || []).find((item) => item.id === form.dataset.workoutId);
+  if (completedWorkout) activeSessionByWorkout[completedWorkout.id] = getNextSessionIdAfterCompletion(completedWorkout, form.dataset.sessionId);
+  saveNavigationState();
   form.innerHTML = "<strong>Treino finalizado.</strong><small>Feedback enviado para o Personal.</small>";
   renderAdminEvolution();
   renderStudentProfile();
@@ -8523,6 +8652,12 @@ adminEvolutionChartMode?.addEventListener("change", renderAdminEvolution);
 adminFeedbackStudentFilter?.addEventListener("change", renderAdminFeedbacks);
 adminFeedbackTypeFilter?.addEventListener("change", renderAdminFeedbacks);
 adminNotesStudentFilter?.addEventListener("change", renderAdminFeedbacks);
+adminFeedbackHistory?.addEventListener("click", (event) => {
+  const card = event.target.closest("[data-feedback-card]");
+  if (!card) return;
+  const detail = card.querySelector(".feedback-workout-detail");
+  if (detail) detail.hidden = !detail.hidden;
+});
 assessmentStudent?.addEventListener("change", () => {
   renderAdminAssessments();
   renderAssessmentSupportSummaries();
@@ -9465,7 +9600,10 @@ workoutExercises?.addEventListener("input", (event) => {
   if (input.dataset.exerciseField === "rest") {
     input.value = onlyDigits(input.value);
   }
+  saveNavigationState();
 });
+
+workoutForm?.addEventListener("input", saveNavigationState);
 
 workoutExercises?.addEventListener("blur", (event) => {
   const input = event.target.closest("[data-exercise-field]");
