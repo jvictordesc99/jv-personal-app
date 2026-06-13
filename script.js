@@ -5688,6 +5688,27 @@ function getWorkoutFrequencyTarget(student, days = 7) {
 }
 
 function getStudentWorkoutAnalytics(student) {
+  if (!student?.name) {
+    return {
+      feedbacks: [],
+      progress: [],
+      lastFeedback: null,
+      lastDate: null,
+      daysSinceLast: null,
+      completed7: 0,
+      completed30: 0,
+      unfinished: 0,
+      adherence: 0,
+      risk: "alto",
+      workoutStatus: { label: "Sem ficha", state: "missing", days: null },
+      paymentStatus: "Sem status",
+      planStatus: "Sem vencimento",
+      hasPain: false,
+      hasDifficulty: false,
+      hasNote: false,
+    };
+  }
+
   const now = new Date();
   const since7 = new Date(now);
   since7.setDate(now.getDate() - 7);
@@ -7573,8 +7594,19 @@ function renderStudentPackageDetail(action) {
   }
 }
 
+function getCurrentWorkoutForStudent(studentIdentifier) {
+  const student = findStudentByIdentifier(studentIdentifier) || loadStudents().find((item) => item.name === studentIdentifier);
+  const studentName = student?.name || String(studentIdentifier || "");
+  if (!studentName) return null;
+
+  const studentWorkouts = loadWorkouts()?.[studentName] || [];
+  const activeWorkouts = studentWorkouts.filter((workout) => getWorkoutPeriodStatus(workout).state === "active");
+  const activeWorkoutId = activeWorkoutByStudent[studentName] || activeWorkouts[0]?.id;
+  return activeWorkouts.find((workout) => workout.id === activeWorkoutId) || activeWorkouts[0] || null;
+}
+
 function getCurrentStudentWorkout(studentName) {
-  const studentWorkouts = loadWorkouts()[studentName] || [];
+  const studentWorkouts = loadWorkouts()?.[studentName] || [];
   const activeWorkouts = currentUserType === "student"
     ? studentWorkouts.filter((workout) => getWorkoutPeriodStatus(workout).state === "active")
     : studentWorkouts;
