@@ -1584,6 +1584,50 @@ function renderAssessmentSupportSummaries() {
   }
 }
 
+function renderAssessmentSupportSummaries() {
+  ensureAssessmentProfessionalUi();
+  syncAssessmentStudentSelects();
+  const studentName = assessmentStudent?.value || loadStudents()[0]?.name || "";
+  const assessments = getStudentAssessments(studentName);
+  if (assessmentChartSummary) {
+    assessmentChartSummary.innerHTML = "";
+    if (assessments.length) {
+      assessmentChartSummary.append(
+        renderAssessmentChartCard("Evolução do peso", assessments, "weight", "kg"),
+        renderAssessmentChartCard("Evolução da gordura", assessments, "fat", "%"),
+        renderAssessmentChartCard("Evolução da massa muscular", assessments, "muscle", "kg"),
+        renderAssessmentChartCard("Evolução do abdômen/cintura", assessments, assessments.some((item) => item.abdomen) ? "abdomen" : "waist", "cm"),
+      );
+    } else {
+      assessmentChartSummary.textContent = "Nenhuma avaliação para montar gráficos ainda.";
+    }
+  }
+  if (assessmentPhotoSummary) {
+    assessmentPhotoSummary.innerHTML = "";
+    assessments
+      .filter((item) => item.attachment?.dataUrl || item.photos?.front?.dataUrl || item.photos?.side?.dataUrl || item.photos?.back?.dataUrl || item.photos?.bio?.dataUrl)
+      .forEach((item) => assessmentPhotoSummary.appendChild(renderSummaryCard(item.date, [
+        item.photos?.front ? "frente" : "",
+        item.photos?.side ? "lado" : "",
+        item.photos?.back ? "costas" : "",
+        item.photos?.bio || item.attachment ? "bioimpedância" : "",
+      ].filter(Boolean).join(" | ") || "Anexo salvo")));
+    if (!assessmentPhotoSummary.children.length) assessmentPhotoSummary.textContent = "Nenhuma foto/anexo de evolução cadastrado.";
+  }
+  if (assessmentCompareSummary) {
+    assessmentCompareSummary.innerHTML = "";
+    const first = assessments[0];
+    const last = assessments[assessments.length - 1];
+    if (first && last && first !== last) {
+      assessmentCompareSummary.appendChild(renderSummaryCard(`${first.date} x ${last.date}`, `Peso: ${first.weight || "-"} -> ${last.weight || "-"} | Gordura: ${first.fat || "-"} -> ${last.fat || "-"} | Massa: ${first.muscle || "-"} -> ${last.muscle || "-"} | Abdômen: ${first.abdomen || first.waist || "-"} -> ${last.abdomen || last.waist || "-"}`));
+      assessmentCompareSummary.appendChild(renderSummaryCard("Parecer para WhatsApp", createAssessmentReportText(last, first, studentName)));
+    } else {
+      assessmentCompareSummary.textContent = "Cadastre pelo menos duas avaliações para comparar.";
+    }
+  }
+  renderAssessmentOverview(studentName);
+}
+
 function renderAdminSubpageContent(pageName) {
   if (pageName === "students-list") renderStudents();
   if (pageName === "students-profile" && selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
@@ -6459,6 +6503,35 @@ function createAssessmentHistoryCard(assessment, previous) {
 
   card.append(head, grid, notes);
 
+  const actions = document.createElement("div");
+  actions.className = "student-actions";
+  const details = document.createElement("button");
+  details.type = "button";
+  details.className = "secondary";
+  details.dataset.assessmentDetails = assessment.id;
+  details.textContent = "Ver detalhes";
+  const compare = document.createElement("button");
+  compare.type = "button";
+  compare.className = "secondary";
+  compare.dataset.assessmentCompare = assessment.id;
+  compare.textContent = "Comparar";
+  actions.append(details, compare);
+  card.appendChild(actions);
+
+  const detail = document.createElement("div");
+  detail.className = "assessment-detail-panel";
+  detail.hidden = true;
+  detail.innerHTML = `
+    <strong>Detalhes profissionais</strong>
+    <span>Altura: ${assessment.height || "-"} | Idade: ${assessment.age || "-"} | Visceral: ${assessment.visceralFat || "-"}</span>
+    <span>Cintura: ${assessment.waist || "-"} | Abdômen: ${assessment.abdomen || "-"} | Quadril: ${assessment.hip || "-"}</span>
+    <small>Queixas: ${assessment.complaints || "-"}</small>
+    <small>Pontos de atenção: ${assessment.attention || "-"}</small>
+    <small>Conduta: ${assessment.conduct || "-"}</small>
+    <small>Parecer: ${assessment.autoOpinion || "-"}</small>
+  `;
+  card.appendChild(detail);
+
   if (assessment.attachment?.dataUrl) {
     const attachment = document.createElement("a");
     attachment.href = assessment.attachment.dataUrl;
@@ -6483,6 +6556,274 @@ function renderAssessmentHistory(container, assessments) {
   [...assessments].reverse().forEach((assessment, index, reversed) => {
     container.appendChild(createAssessmentHistoryCard(assessment, reversed[index + 1]));
   });
+}
+
+function getAssessmentNumber(assessment, key) {
+  return parseLoad(assessment?.[key]);
+}
+
+function getAssessmentDelta(current, previous, key, suffix = "") {
+  const currentValue = getAssessmentNumber(current, key);
+  const previousValue = getAssessmentNumber(previous, key);
+  if (currentValue === null || previousValue === null) return "Sem comparação";
+  const diff = currentValue - previousValue;
+  return `${diff > 0 ? "↑ +" : diff < 0 ? "↓ " : "→ "}${diff.toLocaleString("pt-BR")}${suffix}`;
+}
+
+function getNextAssessmentDateLabel(latest) {
+  const base = parseDateLike(latest?.date) || new Date();
+  base.setDate(base.getDate() + 30);
+  return base.toLocaleDateString("pt-BR");
+}
+
+function ensureAssessmentProfessionalUi() {
+  const module = document.querySelector("#admin-module-assessments");
+  const menu = document.querySelector('[data-subpage-menu="assessments"]');
+  if (!module || !menu || document.querySelector("#assessment-dashboard-panel")) return;
+
+  const panel = document.createElement("section");
+  panel.id = "assessment-dashboard-panel";
+  panel.className = "assessment-dashboard-panel";
+  panel.innerHTML = `
+    <label class="assessment-main-selector">Aluno
+      <select id="assessment-dashboard-student"></select>
+    </label>
+    <div class="assessment-student-overview" id="assessment-student-overview"></div>
+    <div class="assessment-summary-grid" id="assessment-admin-summary"></div>
+    <div class="assessment-goals-panel" id="assessment-goals-panel"></div>
+  `;
+  menu.parentNode.insertBefore(panel, menu);
+
+  const extra = document.createElement("div");
+  extra.id = "assessment-extra-fields";
+  extra.className = "assessment-extra-fields";
+  extra.innerHTML = `
+    <section class="assessment-form-section"><strong>Dados gerais</strong><div class="assessment-fields">
+      <label>Altura<input id="assessment-height" placeholder="Ex: 1,75 m" /></label>
+      <label>Idade<input id="assessment-age" placeholder="Ex: 32" /></label>
+      <label>Objetivo do aluno<input id="assessment-goal" placeholder="Ex: reduzir gordura e ganhar massa" /></label>
+    </div></section>
+    <section class="assessment-form-section"><strong>Bioimpedância</strong><div class="assessment-fields">
+      <label>Massa muscular esquelética<input id="assessment-skeletal-muscle" placeholder="Ex: 34 kg" /></label>
+      <label>Massa livre de gordura<input id="assessment-lean-mass" placeholder="Ex: 62 kg" /></label>
+      <label>Água corporal total<input id="assessment-water" placeholder="Ex: 42 L" /></label>
+      <label>Gordura visceral<input id="assessment-visceral-fat" placeholder="Ex: 8" /></label>
+      <label>TMB<input id="assessment-bmr" placeholder="Ex: 1780 kcal" /></label>
+      <label>Calorias recomendadas<input id="assessment-calories" placeholder="Ex: 2200 kcal" /></label>
+    </div></section>
+    <section class="assessment-form-section"><strong>Circunferências</strong><div class="assessment-fields">
+      <label>Pescoço<input id="assessment-neck" /></label>
+      <label>Ombros<input id="assessment-shoulders" /></label>
+      <label>Tórax<input id="assessment-chest" /></label>
+      <label>Braço direito<input id="assessment-right-arm" /></label>
+      <label>Braço esquerdo<input id="assessment-left-arm" /></label>
+      <label>Cintura<input id="assessment-waist" /></label>
+      <label>Abdômen<input id="assessment-abdomen" /></label>
+      <label>Quadril<input id="assessment-hip" /></label>
+      <label>Coxa direita<input id="assessment-right-thigh" /></label>
+      <label>Coxa esquerda<input id="assessment-left-thigh" /></label>
+      <label>Panturrilha direita<input id="assessment-right-calf" /></label>
+      <label>Panturrilha esquerda<input id="assessment-left-calf" /></label>
+    </div></section>
+    <section class="assessment-form-section"><strong>Fotos</strong><div class="assessment-fields">
+      <label>Frente<input id="assessment-photo-front" type="file" accept="image/*" /></label>
+      <label>Lado<input id="assessment-photo-side" type="file" accept="image/*" /></label>
+      <label>Costas<input id="assessment-photo-back" type="file" accept="image/*" /></label>
+      <label>Bioimpedância<input id="assessment-photo-bio" type="file" accept="image/*,.pdf" /></label>
+    </div></section>
+    <section class="assessment-form-section"><strong>Observações e parecer</strong><div class="assessment-fields">
+      <label>Queixas do aluno<textarea id="assessment-complaints"></textarea></label>
+      <label>Pontos de atenção<textarea id="assessment-attention"></textarea></label>
+      <label>Conduta para o próximo mês<textarea id="assessment-conduct"></textarea></label>
+      <label>Meta de peso<input id="assessment-goal-weight" /></label>
+      <label>Meta de gordura<input id="assessment-goal-fat" /></label>
+      <label>Meta abdominal<input id="assessment-goal-abdomen" /></label>
+      <label>Prazo da meta<input id="assessment-goal-deadline" placeholder="DD/MM/AAAA" /></label>
+      <label class="assessment-notes">Parecer automático editável<textarea id="assessment-auto-opinion"></textarea></label>
+    </div></section>
+    <div class="student-actions">
+      <button type="button" class="secondary" id="assessment-generate-summary">Gerar resumo da avaliação</button>
+      <button type="button" class="secondary" id="assessment-copy-report">Copiar relatório para WhatsApp</button>
+    </div>
+  `;
+  assessmentForm?.insertBefore(extra, assessmentForm.querySelector("button[type='submit']"));
+}
+
+function getAssessmentDashboardStudent() {
+  const select = document.querySelector("#assessment-dashboard-student");
+  return select?.value || assessmentStudent?.value || loadStudents()[0]?.name || "";
+}
+
+function syncAssessmentStudentSelects(studentName = getAssessmentDashboardStudent()) {
+  const dashboardSelect = document.querySelector("#assessment-dashboard-student");
+  fillStudentSelects();
+  if (dashboardSelect) {
+    const previous = studentName || dashboardSelect.value;
+    dashboardSelect.replaceChildren();
+    loadStudents().forEach((student) => {
+      const option = document.createElement("option");
+      option.value = student.name;
+      option.textContent = student.name;
+      dashboardSelect.appendChild(option);
+    });
+    dashboardSelect.value = loadStudents().some((student) => student.name === previous) ? previous : loadStudents()[0]?.name || "";
+  }
+  if (assessmentStudent && dashboardSelect?.value) assessmentStudent.value = dashboardSelect.value;
+}
+
+function renderAssessmentOverview(studentName = getAssessmentDashboardStudent()) {
+  const overview = document.querySelector("#assessment-student-overview");
+  const summary = document.querySelector("#assessment-admin-summary");
+  const goals = document.querySelector("#assessment-goals-panel");
+  if (!overview || !summary || !goals) return;
+
+  const student = loadStudents().find((item) => item.name === studentName);
+  const assessments = getStudentAssessments(studentName);
+  const latest = assessments[assessments.length - 1];
+  const previous = assessments[assessments.length - 2];
+  overview.innerHTML = "";
+  summary.innerHTML = "";
+  goals.innerHTML = "";
+
+  if (!student) {
+    overview.textContent = "Selecione um aluno para visualizar a avaliação.";
+    return;
+  }
+
+  overview.innerHTML = `
+    <div><strong>${student.name}</strong><span>${student.plan || "-"} | objetivo: ${latest?.goal || student.goal || student.plan || "não informado"}</span></div>
+    <div class="student-actions">
+      <button type="button" class="primary" data-open-assessment-page="assessment-new">Nova avaliação</button>
+      <button type="button" class="secondary" data-open-assessment-page="assessment-history">Ver histórico</button>
+    </div>
+    <small>Última avaliação: ${latest?.date || "sem registro"} | Próxima recomendada: ${latest ? getNextAssessmentDateLabel(latest) : "após primeira avaliação"}</small>
+  `;
+
+  [
+    ["Peso atual", latest?.weight, getAssessmentDelta(latest, previous, "weight", "kg")],
+    ["% gordura", latest?.fat, getAssessmentDelta(latest, previous, "fat", "%")],
+    ["Massa muscular", latest?.muscle, getAssessmentDelta(latest, previous, "muscle", "kg")],
+    ["Abdômen/cintura", latest?.abdomen || latest?.waist, getAssessmentDelta(latest, previous, latest?.abdomen ? "abdomen" : "waist", "cm")],
+    ["Gordura visceral", latest?.visceralFat, getAssessmentDelta(latest, previous, "visceralFat")],
+    ["IMC", latest?.imc, getAssessmentDelta(latest, previous, "imc")],
+  ].forEach(([label, value, comparison]) => summary.appendChild(createAssessmentSummaryCard(label, value, comparison)));
+
+  goals.appendChild(renderAssessmentGoals(latest, previous));
+}
+
+function renderAssessmentGoals(latest) {
+  const card = document.createElement("article");
+  card.className = "assessment-history-card assessment-goal-card";
+  if (!latest) {
+    card.textContent = "Cadastre uma avaliação para acompanhar metas.";
+    return card;
+  }
+  const goals = [
+    ["Peso", latest.weight, latest.goalWeight, "kg"],
+    ["Gordura", latest.fat, latest.goalFat, "%"],
+    ["Abdômen", latest.abdomen || latest.waist, latest.goalAbdomen, "cm"],
+  ];
+  card.innerHTML = `<div class="load-history-head"><strong>Metas</strong><small>Prazo: ${latest.goalDeadline || "-"}</small></div>`;
+  goals.forEach(([label, current, target, suffix]) => {
+    const currentNumber = parseLoad(current);
+    const targetNumber = parseLoad(target);
+    const progress = currentNumber !== null && targetNumber !== null && currentNumber
+      ? Math.max(0, Math.min(100, Math.round((1 - Math.abs(currentNumber - targetNumber) / Math.max(currentNumber, targetNumber, 1)) * 100)))
+      : 0;
+    const row = document.createElement("div");
+    row.className = "assessment-goal-row";
+    row.innerHTML = `<span>${label}: ${current || "-"} / meta ${target || "-"}</span><strong>${progress}%</strong><div><i style="width:${progress}%"></i></div>`;
+    card.appendChild(row);
+  });
+  return card;
+}
+
+function renderAssessmentChartCard(title, assessments, key, suffix = "") {
+  const card = document.createElement("article");
+  card.className = "assessment-history-card assessment-chart-card";
+  card.innerHTML = `<strong>${title}</strong>`;
+  const values = assessments.map((item) => ({ item, value: parseLoad(item[key]) })).filter((entry) => entry.value !== null);
+  if (!values.length) {
+    card.appendChild(document.createTextNode("Sem dados para gráfico."));
+    return card;
+  }
+  const max = Math.max(...values.map((entry) => entry.value), 1);
+  values.slice(-8).forEach(({ item, value }) => {
+    const row = document.createElement("div");
+    row.className = "assessment-chart-row";
+    row.innerHTML = `<span>${item.date}</span><div><i style="width:${Math.max(4, Math.round((value / max) * 100))}%"></i></div><strong>${value.toLocaleString("pt-BR")}${suffix}</strong>`;
+    card.appendChild(row);
+  });
+  return card;
+}
+
+function createAssessmentReportText(assessment, previous, studentName) {
+  if (!assessment) return "Nenhuma avaliação selecionada.";
+  const weight = getAssessmentDelta(assessment, previous, "weight", "kg");
+  const fat = getAssessmentDelta(assessment, previous, "fat", "%");
+  const abdomenKey = assessment.abdomen ? "abdomen" : "waist";
+  const abdomen = getAssessmentDelta(assessment, previous, abdomenKey, "cm");
+  return `Avaliação física - ${studentName}\nData: ${assessment.date}\nPeso: ${assessment.weight || "-"} (${weight})\nGordura: ${assessment.fat || "-"} (${fat})\nMassa muscular: ${assessment.muscle || "-"}\nAbdômen/Cintura: ${assessment.abdomen || assessment.waist || "-"} (${abdomen})\n\nParecer: ${assessment.autoOpinion || assessment.notes || "Evolução registrada. Manter acompanhamento e ajustes progressivos."}`;
+}
+
+function updateAssessmentOpinion() {
+  const opinion = document.querySelector("#assessment-auto-opinion");
+  if (!opinion || opinion.value.trim()) return;
+  const studentName = assessmentStudent?.value || getAssessmentDashboardStudent();
+  const assessments = getStudentAssessments(studentName);
+  const previous = assessments[assessments.length - 1];
+  const draft = {
+    date: assessmentDate?.value || formatToday(),
+    weight: assessmentWeight?.value || "",
+    fat: assessmentFat?.value || "",
+    muscle: assessmentMuscle?.value || "",
+    abdomen: document.querySelector("#assessment-abdomen")?.value || "",
+    waist: document.querySelector("#assessment-waist")?.value || "",
+    notes: assessmentNotes?.value || "",
+  };
+  opinion.value = createAssessmentReportText(draft, previous, studentName)
+    .replace(`Avaliação física - ${studentName}\nData: ${draft.date}\n`, "Desde a última avaliação, o aluno apresentou os seguintes dados: ")
+    .replace(/\n/g, " ");
+}
+
+async function readOptionalAssessmentFile(id) {
+  const input = document.querySelector(`#${id}`);
+  return readAssessmentAttachment(input?.files?.[0]);
+}
+
+function getAssessmentExtraPayload() {
+  const value = (id) => document.querySelector(`#${id}`)?.value.trim() || "";
+  return {
+    height: value("assessment-height"),
+    age: value("assessment-age"),
+    goal: value("assessment-goal"),
+    skeletalMuscle: value("assessment-skeletal-muscle"),
+    leanMass: value("assessment-lean-mass"),
+    water: value("assessment-water"),
+    visceralFat: value("assessment-visceral-fat"),
+    bmr: value("assessment-bmr"),
+    calories: value("assessment-calories"),
+    neck: value("assessment-neck"),
+    shoulders: value("assessment-shoulders"),
+    chest: value("assessment-chest"),
+    rightArm: value("assessment-right-arm"),
+    leftArm: value("assessment-left-arm"),
+    waist: value("assessment-waist"),
+    abdomen: value("assessment-abdomen"),
+    hip: value("assessment-hip"),
+    rightThigh: value("assessment-right-thigh"),
+    leftThigh: value("assessment-left-thigh"),
+    rightCalf: value("assessment-right-calf"),
+    leftCalf: value("assessment-left-calf"),
+    complaints: value("assessment-complaints"),
+    attention: value("assessment-attention"),
+    conduct: value("assessment-conduct"),
+    goalWeight: value("assessment-goal-weight"),
+    goalFat: value("assessment-goal-fat"),
+    goalAbdomen: value("assessment-goal-abdomen"),
+    goalDeadline: value("assessment-goal-deadline"),
+    autoOpinion: value("assessment-auto-opinion"),
+  };
 }
 
 function renderStudentAssessments() {
@@ -6514,7 +6855,12 @@ function renderStudentAssessments() {
 
 function renderAdminAssessments() {
   if (!adminAssessmentHistory || !assessmentStudent) return;
-  renderAssessmentHistory(adminAssessmentHistory, getStudentAssessments(assessmentStudent.value));
+  ensureAssessmentProfessionalUi();
+  syncAssessmentStudentSelects();
+  const studentName = getAssessmentDashboardStudent();
+  if (assessmentStudent) assessmentStudent.value = studentName;
+  renderAssessmentHistory(adminAssessmentHistory, getStudentAssessments(studentName));
+  renderAssessmentSupportSummaries();
 }
 
 function renderStudentCheckinStatus() {
@@ -8426,7 +8772,14 @@ assessmentForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const attachment = await readAssessmentAttachment(assessmentFile.files[0]);
+  const photos = {
+    front: await readOptionalAssessmentFile("assessment-photo-front"),
+    side: await readOptionalAssessmentFile("assessment-photo-side"),
+    back: await readOptionalAssessmentFile("assessment-photo-back"),
+    bio: await readOptionalAssessmentFile("assessment-photo-bio"),
+  };
   const assessments = loadAssessments();
+  updateAssessmentOpinion();
   assessments.push({
     id: createId(),
     studentName: assessmentStudent.value,
@@ -8437,7 +8790,9 @@ assessmentForm?.addEventListener("submit", async (event) => {
     muscle: assessmentMuscle.value.trim(),
     imc: assessmentImc.value.trim(),
     notes: assessmentNotes.value.trim(),
+    ...getAssessmentExtraPayload(),
     attachment,
+    photos,
     timestamp: Date.now(),
   });
 
@@ -8659,8 +9014,66 @@ adminFeedbackHistory?.addEventListener("click", (event) => {
   if (detail) detail.hidden = !detail.hidden;
 });
 assessmentStudent?.addEventListener("change", () => {
+  const dashboardSelect = document.querySelector("#assessment-dashboard-student");
+  if (dashboardSelect) dashboardSelect.value = assessmentStudent.value;
   renderAdminAssessments();
   renderAssessmentSupportSummaries();
+});
+
+document.addEventListener("change", (event) => {
+  if (event.target?.id === "assessment-dashboard-student") {
+    if (assessmentStudent) assessmentStudent.value = event.target.value;
+    renderAdminAssessments();
+  }
+});
+
+document.addEventListener("click", async (event) => {
+  const pageButton = event.target.closest("[data-open-assessment-page]");
+  if (pageButton) {
+    openAdminSubpage(pageButton.dataset.openAssessmentPage);
+    return;
+  }
+
+  const detailButton = event.target.closest("[data-assessment-details]");
+  if (detailButton) {
+    const card = detailButton.closest(".assessment-history-card");
+    const panel = card?.querySelector(".assessment-detail-panel");
+    if (panel) panel.hidden = !panel.hidden;
+    return;
+  }
+
+  const compareButton = event.target.closest("[data-assessment-compare]");
+  if (compareButton) {
+    openAdminSubpage("assessment-compare");
+    return;
+  }
+
+  if (event.target?.id === "assessment-generate-summary") {
+    updateAssessmentOpinion();
+    return;
+  }
+
+  if (event.target?.id === "assessment-copy-report") {
+    updateAssessmentOpinion();
+    const studentName = assessmentStudent?.value || getAssessmentDashboardStudent();
+    const assessments = getStudentAssessments(studentName);
+    const latest = assessments[assessments.length - 1] || {
+      date: assessmentDate?.value || formatToday(),
+      weight: assessmentWeight?.value || "",
+      fat: assessmentFat?.value || "",
+      muscle: assessmentMuscle?.value || "",
+      abdomen: document.querySelector("#assessment-abdomen")?.value || "",
+      waist: document.querySelector("#assessment-waist")?.value || "",
+      autoOpinion: document.querySelector("#assessment-auto-opinion")?.value || "",
+    };
+    const previous = assessments[assessments.length - 2] || assessments[assessments.length - 1] || null;
+    const report = createAssessmentReportText(latest, previous, studentName);
+    await navigator.clipboard?.writeText(report).catch(() => null);
+    if (assessmentMessage) {
+      assessmentMessage.textContent = "Resumo copiado para WhatsApp.";
+      assessmentMessage.classList.remove("error");
+    }
+  }
 });
 studentLoadExercise?.addEventListener("change", renderStudentLoadEvolution);
 studentLoadChartMode?.addEventListener("change", renderStudentLoadEvolution);
@@ -9424,6 +9837,8 @@ function openAdminModule(moduleName) {
     module.hidden = module.id !== `admin-module-${moduleName}`;
   });
   if (moduleName === "assessments") {
+    ensureAssessmentProfessionalUi();
+    syncAssessmentStudentSelects();
     showAdminSubpageMenu("assessments");
     if (!assessmentDate.value) assessmentDate.value = formatToday();
     renderAdminAssessments();

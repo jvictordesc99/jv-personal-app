@@ -1720,6 +1720,84 @@ h3 {
   gap: 16px;
 }
 
+.assessment-dashboard-panel,
+.assessment-student-overview,
+.assessment-goals-panel,
+.assessment-extra-fields,
+.assessment-form-section,
+.assessment-detail-panel,
+.assessment-chart-card,
+.assessment-goal-card {
+  display: grid;
+  gap: 12px;
+}
+
+.assessment-dashboard-panel {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid rgba(184, 255, 56, 0.18);
+  border-radius: 8px;
+  background: rgba(7, 23, 35, 0.04);
+}
+
+.assessment-main-selector select {
+  width: 100%;
+  min-height: 46px;
+}
+
+.assessment-student-overview,
+.assessment-form-section {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfeff;
+}
+
+.assessment-student-overview > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.assessment-detail-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(7, 80, 107, 0.12);
+  background: rgba(7, 23, 35, 0.04);
+}
+
+.assessment-detail-panel[hidden] {
+  display: none;
+}
+
+.assessment-goal-row,
+.assessment-chart-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.assessment-goal-row div,
+.assessment-chart-row div {
+  grid-column: 1 / -1;
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(7, 23, 35, 0.08);
+}
+
+.assessment-goal-row i,
+.assessment-chart-row i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--lime);
+}
+
 .assessment-form,
 .assessment-history-card,
 .assessment-metric-card {
