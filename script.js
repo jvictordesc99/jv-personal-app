@@ -96,6 +96,7 @@ const resolvedAlertsStorageKey = "joao-victor-resolved-alerts";
 const appDataStorageKey = "joao-victor-app-data";
 const appSessionStorageKey = "joao-victor-login-session";
 const billingSettingsStorageKey = "joao-victor-billing-settings";
+const financialHistoryStorageKey = "joao-victor-financial-history";
 const packageModelStorageKey = "joao-victor-package-models";
 const navigationStateStorageKey = "joao-victor-navigation-state";
 const supabaseTables = {
@@ -137,9 +138,14 @@ const birthDateInput = document.querySelector("#student-birth-date");
 const planInput = document.querySelector("#student-plan");
 const frequencyInput = document.querySelector("#student-frequency");
 const makeupLimitInput = document.querySelector("#student-makeup-limit");
+const billingDayInputs = document.querySelectorAll('[name="student-billing-day"]');
+const billingTypeInput = document.querySelector("#student-billing-type");
+const classValueInput = document.querySelector("#student-class-value");
 const valueInput = document.querySelector("#student-value");
 const dueInput = document.querySelector("#student-due");
+const paymentMethodInput = document.querySelector("#student-payment-method");
 const paymentInput = document.querySelector("#student-payment");
+const studentBillingNotesInput = document.querySelector("#student-billing-notes");
 const newStudentButton = document.querySelector("[data-focus-student]");
 const workoutFocusButtons = document.querySelectorAll("[data-focus-workout]");
 const adminDashboard = document.querySelector("#admin-dashboard");
@@ -298,6 +304,12 @@ const billingPixKey = document.querySelector("#billing-pix-key");
 const billingSenderName = document.querySelector("#billing-sender-name");
 const billingDefaultMessage = document.querySelector("#billing-default-message");
 const billingSettingsMessage = document.querySelector("#billing-settings-message");
+const billingFilterMonth = document.querySelector("#billing-filter-month");
+const billingFilterStatus = document.querySelector("#billing-filter-status");
+const billingFilterName = document.querySelector("#billing-filter-name");
+const billingCountHolidays = document.querySelector("#billing-count-holidays");
+const billingHolidays = document.querySelector("#billing-holidays");
+const billingForecastSummary = document.querySelector("#billing-forecast-summary");
 const billingList = document.querySelector("#billing-list");
 const studentCardName = document.querySelector(".student-card strong");
 const studentCardPlan = document.querySelector(".student-card span");
@@ -312,6 +324,7 @@ let memoryPackageModels = null;
 let memoryDropIns = null;
 let memoryMakeups = null;
 let memoryFeedbacks = null;
+let memoryFinancialHistory = null;
 let editingStudentIndex = null;
 let editingWorkout = null;
 let editingPackageId = null;
@@ -411,7 +424,7 @@ function formatRestSeconds(value) {
 }
 
 function applyInputMasks(root = document) {
-  root.querySelectorAll("#student-value, #package-value, #dropin-value, #manual-checkin-value").forEach((input) => {
+  root.querySelectorAll("#student-value, #student-class-value, #package-value, #dropin-value, #manual-checkin-value").forEach((input) => {
     input.inputMode = "numeric";
     input.addEventListener("input", () => {
       input.value = formatCurrencyBR(input.value);
@@ -589,6 +602,7 @@ function getAppStateSnapshot() {
     resolvedAlerts: loadResolvedAlerts(),
     personalRecords: getPersonalRecordsSnapshot(),
     billingSettings: loadBillingSettings(),
+    financialHistory: loadFinancialHistory(),
   };
 }
 
@@ -607,6 +621,7 @@ function getAppStateAuditCounts(state = getAppStateSnapshot()) {
     dropInClasses: normalizeListData(state.dropInClasses || []).length,
     makeupCredits: normalizeListData(state.makeupCredits || []).length,
     resolvedAlerts: normalizeListData(state.resolvedAlerts || []).length,
+    financialHistory: normalizeListData(state.financialHistory || []).length,
   };
 }
 
@@ -625,6 +640,7 @@ function writeAppStateToLocalStorage(state) {
     memoryDropIns = normalizeDropInClasses(state.dropInClasses || []);
     memoryMakeups = normalizeMakeupCredits(state.makeupCredits || []);
     memoryFeedbacks = normalizeWorkoutFeedbacks(state.workoutFeedbacks || []);
+    memoryFinancialHistory = normalizeFinancialHistory(state.financialHistory || []);
 
     localStorage.setItem(studentStorageKey, JSON.stringify(memoryStudents));
     localStorage.setItem(workoutStorageKey, JSON.stringify(memoryWorkouts));
@@ -636,6 +652,7 @@ function writeAppStateToLocalStorage(state) {
     localStorage.setItem(dropInStorageKey, JSON.stringify(memoryDropIns));
     localStorage.setItem(makeupStorageKey, JSON.stringify(memoryMakeups));
     localStorage.setItem(feedbackStorageKey, JSON.stringify(memoryFeedbacks));
+    localStorage.setItem(financialHistoryStorageKey, JSON.stringify(memoryFinancialHistory));
     localStorage.setItem(resolvedAlertsStorageKey, JSON.stringify(normalizeResolvedAlerts(state.resolvedAlerts || [])));
     if (state.billingSettings) {
       localStorage.setItem(billingSettingsStorageKey, JSON.stringify(state.billingSettings));
@@ -1340,6 +1357,11 @@ function normalizeStudentsData(students) {
         birthDate: String(student.birthDate || student.birth_date || "").trim(),
         plan: String(student.plan || "Plano nao informado").trim(),
         frequency,
+        billingDays: normalizeBillingDays(student.billingDays || student.trainingDays || student.weekdays || []),
+        billingType: normalizeBillingType(student.billingType || student.chargeType || student.billing_type),
+        classValue: String(student.classValue || student.valuePerClass || student.valorAula || "").trim(),
+        paymentMethod: String(student.paymentMethod || student.payment_method || "").trim(),
+        billingNotes: String(student.billingNotes || student.billing_notes || student.notes || "").trim(),
         makeupLimit: normalizeMakeupLimit(student.makeupLimit ?? student.makeup_limit, frequency),
         value: String(student.value || "").trim(),
         due: String(student.due || "").trim(),
@@ -1383,12 +1405,18 @@ function loadBillingSettings() {
       pixKey: settings.pixKey || "",
       senderName: settings.senderName || "Personal Joao Victor",
       defaultMessage: settings.defaultMessage || "Para manter seu acesso aos treinos e acompanhamento, voce pode realizar o pagamento via Pix.",
+      countHolidays: settings.countHolidays !== false,
+      holidaysText: settings.holidaysText || "",
+      holidayKeys: parseHolidayKeys(settings.holidaysText || ""),
     };
   } catch {
     return {
       pixKey: "",
       senderName: "Personal Joao Victor",
       defaultMessage: "Para manter seu acesso aos treinos e acompanhamento, voce pode realizar o pagamento via Pix.",
+      countHolidays: true,
+      holidaysText: "",
+      holidayKeys: [],
     };
   }
 }
@@ -1409,6 +1437,69 @@ function saveBillingSettings(settings) {
   }
 }
 
+function normalizeFinancialHistory(records) {
+  return normalizeListData(records)
+    .filter((record) => record && typeof record === "object")
+    .map((record) => ({
+      id: record.id || `${record.studentId || record.studentName || "student"}-${record.monthKey || currentMonthKey()}`,
+      studentId: record.studentId || "",
+      studentName: String(record.studentName || "").trim(),
+      monthKey: record.monthKey || currentMonthKey(),
+      predictedLessons: Number(record.predictedLessons) || 0,
+      completedLessons: Number(record.completedLessons) || 0,
+      chargedValue: Number(record.chargedValue) || 0,
+      paidValue: Number(record.paidValue) || 0,
+      status: record.status || "Pendente",
+      updatedAt: record.updatedAt || new Date().toISOString(),
+    }));
+}
+
+function loadFinancialHistory() {
+  if (memoryFinancialHistory) return memoryFinancialHistory;
+  try {
+    const saved = localStorage.getItem(financialHistoryStorageKey);
+    memoryFinancialHistory = normalizeFinancialHistory(saved ? JSON.parse(saved) : []);
+  } catch {
+    memoryFinancialHistory = [];
+  }
+  return memoryFinancialHistory;
+}
+
+function saveFinancialHistory(records, { silent = false } = {}) {
+  memoryFinancialHistory = normalizeFinancialHistory(records);
+  try {
+    localStorage.setItem(financialHistoryStorageKey, JSON.stringify(memoryFinancialHistory));
+    persistAppDataMeta();
+    if (!silent) queueSupabaseAppStateSync();
+  } catch {
+    console.warn("Historico financeiro apareceu na tela, mas o navegador bloqueou salvar ao recarregar.");
+  }
+}
+
+function updateFinancialHistoryFromProjections(projections, monthKey) {
+  const history = loadFinancialHistory();
+  const byId = new Map(history.map((record) => [record.id, record]));
+  projections.forEach((projection) => {
+    const id = `${projection.student.id || projection.student.name}-${monthKey}`;
+    const previous = byId.get(id);
+    const nextRecord = {
+      id,
+      studentId: projection.student.id || "",
+      studentName: projection.student.name,
+      monthKey,
+      predictedLessons: projection.predictedLessons,
+      completedLessons: projection.completedLessons,
+      chargedValue: projection.totalValue,
+      paidValue: projection.status === "Pago" ? projection.totalValue : 0,
+      status: projection.status,
+    };
+    const changed = !previous || ["predictedLessons", "completedLessons", "chargedValue", "paidValue", "status"].some((key) => previous[key] !== nextRecord[key]);
+    byId.set(id, { ...nextRecord, updatedAt: changed ? new Date().toISOString() : previous.updatedAt });
+  });
+  const next = [...byId.values()];
+  if (JSON.stringify(next) !== JSON.stringify(history)) saveFinancialHistory(next);
+}
+
 function normalizeWhatsAppPhone(phone) {
   const digits = String(phone || "").replace(/\D/g, "");
   if (!digits) return "";
@@ -1416,6 +1507,7 @@ function normalizeWhatsAppPhone(phone) {
 }
 
 function normalizeWeeklyFrequency(value) {
+  if (String(value || "").toLowerCase() === "custom") return "custom";
   const match = String(value || "").match(/[1-5]/);
   return match ? `${match[0]}x` : "3x";
 }
@@ -1429,6 +1521,143 @@ function getDefaultMakeupLimit(frequency) {
 function normalizeMakeupLimit(value, frequency) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : getDefaultMakeupLimit(frequency);
+}
+
+function normalizeBillingDays(days) {
+  const source = Array.isArray(days) ? days : String(days || "").split(/[,\s]+/);
+  return [...new Set(source.map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort((a, b) => a - b);
+}
+
+function normalizeBillingType(value) {
+  const text = String(value || "").toLowerCase();
+  return text === "per_class" || text.includes("aula") ? "per_class" : "fixed";
+}
+
+function getSelectedBillingDays() {
+  return Array.from(billingDayInputs || [])
+    .filter((input) => input.checked)
+    .map((input) => Number(input.value))
+    .filter((day) => Number.isInteger(day));
+}
+
+function setSelectedBillingDays(days) {
+  const selected = normalizeBillingDays(days);
+  Array.from(billingDayInputs || []).forEach((input) => {
+    input.checked = selected.includes(Number(input.value));
+  });
+}
+
+function getNextMonthKey(date = new Date()) {
+  return getDefaultBillingMonthKey(date);
+}
+
+function getDefaultBillingMonthKey(date = new Date()) {
+  const next = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getMonthBounds(monthKey) {
+  const match = String(monthKey || "").match(/^(\d{4})-(\d{2})$/);
+  const fallback = getDefaultBillingMonthKey();
+  const [year, month] = match ? [Number(match[1]), Number(match[2])] : fallback.split("-").map(Number);
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  return { year, month, start, end, monthKey: `${year}-${String(month).padStart(2, "0")}` };
+}
+
+function getMonthLabel(monthKey) {
+  const { start } = getMonthBounds(monthKey);
+  return start.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+}
+
+function getWeekdayName(day) {
+  return ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"][Number(day)] || "";
+}
+
+function parseHolidayKeys(text) {
+  return String(text || "")
+    .split(/\n+/)
+    .map((line) => parseBrazilianDate(line))
+    .filter(Boolean)
+    .map((date) => getDateKey(date));
+}
+
+function countBillingLessonsForMonth(monthKey, weekdays, settings) {
+  const days = normalizeBillingDays(weekdays);
+  if (!days.length) return 0;
+  const { start, end } = getMonthBounds(monthKey);
+  const holidaySet = settings?.countHolidays === false ? new Set(settings.holidayKeys || []) : new Set();
+  let total = 0;
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const key = getDateKey(cursor);
+    if (days.includes(cursor.getDay()) && !holidaySet.has(key)) total += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return total;
+}
+
+function getBillingDueDate(student, monthKey) {
+  const { year, month } = getMonthBounds(monthKey);
+  const due = parseBrazilianDate(student?.due || "");
+  const day = due?.getDate() || Number(String(student?.due || "").match(/\d{1,2}/)?.[0]) || 5;
+  const lastDay = new Date(year, month, 0).getDate();
+  return new Date(year, month - 1, Math.min(day, lastDay));
+}
+
+function getBillingStatusForStudent(student, monthKey) {
+  if (student?.payment === "Em dia") return "Pago";
+  const dueDate = getBillingDueDate(student, monthKey);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return dueDate < today || student?.payment === "Atrasado" ? "Vencido" : "Pendente";
+}
+
+function getStudentCompletedLessonsForMonth(student, monthKey) {
+  const { start, end } = getMonthBounds(monthKey);
+  return loadCheckins().filter((checkin) => {
+    if (checkin.studentId && student.id && checkin.studentId !== student.id) return false;
+    if (!checkin.studentId && checkin.studentName !== student.name) return false;
+    if (!isConsumedLesson(checkin)) return false;
+    const date = checkin.dateKey ? new Date(`${checkin.dateKey}T00:00:00`) : parseBrazilianDate(checkin.date);
+    return date && date >= start && date <= end;
+  }).length;
+}
+
+function getStudentBillingProjection(student, monthKey, settings = loadBillingSettings()) {
+  const billingType = normalizeBillingType(student.billingType);
+  const predictedLessons = countBillingLessonsForMonth(monthKey, student.billingDays, settings);
+  const completedLessons = getStudentCompletedLessonsForMonth(student, monthKey);
+  const perClassValue = parseCurrencyValue(student.classValue);
+  const monthlyValue = parseCurrencyValue(student.value);
+  const totalValue = billingType === "per_class" ? predictedLessons * perClassValue : monthlyValue;
+  const attendance = predictedLessons > 0 ? Math.round((completedLessons / predictedLessons) * 1000) / 10 : 0;
+  const status = getBillingStatusForStudent(student, monthKey);
+
+  return {
+    student,
+    monthKey,
+    billingType,
+    predictedLessons,
+    completedLessons,
+    attendance,
+    individualValue: billingType === "per_class" ? perClassValue : monthlyValue,
+    totalValue,
+    dueDate: getBillingDueDate(student, monthKey),
+    status,
+    daysLabel: normalizeBillingDays(student.billingDays).map(getWeekdayName).filter(Boolean).join(", ") || "Dias nao cadastrados",
+  };
+}
+
+function createAutomaticBillingMessage(projection) {
+  const { student, predictedLessons, billingType, individualValue, totalValue, dueDate } = projection;
+  const dueText = dueDate.toLocaleDateString("pt-BR");
+  if (billingType === "per_class") {
+    return `Ola, ${student.name}.\n\nSua programacao para o proximo mes sera de ${predictedLessons} aulas, realizadas nos dias cadastrados em seu plano.\n\nQuantidade de aulas previstas: ${predictedLessons}\nValor por aula: ${formatCurrencyNumber(individualValue)}\nValor total do mes: ${formatCurrencyNumber(totalValue)}\nVencimento: ${dueText}\n\nQualquer duvida estou a disposicao.`;
+  }
+  return `Ola, ${student.name}.\n\nSeu plano mensal esta programado para o proximo mes conforme os dias cadastrados.\n\nValor da mensalidade: ${formatCurrencyNumber(totalValue)}\nVencimento: ${dueText}\n\nQualquer duvida estou a disposicao.`;
 }
 
 function getStudentBillingStatus(student) {
@@ -2108,6 +2337,7 @@ function deleteStudentWithLinkedData(student) {
   saveClassPackages(loadClassPackages().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
   saveDropInClasses(loadDropInClasses().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
   saveMakeupCredits(loadMakeupCredits().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+  saveFinancialHistory(loadFinancialHistory().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
 
   if (selectedStudentProfile === studentName) {
     selectedStudentProfile = "";
@@ -2123,52 +2353,143 @@ function renderBillingSettings() {
   if (billingPixKey) billingPixKey.value = settings.pixKey;
   if (billingSenderName) billingSenderName.value = settings.senderName;
   if (billingDefaultMessage) billingDefaultMessage.value = settings.defaultMessage;
+  if (billingCountHolidays) billingCountHolidays.value = settings.countHolidays ? "yes" : "no";
+  if (billingHolidays) billingHolidays.value = settings.holidaysText || "";
+  if (billingFilterMonth && !billingFilterMonth.value) billingFilterMonth.value = getDefaultBillingMonthKey();
 }
 
 function renderBillingList() {
   if (!billingList) return;
 
-  const settings = loadBillingSettings();
-  const students = loadStudents().filter((student) => getStudentBillingStatus(student).shouldShow);
+  const savedSettings = loadBillingSettings();
+  const settings = {
+    ...savedSettings,
+    countHolidays: billingCountHolidays ? billingCountHolidays.value !== "no" : savedSettings.countHolidays,
+    holidaysText: billingHolidays ? billingHolidays.value : savedSettings.holidaysText,
+  };
+  settings.holidayKeys = parseHolidayKeys(settings.holidaysText || "");
+  const monthKey = billingFilterMonth?.value || getDefaultBillingMonthKey();
+  const statusFilter = billingFilterStatus?.value || "all";
+  const nameFilter = String(billingFilterName?.value || "").trim().toLowerCase();
+  const projections = loadStudents()
+    .map((student) => getStudentBillingProjection(student, monthKey, settings))
+    .filter((projection) => {
+      const matchesStatus = statusFilter === "all" || projection.status === statusFilter;
+      const matchesName = !nameFilter || projection.student.name.toLowerCase().includes(nameFilter);
+      return matchesStatus && matchesName;
+    });
+
+  renderBillingForecastSummary(projections, monthKey, settings);
   billingList.innerHTML = "";
 
-  if (!students.length) {
-    billingList.textContent = "Nenhuma cobranca vencida ou vencendo nos proximos 7 dias.";
+  if (!projections.length) {
+    billingList.textContent = "Nenhuma cobranca encontrada para os filtros selecionados.";
     return;
   }
 
-  students.forEach((student) => {
-    const status = getStudentBillingStatus(student);
-    const activePackage = getActivePackage(student.name);
-    const planName = activePackage?.name || student.plan || "Plano";
-    const pendingDropIns = getPendingDropInValue(student.name);
-    const value = pendingDropIns > 0 ? formatCurrencyNumber(pendingDropIns) : activePackage?.value || student.value || "Valor nao informado";
+  projections.forEach((projection) => {
+    const student = projection.student;
     const phone = normalizeWhatsAppPhone(student.phone);
+    const message = createAutomaticBillingMessage(projection);
     const card = document.createElement("article");
-    card.className = "billing-card";
+    card.className = `billing-card billing-status-${projection.status.toLowerCase()}`;
 
     const info = document.createElement("div");
     const title = document.createElement("strong");
     title.textContent = student.name;
     const details = document.createElement("span");
-    details.textContent = `${pendingDropIns > 0 ? "Aulas avulsas pendentes" : planName} | ${value} | vence ${student.due}`;
+    details.textContent = `${student.plan || "Plano"} | ${student.frequency || "frequencia nao informada"} | ${projection.daysLabel} | ${projection.predictedLessons} aulas previstas`;
     const statusText = document.createElement("small");
-    statusText.textContent = isPaymentBlocked(student) ? `Pagamento ${student.payment}` : status.dueStatus.detail;
+    statusText.textContent = `${projection.billingType === "per_class" ? `Por aula: ${formatCurrencyNumber(projection.individualValue)}` : `Mensalidade: ${formatCurrencyNumber(projection.totalValue)}`} | Total: ${formatCurrencyNumber(projection.totalValue)} | Vence ${projection.dueDate.toLocaleDateString("pt-BR")} | ${projection.status}`;
+    const attendance = document.createElement("small");
+    attendance.textContent = `Realizadas: ${projection.completedLessons}/${projection.predictedLessons} | Frequencia: ${projection.attendance}%`;
     info.append(title, details, statusText);
+    info.appendChild(attendance);
+
+    if (student.paymentMethod || student.billingNotes) {
+      const notes = document.createElement("small");
+      notes.textContent = [student.paymentMethod && `Pagamento: ${student.paymentMethod}`, student.billingNotes].filter(Boolean).join(" | ");
+      info.appendChild(notes);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "billing-actions";
+
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "secondary";
+    copyButton.textContent = "Copiar mensagem";
+    copyButton.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(message);
+        showMessage("Mensagem de cobranca copiada.");
+      } catch (error) {
+        console.error("Nao foi possivel copiar mensagem de cobranca.", error);
+        showMessage("Nao foi possivel copiar automaticamente. Abra o WhatsApp e copie manualmente.", "error");
+      }
+    });
 
     const link = document.createElement("a");
     link.className = phone ? "primary" : "secondary";
-    link.href = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(createBillingMessage(student, settings))}` : "#";
+    link.href = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : "#";
     link.target = "_blank";
     link.rel = "noreferrer";
-    link.textContent = phone ? "Enviar cobranca no WhatsApp" : "Telefone nao cadastrado";
+    link.textContent = phone ? "Abrir WhatsApp" : "Telefone nao cadastrado";
     if (!phone) {
       link.addEventListener("click", (event) => event.preventDefault());
     }
 
-    card.append(info, link);
+    actions.append(copyButton, link);
+    card.append(info, actions);
     billingList.appendChild(card);
   });
+}
+
+function renderBillingForecastSummary(projections, monthKey, settings = loadBillingSettings()) {
+  if (!billingForecastSummary) return;
+
+  const allProjections = loadStudents().map((student) => getStudentBillingProjection(student, monthKey, settings));
+  updateFinancialHistoryFromProjections(allProjections, monthKey);
+  const activeStudents = allProjections.length;
+  const totalLessons = allProjections.reduce((sum, item) => sum + item.predictedLessons, 0);
+  const expectedRevenue = allProjections.reduce((sum, item) => sum + item.totalValue, 0);
+  const received = allProjections.filter((item) => item.status === "Pago").reduce((sum, item) => sum + item.totalValue, 0);
+  const pending = allProjections.filter((item) => item.status === "Pendente").reduce((sum, item) => sum + item.totalValue, 0);
+  const overdueCount = allProjections.filter((item) => item.status === "Vencido").length;
+  const paidCount = allProjections.filter((item) => item.status === "Pago").length;
+
+  billingForecastSummary.innerHTML = "";
+  [
+    ["Alunos ativos", activeStudents],
+    ["Aulas previstas", totalLessons],
+    ["Faturamento previsto", formatCurrencyNumber(expectedRevenue)],
+    ["Valor recebido", formatCurrencyNumber(received)],
+    ["Valor pendente", formatCurrencyNumber(pending)],
+    ["Vencidas", overdueCount],
+    ["Pagas", paidCount],
+  ].forEach(([label, value]) => {
+    const card = document.createElement("article");
+    card.className = "billing-summary-card";
+    card.innerHTML = `<span>${label}</span><strong>${value}</strong><small>${getMonthLabel(monthKey)}</small>`;
+    billingForecastSummary.appendChild(card);
+  });
+
+  renderBillingDashboardForecast(allProjections);
+}
+
+function renderBillingDashboardForecast(projections = null) {
+  const financeCard = document.querySelector('[data-admin-target="finance"]')?.closest("article");
+  if (!financeCard) return;
+  const monthKey = getDefaultBillingMonthKey();
+  const items = projections || loadStudents().map((student) => getStudentBillingProjection(student, monthKey));
+  const totalStudents = items.length;
+  const totalLessons = items.reduce((sum, item) => sum + item.predictedLessons, 0);
+  const totalRevenue = items.reduce((sum, item) => sum + item.totalValue, 0);
+  const pendingCountValue = items.filter((item) => item.status === "Pendente").length;
+  const overdueCount = items.filter((item) => item.status === "Vencido").length;
+  const text = `${totalStudents} alunos ativos | ${totalLessons} aulas previstas | ${formatCurrencyNumber(totalRevenue)} previsto | ${pendingCountValue} pendentes | ${overdueCount} vencidas`;
+  const description = financeCard.querySelector("span");
+  if (description) description.textContent = text;
 }
 
 function isPaymentBlocked(student) {
@@ -2492,6 +2813,7 @@ function normalizeStoredAppData() {
     localStorage.setItem(dropInStorageKey, JSON.stringify(loadDropInClasses()));
     localStorage.setItem(makeupStorageKey, JSON.stringify(loadMakeupCredits()));
     localStorage.setItem(feedbackStorageKey, JSON.stringify(loadWorkoutFeedbacks()));
+    localStorage.setItem(financialHistoryStorageKey, JSON.stringify(loadFinancialHistory()));
     persistAppDataMeta();
   } catch {
     showMessage("Alguns dados foram carregados, mas o navegador limitou o salvamento local.", "error");
@@ -2633,6 +2955,7 @@ function saveCheckins(checkins) {
     localStorage.setItem(checkinStorageKey, JSON.stringify(memoryCheckins));
     persistAppDataMeta();
     queueSupabaseAppStateSync();
+    if (currentUserType === "admin") renderBillingList();
   } catch {
     showMessage("Check-in registrado na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -8311,7 +8634,12 @@ function resetStudentForm() {
   if (phoneInput) phoneInput.value = "";
   if (birthDateInput) birthDateInput.value = "";
   if (frequencyInput) frequencyInput.value = "3x";
+  setSelectedBillingDays([]);
   if (makeupLimitInput) makeupLimitInput.value = "3";
+  if (billingTypeInput) billingTypeInput.value = "fixed";
+  if (classValueInput) classValueInput.value = "";
+  if (paymentMethodInput) paymentMethodInput.value = "";
+  if (studentBillingNotesInput) studentBillingNotesInput.value = "";
   editingStudentIndex = null;
   safeSetText(saveStudentButton, "Salvar aluno");
   if (createStudentAccessButton) createStudentAccessButton.hidden = true;
@@ -8331,10 +8659,15 @@ function startEditingStudent(index, message = "Editando aluno. Altere os campos 
   if (birthDateInput) birthDateInput.value = student.birthDate || "";
   planInput.value = student.plan;
   if (frequencyInput) frequencyInput.value = normalizeWeeklyFrequency(student.frequency);
+  setSelectedBillingDays(student.billingDays);
   if (makeupLimitInput) makeupLimitInput.value = normalizeMakeupLimit(student.makeupLimit, student.frequency);
+  if (billingTypeInput) billingTypeInput.value = normalizeBillingType(student.billingType);
+  if (classValueInput) classValueInput.value = student.classValue || "";
   valueInput.value = student.value;
   dueInput.value = student.due;
+  if (paymentMethodInput) paymentMethodInput.value = student.paymentMethod || "";
   paymentInput.value = student.payment;
+  if (studentBillingNotesInput) studentBillingNotesInput.value = student.billingNotes || "";
   saveStudentButton.textContent = "Salvar alteracao";
   if (createStudentAccessButton) createStudentAccessButton.hidden = hasStudentAppAccess(student);
   cancelEditButton.hidden = false;
@@ -8369,6 +8702,11 @@ studentForm?.addEventListener("submit", async (event) => {
     birthDate: birthDateInput?.value.trim() || "",
     plan: planInput.value.trim(),
     frequency: frequencyInput?.value || "3x",
+    billingDays: getSelectedBillingDays(),
+    billingType: billingTypeInput?.value || "fixed",
+    classValue: classValueInput?.value.trim() || "",
+    paymentMethod: paymentMethodInput?.value.trim() || "",
+    billingNotes: studentBillingNotesInput?.value.trim() || "",
     makeupLimit: normalizeMakeupLimit(makeupLimitInput?.value, frequencyInput?.value || "3x"),
     value: valueInput.value.trim(),
     due: dueInput.value.trim(),
@@ -8477,6 +8815,11 @@ async function createOrLinkStudentAccessFromForm() {
     birthDate: birthDateInput?.value.trim() || students[existingIndex]?.birthDate || "",
     plan: planInput?.value.trim() || students[existingIndex]?.plan || "Plano nao informado",
     frequency: frequencyInput?.value || students[existingIndex]?.frequency || "3x",
+    billingDays: getSelectedBillingDays().length ? getSelectedBillingDays() : students[existingIndex]?.billingDays || [],
+    billingType: billingTypeInput?.value || students[existingIndex]?.billingType || "fixed",
+    classValue: classValueInput?.value.trim() || students[existingIndex]?.classValue || "",
+    paymentMethod: paymentMethodInput?.value.trim() || students[existingIndex]?.paymentMethod || "",
+    billingNotes: studentBillingNotesInput?.value.trim() || students[existingIndex]?.billingNotes || "",
     makeupLimit: normalizeMakeupLimit(makeupLimitInput?.value || students[existingIndex]?.makeupLimit, frequencyInput?.value || students[existingIndex]?.frequency || "3x"),
     value: valueInput?.value.trim() || students[existingIndex]?.value || "",
     due: dueInput?.value.trim() || students[existingIndex]?.due || "",
@@ -8550,6 +8893,11 @@ async function sendStudentAccessInviteFromForm() {
     birthDate: birthDateInput?.value.trim() || students[existingIndex]?.birthDate || "",
     plan: planInput?.value.trim() || students[existingIndex]?.plan || "Plano nao informado",
     frequency: frequencyInput?.value || students[existingIndex]?.frequency || "3x",
+    billingDays: getSelectedBillingDays().length ? getSelectedBillingDays() : students[existingIndex]?.billingDays || [],
+    billingType: billingTypeInput?.value || students[existingIndex]?.billingType || "fixed",
+    classValue: classValueInput?.value.trim() || students[existingIndex]?.classValue || "",
+    paymentMethod: paymentMethodInput?.value.trim() || students[existingIndex]?.paymentMethod || "",
+    billingNotes: studentBillingNotesInput?.value.trim() || students[existingIndex]?.billingNotes || "",
     makeupLimit: normalizeMakeupLimit(makeupLimitInput?.value || students[existingIndex]?.makeupLimit, frequencyInput?.value || students[existingIndex]?.frequency || "3x"),
     value: valueInput?.value.trim() || students[existingIndex]?.value || "",
     due: dueInput?.value.trim() || students[existingIndex]?.due || "",
@@ -9213,8 +9561,15 @@ billingSettingsForm?.addEventListener("submit", (event) => {
     pixKey: billingPixKey?.value.trim() || "",
     senderName: billingSenderName?.value.trim() || "Personal Joao Victor",
     defaultMessage: billingDefaultMessage?.value.trim() || "Para manter seu acesso aos treinos e acompanhamento, voce pode realizar o pagamento via Pix.",
+    countHolidays: (billingCountHolidays?.value || "yes") === "yes",
+    holidaysText: billingHolidays?.value.trim() || "",
   });
   renderBillingList();
+});
+
+[billingFilterMonth, billingFilterStatus, billingFilterName, billingCountHolidays, billingHolidays].forEach((input) => {
+  input?.addEventListener("input", renderBillingList);
+  input?.addEventListener("change", renderBillingList);
 });
 
 frequencyInput?.addEventListener("change", () => {

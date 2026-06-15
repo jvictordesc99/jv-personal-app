@@ -303,7 +303,7 @@
             <article><strong>Evolução</strong><span>Cargas, recordes, frequência e feedbacks.</span><button data-admin-target="evolution">Abrir</button></article>
             <article><strong>Avaliações</strong><span>Registrar medidas e fotos de evolução.</span><button data-admin-target="assessments">Abrir</button></article>
             <article><strong>Pacotes e Check-ins</strong><span>Pacotes de aulas, agenda e presenças.</span><button data-admin-target="checkins">Abrir</button></article>
-            <article><strong>Financeiro</strong><span>Mensalidades, vencimentos e pagamentos.</span><button data-admin-target="finance">Abrir</button></article>
+            <article><strong>CobranÃ§as</strong><span>PrevisÃ£o mensal, WhatsApp e pagamentos.</span><button data-admin-target="finance">Abrir</button></article>
             <article class="payment-blocked-panel" id="payment-blocked-panel"></article>
           </div>
           <section class="admin-module" id="admin-module-workouts" hidden>
@@ -447,11 +447,30 @@
                 <option value="3x">3x por semana</option>
                 <option value="4x">4x por semana</option>
                 <option value="5x">5x por semana</option>
+                <option value="custom">Personalizada</option>
               </select>
             </label>
             <label>Limite de reposições por pacote<input id="student-makeup-limit" type="number" min="0" placeholder="Ex: 3" /></label>
+            <fieldset class="weekday-picker">
+              <legend>Dias da semana que treina</legend>
+              <label><input type="checkbox" name="student-billing-day" value="1" />Seg</label>
+              <label><input type="checkbox" name="student-billing-day" value="2" />Ter</label>
+              <label><input type="checkbox" name="student-billing-day" value="3" />Qua</label>
+              <label><input type="checkbox" name="student-billing-day" value="4" />Qui</label>
+              <label><input type="checkbox" name="student-billing-day" value="5" />Sex</label>
+              <label><input type="checkbox" name="student-billing-day" value="6" />Sab</label>
+              <label><input type="checkbox" name="student-billing-day" value="0" />Dom</label>
+            </fieldset>
+            <label>Tipo de cobranca
+              <select id="student-billing-type">
+                <option value="fixed">Mensalidade fixa</option>
+                <option value="per_class">Por aula</option>
+              </select>
+            </label>
+            <label>Valor por aula<input id="student-class-value" placeholder="R$ 60,00" /></label>
             <label>Valor mensal<input id="student-value" required placeholder="R$ 250,00" /></label>
             <label>Vencimento<input id="student-due" required placeholder="05/06" /></label>
+            <label>Forma de pagamento<input id="student-payment-method" placeholder="Pix, dinheiro, cartao..." /></label>
             <label>Status
               <select id="student-payment">
                 <option>Em dia</option>
@@ -459,6 +478,7 @@
                 <option>Atrasado</option>
               </select>
             </label>
+            <label class="student-billing-notes-field">Observacoes de cobranca<textarea id="student-billing-notes" placeholder="Ex: cobrar todo dia 5, plano familiar, desconto combinado..."></textarea></label>
             <button type="submit" id="save-student-button">Salvar aluno</button>
             <button type="button" class="secondary" id="cancel-edit-button" hidden>Cancelar</button>
           </form>
@@ -893,9 +913,37 @@
               </form>
               <section class="billing-list-panel">
                 <div class="section-title compact-title">
-                  <p class="eyebrow">Cobrancas proximas</p>
-                  <h3>Alunos vencendo ou vencidos</h3>
+                  <p class="eyebrow">Cobrancas automaticas</p>
+                  <h3>Previsao mensal por aluno</h3>
                 </div>
+                <div class="billing-config-grid">
+                  <label>Mes
+                    <input id="billing-filter-month" type="month" />
+                  </label>
+                  <label>Status
+                    <select id="billing-filter-status">
+                      <option value="all">Todos</option>
+                      <option value="Pendente">Pendente</option>
+                      <option value="Pago">Pago</option>
+                      <option value="Vencido">Vencido</option>
+                    </select>
+                  </label>
+                  <label>Buscar aluno
+                    <input id="billing-filter-name" placeholder="Nome do aluno" />
+                  </label>
+                </div>
+                <div class="billing-config-grid">
+                  <label>Contabilizar feriados como aula?
+                    <select id="billing-count-holidays">
+                      <option value="yes">Sim</option>
+                      <option value="no">Nao</option>
+                    </select>
+                  </label>
+                  <label class="billing-message-field">Feriados cadastrados
+                    <textarea id="billing-holidays" placeholder="Um por linha. Ex: 09/07/2026 - Feriado"></textarea>
+                  </label>
+                </div>
+                <div class="billing-summary-grid" id="billing-forecast-summary"></div>
                 <div class="billing-list" id="billing-list"></div>
               </section>
             </div>

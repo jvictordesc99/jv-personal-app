@@ -596,6 +596,16 @@ h3 {
   color: var(--ink);
 }
 
+.manual-payment textarea {
+  width: 100%;
+  min-height: 92px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--ink);
+  resize: vertical;
+}
+
 .manual-payment select {
   width: 100%;
   border: 1px solid var(--line);
@@ -603,6 +613,38 @@ h3 {
   padding: 12px;
   color: var(--ink);
   background: white;
+}
+
+.weekday-picker,
+.student-billing-notes-field {
+  grid-column: 1 / -1;
+}
+
+.weekday-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.weekday-picker legend {
+  color: var(--muted);
+  font-weight: 800;
+  padding: 0 6px;
+}
+
+.weekday-picker label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid rgba(6, 21, 33, 0.1);
+  border-radius: 999px;
+  background: rgba(184, 255, 56, 0.12);
 }
 
 .finance-panel,
@@ -653,11 +695,86 @@ h3 {
   gap: 12px;
 }
 
+.billing-config-grid,
+.billing-summary-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.billing-config-grid label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.billing-config-grid input,
+.billing-config-grid select,
+.billing-config-grid textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--ink);
+}
+
+.billing-summary-card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(184, 255, 56, 0.35);
+  border-radius: 8px;
+  background: #f8fff0;
+}
+
+.billing-summary-card span,
+.billing-summary-card small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.billing-summary-card strong {
+  color: #061521;
+  font-size: 22px;
+}
+
 .billing-card {
   align-items: center;
   display: grid;
   gap: 12px;
   grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.billing-card > div:first-child {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.billing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.billing-actions button,
+.billing-actions a {
+  min-height: 42px;
+}
+
+.billing-status-vencido {
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
+.billing-status-pendente {
+  border-color: rgba(245, 158, 11, 0.38);
+}
+
+.billing-status-pago {
+  border-color: rgba(34, 197, 94, 0.32);
 }
 
 .billing-card strong {
@@ -3968,6 +4085,8 @@ textarea {
   .load-chart-summary,
   .record-metrics-grid,
   .alerts-grid,
+  .billing-config-grid,
+  .billing-summary-grid,
   .backup-panel,
   .lesson-balance-grid,
   .dropin-form,
@@ -4009,9 +4128,19 @@ textarea {
   .alert-card button,
   .package-page-back,
   .package-lesson button,
-  .package-card button {
+  .package-card button,
+  .billing-actions button,
+  .billing-actions a {
     width: 100%;
     min-height: 48px;
+  }
+
+  .billing-card {
+    grid-template-columns: 1fr;
+  }
+
+  .billing-actions {
+    justify-content: stretch;
   }
 
   .nav-card {
