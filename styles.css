@@ -4192,3 +4192,793 @@ textarea {
     white-space: normal;
   }
 }
+
+/* Premium UI refresh */
+:root {
+  --bg: #eef5f6;
+  --ink: #07131f;
+  --muted: #5f7180;
+  --panel: #ffffff;
+  --card: #ffffff;
+  --line: #dbe7ea;
+  --green: #19b84d;
+  --green-dark: #0f7136;
+  --lime: #a8f03a;
+  --clay: #12abc8;
+  --blue: #1684d8;
+  --amber: #f3a51d;
+  --red: #df3d47;
+  --surface-soft: #f8fbfb;
+  --radius: 8px;
+  --shadow: 0 18px 48px rgba(7, 19, 31, 0.09);
+  --shadow-soft: 0 10px 26px rgba(7, 19, 31, 0.07);
+  --gradient-primary: linear-gradient(135deg, #0e6f42 0%, #17ba62 52%, #81e62c 100%);
+  --gradient-panel: linear-gradient(135deg, #ffffff 0%, #f6fbf8 55%, #ecf7fb 100%);
+  --gradient-dark: linear-gradient(180deg, #07131f 0%, #0b2f38 58%, #081722 100%);
+}
+
+html {
+  background: var(--bg);
+  text-size-adjust: 100%;
+}
+
+body {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(238, 245, 246, 0.96) 46%, #eaf2f3 100%);
+  color: var(--ink);
+  font-family: "Manrope", Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  letter-spacing: 0;
+}
+
+body,
+.app-shell,
+.content,
+.view,
+.login-screen {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  max-width: 100%;
+}
+
+button,
+a.primary,
+a.secondary,
+.primary,
+.secondary {
+  min-height: 44px;
+  border-radius: 8px;
+  font-weight: 800;
+  letter-spacing: 0;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+button:hover,
+a.primary:hover,
+a.secondary:hover {
+  transform: translateY(-1px);
+}
+
+button:active,
+a.primary:active,
+a.secondary:active {
+  transform: translateY(0);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(25, 184, 77, 0.22);
+  outline-offset: 2px;
+}
+
+.primary,
+.exercise button,
+.schedule button,
+.event-card button,
+.admin-grid button,
+.manual-payment button:not(.secondary),
+.workout-admin button:not(.secondary),
+.billing-actions a.primary,
+.package-module-menu button .primary {
+  background: var(--gradient-primary);
+  color: #061521;
+  box-shadow: 0 12px 26px rgba(25, 184, 77, 0.22);
+}
+
+.secondary,
+.billing-actions button,
+.billing-actions a.secondary {
+  background: #ffffff;
+  color: #102233;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-soft);
+}
+
+.danger-action,
+.status-danger,
+.alert-card.danger .alert-badge {
+  color: #8d1721;
+}
+
+.content {
+  padding: clamp(18px, 3vw, 34px);
+  background:
+    linear-gradient(180deg, rgba(248, 251, 251, 0.92), rgba(238, 245, 246, 0.92));
+}
+
+.topbar {
+  min-height: 74px;
+  gap: 16px;
+  align-items: center;
+  padding: 14px clamp(14px, 2vw, 22px);
+  margin-bottom: 22px;
+  border: 1px solid rgba(219, 231, 234, 0.9);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(14px);
+}
+
+.topbar h1,
+.section-title h2,
+.compact-title h2,
+.hero h1,
+.login-card h1 {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.topbar h1 {
+  font-size: clamp(22px, 3vw, 34px);
+}
+
+.section-title,
+.compact-title {
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.section-title h2 {
+  font-size: clamp(24px, 3.2vw, 38px);
+}
+
+.eyebrow {
+  color: var(--green-dark);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sidebar {
+  background: var(--gradient-dark);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 18px 0 44px rgba(7, 19, 31, 0.12);
+}
+
+.brand-logo,
+.login-logo {
+  border-radius: var(--radius);
+  box-shadow: 0 16px 38px rgba(18, 171, 200, 0.24);
+}
+
+.nav {
+  gap: 10px;
+}
+
+.nav-item {
+  min-height: 46px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: #dcecef;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.nav-item:hover,
+.nav-item.active {
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(168, 240, 58, 0.24);
+  color: #ffffff;
+  box-shadow: inset 3px 0 0 var(--lime), 0 10px 22px rgba(0, 0, 0, 0.12);
+}
+
+.whatsapp {
+  border-radius: var(--radius);
+  background: var(--gradient-primary);
+  box-shadow: 0 16px 32px rgba(25, 184, 77, 0.2);
+}
+
+.login-screen {
+  background:
+    linear-gradient(160deg, rgba(7, 19, 31, 0.96) 0%, rgba(8, 47, 56, 0.98) 64%, rgba(7, 19, 31, 0.98) 100%);
+}
+
+.login-card {
+  width: min(480px, 100%);
+  gap: 18px;
+  padding: clamp(22px, 4vw, 34px);
+  border-radius: var(--radius);
+  border-color: rgba(168, 240, 58, 0.22);
+  background: rgba(7, 19, 31, 0.92);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.36);
+}
+
+.login-card h1 {
+  color: #ffffff;
+}
+
+.login-student-picker,
+.supabase-login-form input,
+.login-student-picker select {
+  border-radius: var(--radius);
+}
+
+.view.active {
+  display: grid;
+  gap: 20px;
+}
+
+.hero,
+.metric,
+.panel,
+.exercise,
+.schedule article,
+.admin-grid article,
+.table-panel,
+.manual-payment,
+.workout-admin,
+.student-workout-filter,
+.saved-workout,
+.video-grid article,
+.form-grid label,
+.workout-block,
+.workout-form-block,
+.workout-student-card,
+.workout-student-workspace,
+.workout-expiration-panel,
+.workout-summary,
+.workout-meta,
+.workout-notes-card,
+.workout-status-badge,
+.workout-expiration-card,
+.student-exercise-card,
+.load-history-card,
+.evolution-chart-card,
+.evolution-admin-panel,
+.workout-feedback-card,
+.adherence-card,
+.personal-record-card,
+.assessment-dashboard-panel,
+.assessment-student-overview,
+.assessment-goals-panel,
+.assessment-extra-fields,
+.assessment-form-section,
+.assessment-detail-panel,
+.assessment-chart-card,
+.assessment-goal-card,
+.assessment-form,
+.assessment-history-card,
+.assessment-metric-card,
+.profile-hero-card,
+.profile-metric-card,
+.account-security-card,
+.temporary-password-notice,
+.chart-panel,
+.event-card,
+.alerts-panel,
+.backup-panel,
+.alert-card,
+.empty-module,
+.admin-profile-card,
+.package-card,
+.package-lesson,
+.student-history-card,
+.checkin-card,
+.checkin-admin-panel,
+.package-compact-card,
+.package-expand-panel,
+.billing-settings,
+.billing-list-panel,
+.billing-card,
+.billing-summary-card,
+.nav-card,
+.package-module-menu button {
+  border-radius: var(--radius);
+  border: 1px solid rgba(219, 231, 234, 0.92);
+  background: var(--gradient-panel);
+  box-shadow: var(--shadow-soft);
+}
+
+.hero,
+.admin-grid article,
+.metric,
+.profile-hero-card,
+.assessment-student-overview,
+.billing-summary-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before,
+.admin-grid article::before,
+.metric::before,
+.profile-hero-card::before,
+.assessment-student-overview::before,
+.billing-summary-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--green), var(--clay), var(--blue));
+}
+
+.hero {
+  padding: clamp(22px, 4vw, 34px);
+  align-items: center;
+}
+
+.hero p,
+.panel p,
+.admin-grid span,
+.nav-card small,
+.package-module-menu button small,
+.metric span,
+.metric small,
+.billing-card span,
+.billing-card small,
+.alert-card small,
+.package-card p,
+.student-history-card small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.admin-grid,
+.metrics-grid,
+.video-grid,
+.form-grid,
+.profile-grid,
+.billing-summary-grid,
+.record-metrics-grid,
+.assessment-summary-grid,
+.assessment-mini-grid,
+.package-compact-grid,
+.student-list-card-grid,
+.student-history-grid,
+.nav-card-grid,
+.package-module-menu {
+  gap: clamp(14px, 2vw, 20px);
+}
+
+.admin-grid article,
+.nav-card,
+.package-module-menu button {
+  min-height: 176px;
+  padding: clamp(18px, 2.4vw, 24px);
+  align-content: start;
+  gap: 12px;
+}
+
+.admin-grid article strong,
+.nav-card strong,
+.package-module-menu button strong,
+.metric strong,
+.billing-summary-card strong {
+  color: var(--ink);
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.admin-grid article button,
+.nav-card em,
+.package-module-menu button em {
+  margin-top: auto;
+}
+
+.nav-card-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius);
+  background: rgba(25, 184, 77, 0.1);
+  color: var(--green-dark);
+  font-size: 22px;
+}
+
+input,
+select,
+textarea,
+.form-grid input,
+.manual-payment input,
+.manual-payment select,
+.manual-payment textarea,
+.billing-settings input,
+.billing-settings textarea,
+.billing-config-grid input,
+.billing-config-grid select,
+.billing-config-grid textarea,
+.workout-admin input,
+.workout-admin select,
+.workout-admin textarea,
+.student-workout-filter select,
+.assessment-form input,
+.assessment-form select,
+.assessment-form textarea,
+.account-security-form input,
+.dropin-form input,
+.dropin-form select,
+.dropin-form textarea,
+.checkin-admin-form input,
+.checkin-admin-form select {
+  min-height: 46px;
+  border-radius: var(--radius);
+  border: 1px solid #d8e6ea;
+  background: #ffffff;
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(7, 19, 31, 0.03);
+}
+
+textarea {
+  min-height: 104px;
+}
+
+label,
+.manual-payment label,
+.billing-settings label,
+.billing-config-grid label,
+.workout-admin label,
+.assessment-form label,
+.account-security-form label,
+.dropin-form label,
+.checkin-admin-form label {
+  color: #314656;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.manual-payment,
+.billing-settings,
+.workout-admin,
+.assessment-form,
+.package-form,
+.dropin-form,
+.checkin-admin-form {
+  gap: clamp(14px, 2vw, 18px);
+}
+
+.table-row {
+  border-radius: var(--radius);
+  border: 1px solid rgba(219, 231, 234, 0.9);
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(7, 19, 31, 0.04);
+}
+
+.table-row.head {
+  background: #eef6f7;
+  color: #344b5b;
+  font-weight: 800;
+}
+
+.student-list-card,
+.package-compact-card,
+.feedback-card,
+.load-history-card,
+.assessment-history-card,
+.checkin-history-card {
+  border-radius: var(--radius);
+  border: 1px solid rgba(219, 231, 234, 0.92);
+  background: #ffffff;
+  box-shadow: var(--shadow-soft);
+}
+
+.status-ok,
+.student-status-pill.ok,
+.billing-status-pago,
+.workout-status-active,
+.progress-up,
+.alert-card.success {
+  border-color: rgba(25, 184, 77, 0.35);
+  background: linear-gradient(135deg, #f7fff8, #edf9f0);
+  color: #0f7136;
+}
+
+.status-pending,
+.student-status-pill.pending,
+.billing-status-pendente,
+.workout-status-warning,
+.progress-neutral,
+.alert-card.warning {
+  border-color: rgba(243, 165, 29, 0.38);
+  background: linear-gradient(135deg, #fffaf0, #fff6df);
+  color: #8a5b08;
+}
+
+.status-danger,
+.student-status-pill.danger,
+.billing-status-vencido,
+.workout-status-expired,
+.progress-down,
+.feedback-danger,
+.alert-card.danger {
+  border-color: rgba(223, 61, 71, 0.34);
+  background: linear-gradient(135deg, #fff7f7, #fff0f1);
+  color: #8d1721;
+}
+
+.alert-badge,
+.admin-alert-badge,
+.workout-status-badge,
+.student-status-pill {
+  border-radius: 999px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.admin-alert-badge {
+  background: var(--red);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(223, 61, 71, 0.34);
+}
+
+.billing-card,
+.package-card,
+.alert-card,
+.assessment-history-card,
+.load-history-card,
+.student-exercise-card,
+.student-list-card {
+  gap: 14px;
+  padding: clamp(16px, 2.2vw, 20px);
+}
+
+.billing-actions,
+.package-card-actions,
+.package-more-actions,
+.student-actions,
+.workout-actions,
+.actions,
+.confirm-actions,
+.feedback-actions {
+  gap: 10px;
+}
+
+.billing-actions button,
+.billing-actions a,
+.package-card-actions button,
+.package-more-actions button,
+.student-actions button,
+.workout-actions button,
+.actions button,
+.confirm-actions button,
+.feedback-actions button {
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.load-chart,
+.load-chart-area {
+  border-radius: var(--radius);
+  background: #ffffff;
+}
+
+.profile-avatar {
+  background: var(--gradient-primary);
+  color: #061521;
+  box-shadow: 0 12px 28px rgba(25, 184, 77, 0.2);
+}
+
+.payment-blocked-card {
+  background: linear-gradient(135deg, #fff6f6, #fffefe);
+}
+
+.weekday-picker {
+  background: #ffffff;
+}
+
+.weekday-picker label {
+  background: #f2faf3;
+  border-color: rgba(25, 184, 77, 0.22);
+}
+
+.content p,
+.content span,
+.content strong,
+.content small,
+.content h1,
+.content h2,
+.content h3,
+.content label,
+.content button,
+.content input,
+.content textarea,
+.content select,
+.login-screen p,
+.login-screen span,
+.login-screen strong,
+.login-screen small,
+.login-screen h1,
+.login-screen label,
+.login-screen button,
+.login-screen input,
+.login-screen select {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+@media (max-width: 980px) {
+  .app-shell {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  .sidebar {
+    padding: 18px;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+
+  .content {
+    padding: 14px 12px 112px;
+  }
+
+  .topbar {
+    padding: 12px;
+    margin-bottom: 14px;
+  }
+
+  .topbar h1 {
+    font-size: 22px;
+  }
+
+  .admin-grid,
+  .metrics-grid,
+  .video-grid,
+  .form-grid,
+  .manual-payment,
+  .billing-settings,
+  .billing-config-grid,
+  .billing-summary-grid,
+  .workout-form-details,
+  .exercise-form-row,
+  .assessment-fields,
+  .assessment-summary-grid,
+  .assessment-mini-grid,
+  .profile-grid,
+  .student-list-card-grid,
+  .package-detail-grid,
+  .package-summary-metrics,
+  .lesson-balance-grid,
+  .record-metrics-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-grid article,
+  .nav-card,
+  .package-module-menu button {
+    min-height: 150px;
+    padding: 18px;
+  }
+
+  .billing-card,
+  .package-card,
+  .student-list-card,
+  .alert-card,
+  .assessment-history-card,
+  .load-history-card,
+  .student-exercise-card {
+    grid-template-columns: 1fr !important;
+    width: 100%;
+  }
+
+  .billing-actions,
+  .package-card-actions,
+  .package-more-actions,
+  .student-actions,
+  .workout-actions,
+  .actions,
+  .confirm-actions,
+  .feedback-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .billing-actions button,
+  .billing-actions a,
+  .package-card-actions button,
+  .package-more-actions button,
+  .student-actions button,
+  .workout-actions button,
+  .actions button,
+  .confirm-actions button,
+  .feedback-actions button,
+  .admin-grid button,
+  .manual-payment button,
+  .workout-admin button,
+  .package-form button,
+  .checkin-card button {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .sidebar {
+    background: rgba(7, 19, 31, 0.98);
+    box-shadow: 0 -12px 34px rgba(7, 19, 31, 0.22);
+  }
+
+  .nav {
+    gap: 8px;
+  }
+
+  .nav-item {
+    min-width: 112px;
+    max-width: 156px;
+    min-height: 46px;
+    padding: 10px 12px;
+  }
+
+  .login-card {
+    padding: 22px;
+  }
+
+  .table-panel {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 420px) {
+  .content {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .topbar,
+  .hero,
+  .panel,
+  .metric,
+  .admin-grid article,
+  .manual-payment,
+  .billing-settings,
+  .billing-list-panel,
+  .billing-card,
+  .workout-admin,
+  .workout-form-block,
+  .assessment-form,
+  .assessment-form-section,
+  .profile-hero-card,
+  .package-card,
+  .checkin-card,
+  .alert-card,
+  .nav-card,
+  .package-module-menu button {
+    padding: 14px;
+  }
+
+  .section-title h2 {
+    font-size: 24px;
+  }
+
+  .login-logo {
+    width: 92px;
+    height: 92px;
+  }
+}
