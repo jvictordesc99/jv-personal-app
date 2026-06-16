@@ -71,6 +71,9 @@ function openView(id, options = {}) {
     renderStudentProfile();
     renderStudentCheckinStatus();
   }
+  if (id === "home" && typeof renderHomeDashboard === "function") {
+    renderHomeDashboard();
+  }
   window.scrollTo({ top: 0, behavior: "smooth" });
   saveNavigationState();
 }
@@ -346,6 +349,7 @@ let appEventsBound = false;
 let isApplyingRemoteState = false;
 let supabaseSyncTimer = null;
 let lastSupabaseSyncWarning = 0;
+const missingTrainingDaysMessage = "Este aluno ainda não possui dias de treino cadastrados. Sem isso, o sistema não consegue calcular aulas previstas, cobranças e treinos do mês.";
 
 function showMessage(text, type = "success") {
   if (!saveMessage) return;
@@ -355,6 +359,16 @@ function showMessage(text, type = "success") {
 
 function safeSetText(element, text = "") {
   if (element) element.textContent = text;
+}
+
+function getOrCreateElement(id, className = "", tag = "div") {
+  let element = document.querySelector(`#${id}`);
+  if (!element) {
+    element = document.createElement(tag);
+    element.id = id;
+    if (className) element.className = className;
+  }
+  return element;
 }
 
 function updateTodayLabel() {
@@ -377,6 +391,156 @@ function updateEvolutionNavigationLabels() {
   const notesPage = document.querySelector('[data-subpage="evolution-notes"]');
   if (notesCard) notesCard.hidden = true;
   if (notesPage) notesPage.hidden = true;
+}
+
+function renderHomeDashboard() {
+  const metricsGrid = document.querySelector("#home .metrics-grid");
+  if (!metricsGrid) return;
+
+  const students = loadStudents();
+  const monthKey = getDefaultBillingMonthKey();
+  const billing = students.map((student) => getStudentBillingProjection(student, monthKey));
+  const pendingBilling = billing.filter((item) => item.status === "Pendente" || item.status === "Vencido");
+  const pendingValue = pendingBilling.reduce((sum, item) => sum + item.totalValue, 0);
+  const monthLessons = billing.reduce((sum, item) => sum + item.predictedLessons, 0);
+  const monthRevenue = billing.reduce((sum, item) => sum + item.totalValue, 0);
+  const alerts = currentUserType === "admin" ? collectAdminAlerts() : [];
+  const todayWorkouts = students.reduce((total, student) => {
+    const workout = getCurrentStudentWorkout(student.name);
+    return total + (workout && getWorkoutPeriodStatus(workout).state === "active" ? 1 : 0);
+  }, 0);
+
+  const cards = [
+    ["Alunos ativos", students.length, "Com cadastro no app"],
+    ["Treinos de hoje", todayWorkouts, "Fichas ativas ou recomendadas"],
+    ["Cobrancas pendentes", pendingBilling.length, formatCurrencyNumber(pendingValue)],
+    ["Alertas importantes", alerts.length, "Prioridades pendentes"],
+    ["Aulas previstas no mes", monthLessons, `${formatCurrencyNumber(monthRevenue)} previsto`],
+  ];
+
+  metricsGrid.classList.add("home-dashboard-grid");
+  metricsGrid.innerHTML = "";
+  cards.forEach(([label, value, detail]) => {
+    const card = document.createElement("article");
+    card.className = "metric home-metric-card";
+    const labelEl = document.createElement("span");
+    labelEl.textContent = label;
+    const valueEl = document.createElement("strong");
+    valueEl.textContent = value;
+    const detailEl = document.createElement("small");
+    detailEl.textContent = detail;
+    card.append(labelEl, valueEl, detailEl);
+    metricsGrid.appendChild(card);
+  });
+}
+
+function renderMissingTrainingDaysPanel() {
+  if (!adminDashboard) return;
+  const missing = loadStudents().filter((student) => !normalizeBillingDays(student.billingDays).length);
+  let panel = document.querySelector("#missing-training-days-panel");
+
+  if (!missing.length) {
+    panel?.remove();
+    return;
+  }
+
+  if (!panel) {
+    panel = document.createElement("article");
+    panel.id = "missing-training-days-panel";
+    panel.className = "missing-training-days-panel";
+    adminDashboard.appendChild(panel);
+  }
+
+  panel.innerHTML = "";
+  const title = document.createElement("strong");
+  title.textContent = "Cadastros incompletos";
+  const detail = document.createElement("span");
+  detail.textContent = `${missing.length} aluno(s) sem dias de treino cadastrados.`;
+  const list = document.createElement("div");
+  list.className = "missing-training-days-list";
+
+  missing.forEach((student) => {
+    const row = document.createElement("div");
+    row.className = "missing-training-days-item";
+    const name = document.createElement("small");
+    name.textContent = `${student.name} | ${student.plan || "Plano não informado"}`;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary";
+    button.dataset.completeStudentDays = student.id || student.name;
+    button.textContent = "Completar cadastro";
+    row.append(name, button);
+    list.appendChild(row);
+  });
+
+  panel.append(title, detail, list);
+}
+
+function getNextStudentLesson(studentName) {
+  const activePackage = getActivePackage(studentName);
+  if (!activePackage) return null;
+  const usedDateKeys = new Set(loadCheckins().filter((checkin) => checkin.packageId === activePackage.id).map((checkin) => checkin.dateKey));
+  return generatePackageSchedule(activePackage).find((lesson) => lesson.dateKey >= getDateKey() && !usedDateKeys.has(lesson.dateKey)) || null;
+}
+
+function renderStudentTopSummary(studentName, workout = null, activeSession = null) {
+  const treinoView = document.querySelector("#treino");
+  const layout = treinoView?.querySelector(".student-training-layout");
+  if (!treinoView || !layout || !studentName) return;
+
+  const student = getStudentByName(studentName);
+  const monthKey = currentMonthKey();
+  const projection = student ? getStudentBillingProjection(student, monthKey) : null;
+  const nextLesson = getNextStudentLesson(studentName);
+  const recommended = activeSession?.title || (workout ? getOrderedWorkoutSessions(workout)[0]?.title : "") || "Sem treino ativo";
+  const remainingLessons = projection ? Math.max(projection.predictedLessons - projection.completedLessons, 0) : 0;
+
+  const summary = getOrCreateElement("student-top-summary", "student-top-summary", "section");
+  summary.innerHTML = "";
+
+  const heading = document.createElement("div");
+  heading.className = "student-top-summary-head";
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "eyebrow";
+  eyebrow.textContent = "Resumo do aluno";
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = studentName;
+  const headingPlan = document.createElement("span");
+  headingPlan.textContent = student?.plan || "Plano nao informado";
+  heading.append(eyebrow, headingTitle, headingPlan);
+
+  const grid = document.createElement("div");
+  grid.className = "student-top-summary-grid";
+  [
+    ["Proxima aula", nextLesson ? `${nextLesson.date} | ${nextLesson.time || "horario nao informado"}` : "Sem aula prevista"],
+    ["Aulas previstas", projection?.predictedLessons ?? 0],
+    ["Realizadas", projection?.completedLessons ?? 0],
+    ["Restantes", remainingLessons],
+    ["Treino recomendado", recommended],
+    ["Pagamento", student?.payment || "Sem status"],
+  ].forEach(([label, value]) => {
+    const item = document.createElement("article");
+    item.className = "student-top-summary-item";
+    const labelEl = document.createElement("small");
+    labelEl.textContent = label;
+    const valueEl = document.createElement("strong");
+    valueEl.textContent = value;
+    item.append(labelEl, valueEl);
+    grid.appendChild(item);
+  });
+
+  summary.append(heading, grid);
+  layout.insertAdjacentElement("beforebegin", summary);
+}
+
+function hasCompletedSessionToday(studentName, workoutId, sessionId) {
+  const today = formatToday();
+  return loadWorkoutFeedbacks().some((feedback) =>
+    feedback.studentName === studentName &&
+    feedback.workoutId === workoutId &&
+    (!sessionId || feedback.sessionId === sessionId) &&
+    feedback.date === today
+  );
 }
 
 function fillLoadChartModeSelect(select) {
@@ -1366,6 +1530,7 @@ function normalizeStudentsData(students) {
         value: String(student.value || "").trim(),
         due: String(student.due || "").trim(),
         payment: validPayments.includes(student.payment) ? student.payment : "Em dia",
+        lastPaymentDate: String(student.lastPaymentDate || student.last_payment_date || "").trim(),
       };
     })
     .filter((student) => student.name);
@@ -1547,6 +1712,17 @@ function setSelectedBillingDays(days) {
   });
 }
 
+function renderStudentFormTrainingDaysWarning(show = false) {
+  if (!studentForm) return;
+  const warning = getOrCreateElement("student-training-days-warning", "form-warning-card", "p");
+  warning.textContent = missingTrainingDaysMessage;
+  warning.hidden = !show;
+  if (!warning.parentElement) {
+    const fieldset = studentForm.querySelector(".weekday-picker");
+    fieldset?.insertAdjacentElement("afterend", warning);
+  }
+}
+
 function getNextMonthKey(date = new Date()) {
   return getDefaultBillingMonthKey(date);
 }
@@ -1649,6 +1825,23 @@ function getStudentBillingProjection(student, monthKey, settings = loadBillingSe
     status,
     daysLabel: normalizeBillingDays(student.billingDays).map(getWeekdayName).filter(Boolean).join(", ") || "Dias nao cadastrados",
   };
+}
+
+function markStudentBillingAsPaid(studentId) {
+  const students = loadStudents();
+  const index = students.findIndex((student) => student.id === studentId || student.name === studentId);
+  if (index < 0) return false;
+  students[index] = {
+    ...students[index],
+    payment: "Em dia",
+    lastPaymentDate: formatToday(),
+  };
+  saveStudents(students);
+  renderStudents();
+  renderBillingList();
+  renderHomeDashboard();
+  showMessage(`Pagamento de ${students[index].name} marcado como pago.`);
+  return true;
 }
 
 function createAutomaticBillingMessage(projection) {
@@ -1946,6 +2139,18 @@ function collectAdminAlerts(options = {}) {
   const checkins = loadCheckins();
 
   students.forEach((student) => {
+    if (!normalizeBillingDays(student.billingDays).length) {
+      alerts.push(createAdminAlert(
+        "Cadastro incompleto",
+        "Aluno sem dias de treino cadastrados",
+        "Complete os dias da semana para calcular aulas, cobranças e treinos do mês.",
+        student.name,
+        "warning",
+        "sem-dias-treino",
+        { destination: "students-register" },
+      ));
+    }
+
     const studentFeedbacks = feedbacks
       .filter((feedback) => feedback.studentName === student.name)
       .sort((a, b) => b.timestamp - a.timestamp);
@@ -2233,6 +2438,11 @@ function resolveAlertDestination(alertId) {
     return;
   }
 
+  if (alert.destination === "students-register") {
+    startEditingStudentByIdentifier(studentName, "Complete os dias de treino deste aluno para liberar cálculos automáticos.");
+    return;
+  }
+
   if (alert.destination === "packages-checkin" || alert.destination === "packages-makeup") {
     openAdminModule("checkins");
     if (packageViewStudent) packageViewStudent.value = studentName;
@@ -2406,9 +2616,13 @@ function renderBillingList() {
     info.append(title, details, statusText);
     info.appendChild(attendance);
 
-    if (student.paymentMethod || student.billingNotes) {
+    if (student.paymentMethod || student.billingNotes || student.lastPaymentDate) {
       const notes = document.createElement("small");
-      notes.textContent = [student.paymentMethod && `Pagamento: ${student.paymentMethod}`, student.billingNotes].filter(Boolean).join(" | ");
+      notes.textContent = [
+        student.paymentMethod && `Pagamento: ${student.paymentMethod}`,
+        student.lastPaymentDate && `Pago em: ${student.lastPaymentDate}`,
+        student.billingNotes,
+      ].filter(Boolean).join(" | ");
       info.appendChild(notes);
     }
 
@@ -2429,6 +2643,12 @@ function renderBillingList() {
       }
     });
 
+    const paidButton = document.createElement("button");
+    paidButton.type = "button";
+    paidButton.className = "secondary billing-paid-button";
+    paidButton.dataset.markBillingPaid = student.id || student.name;
+    paidButton.textContent = "Marcar como pago";
+
     const link = document.createElement("a");
     link.className = phone ? "primary" : "secondary";
     link.href = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : "#";
@@ -2439,7 +2659,7 @@ function renderBillingList() {
       link.addEventListener("click", (event) => event.preventDefault());
     }
 
-    actions.append(copyButton, link);
+    actions.append(copyButton, paidButton, link);
     card.append(info, actions);
     billingList.appendChild(card);
   });
@@ -4203,6 +4423,8 @@ function renderStudents() {
   renderCheckinHistory();
   renderBillingList();
   renderAdminAlerts();
+  renderHomeDashboard();
+  renderMissingTrainingDaysPanel();
 }
 
 function createWorkoutRow(studentName, workout) {
@@ -5538,23 +5760,27 @@ function renderCurrentWorkout() {
   workoutTabs.innerHTML = "";
 
   if (!selectedStudent) {
+    document.querySelector("#student-top-summary")?.remove();
     workoutSummary.textContent = "Selecione um aluno para visualizar a ficha.";
     currentWorkout.textContent = "Cadastre um aluno para visualizar treinos.";
     return;
   }
 
   if (currentUserType === "student" && isPaymentBlocked(student)) {
+    renderStudentTopSummary(selectedStudent);
     renderPaymentBlockedWorkout(student);
     return;
   }
 
   if (!studentWorkouts.length) {
+    renderStudentTopSummary(selectedStudent);
     workoutSummary.textContent = "Nenhuma ficha salva para este aluno ainda.";
     currentWorkout.textContent = "Nenhuma ficha salva para este aluno ainda.";
     return;
   }
 
   if (!availableWorkouts.length) {
+    renderStudentTopSummary(selectedStudent);
     const scheduledWorkout = studentWorkouts.find((item) => getWorkoutPeriodStatus(item).state === "scheduled");
     workoutSummary.textContent = scheduledWorkout
       ? `Ficha programada para iniciar em ${scheduledWorkout.startDate}.`
@@ -5582,12 +5808,15 @@ function renderCurrentWorkout() {
   summaryHeader.className = "workout-summary-header";
 
   const summaryKicker = document.createElement("span");
-  summaryKicker.textContent = "Ficha de Treino";
+  summaryKicker.textContent = selectedStudent;
 
   const summaryTitle = document.createElement("strong");
   summaryTitle.textContent = workout.title;
 
-  summaryHeader.append(summaryKicker, summaryTitle);
+  const summarySubtitle = document.createElement("small");
+  summarySubtitle.textContent = `Ficha de treino | ${workout.startDate || "inicio nao informado"} a ${workout.dueDate || "validade nao informada"}`;
+
+  summaryHeader.append(summaryKicker, summaryTitle, summarySubtitle);
 
   const meta = document.createElement("div");
   meta.className = "workout-meta";
@@ -5637,6 +5866,7 @@ function renderCurrentWorkout() {
   notesText.textContent = workout.notes;
   notes.append(notesLabel, notesText);
 
+  [goal, frequency, startDate, dueDate, expirationCard, notes].forEach((item) => item.classList.add("workout-meta-card"));
   meta.append(goal, frequency, startDate, dueDate, expirationCard, notes);
   workoutSummary.append(summaryHeader, meta);
 
@@ -5650,6 +5880,7 @@ function renderCurrentWorkout() {
   const activeSessionId = activeSessionByWorkout[workout.id] || recommendedSessionId || sessions[0]?.id;
   const activeSession = sessions.find((session) => session.id === activeSessionId) || sessions[0];
   activeSessionByWorkout[workout.id] = activeSession?.id;
+  renderStudentTopSummary(selectedStudent, workout, activeSession);
 
   sessions.forEach((session) => {
     const button = document.createElement("button");
@@ -5666,6 +5897,13 @@ function renderCurrentWorkout() {
     recommendation.className = "recommended-workout-banner";
     recommendation.innerHTML = `<strong>Treino de hoje</strong><span>${activeSession.id === recommendedSessionId ? activeSession.title : `${activeSession.title} selecionado manualmente`}</span>`;
     currentWorkout.appendChild(recommendation);
+
+    if (currentUserType === "student" && !hasCompletedSessionToday(selectedStudent, workout.id, activeSession.id)) {
+      const finishNotice = document.createElement("div");
+      finishNotice.className = "finish-workout-notice";
+      finishNotice.textContent = "Finalize o treino atual para liberar o próximo treino recomendado.";
+      currentWorkout.appendChild(finishNotice);
+    }
   }
 
   currentWorkout.appendChild(sessionTabs);
@@ -5688,11 +5926,30 @@ function renderCurrentWorkout() {
     header.className = "student-exercise-card-head";
 
     const title = document.createElement("div");
+    title.className = "exercise-title-block";
     const name = document.createElement("strong");
     name.textContent = normalizedExercise.name;
     const details = document.createElement("small");
     details.textContent = `${normalizedExercise.sets || "-"} séries | ${normalizedExercise.reps || "-"} reps | descanso ${normalizedExercise.rest || "-"}`;
     title.append(name, details);
+    const prescriptionGrid = document.createElement("div");
+    prescriptionGrid.className = "exercise-prescription-grid";
+    [
+      ["Series", normalizedExercise.sets || "-"],
+      ["Reps", normalizedExercise.reps || "-"],
+      ["Carga", normalizedExercise.currentLoad || normalizedExercise.weight || "-"],
+      ["Descanso", normalizedExercise.rest || "-"],
+    ].forEach(([label, value]) => {
+      const chip = document.createElement("span");
+      chip.className = "exercise-prescription-chip";
+      const chipLabel = document.createElement("small");
+      chipLabel.textContent = label;
+      const chipValue = document.createElement("strong");
+      chipValue.textContent = value;
+      chip.append(chipLabel, chipValue);
+      prescriptionGrid.appendChild(chip);
+    });
+    title.appendChild(prescriptionGrid);
     header.append(title, createProgressBadge(progress));
 
     const form = document.createElement("div");
@@ -8635,6 +8892,7 @@ function resetStudentForm() {
   if (birthDateInput) birthDateInput.value = "";
   if (frequencyInput) frequencyInput.value = "3x";
   setSelectedBillingDays([]);
+  renderStudentFormTrainingDaysWarning(false);
   if (makeupLimitInput) makeupLimitInput.value = "3";
   if (billingTypeInput) billingTypeInput.value = "fixed";
   if (classValueInput) classValueInput.value = "";
@@ -8660,6 +8918,7 @@ function startEditingStudent(index, message = "Editando aluno. Altere os campos 
   planInput.value = student.plan;
   if (frequencyInput) frequencyInput.value = normalizeWeeklyFrequency(student.frequency);
   setSelectedBillingDays(student.billingDays);
+  renderStudentFormTrainingDaysWarning(!normalizeBillingDays(student.billingDays).length);
   if (makeupLimitInput) makeupLimitInput.value = normalizeMakeupLimit(student.makeupLimit, student.frequency);
   if (billingTypeInput) billingTypeInput.value = normalizeBillingType(student.billingType);
   if (classValueInput) classValueInput.value = student.classValue || "";
@@ -8720,6 +8979,9 @@ studentForm?.addEventListener("submit", async (event) => {
     return;
   }
 
+  const missingTrainingDays = !normalizeBillingDays(student.billingDays).length;
+  renderStudentFormTrainingDaysWarning(missingTrainingDays);
+
   let accessResult = null;
   if (!hasStudentAppAccess(student)) {
     accessResult = await createStudentAccessForRecord(student);
@@ -8760,10 +9022,15 @@ studentForm?.addEventListener("submit", async (event) => {
         observacao: "Se quiser usar profiles como fonte de permissao, ajuste as policies/RLS ou crie trigger no Supabase. O app tambem localiza aluno por auth_user_id/email no app_state.",
       });
     }
+    if (missingTrainingDays) showMessage(missingTrainingDaysMessage, "error");
   } else if (accessResult?.error) {
     showMessage(`Aluno salvo, mas o acesso ao aplicativo não foi criado: ${accessResult.error.message}`, "error");
   } else {
-    showMessage("Aluno atualizado com sucesso. Login existente mantido.");
+    if (missingTrainingDays) {
+      showMessage(missingTrainingDaysMessage, "error");
+    } else {
+      showMessage("Aluno atualizado com sucesso. Login existente mantido.");
+    }
   }
   resetStudentForm();
 });
@@ -9572,6 +9839,12 @@ billingSettingsForm?.addEventListener("submit", (event) => {
   input?.addEventListener("change", renderBillingList);
 });
 
+billingList?.addEventListener("click", (event) => {
+  const paidButton = event.target.closest("[data-mark-billing-paid]");
+  if (!paidButton) return;
+  markStudentBillingAsPaid(paidButton.dataset.markBillingPaid);
+});
+
 frequencyInput?.addEventListener("change", () => {
   const defaultLimit = getDefaultMakeupLimit(frequencyInput.value);
   if (makeupLimitInput && (!makeupLimitInput.value || Number(makeupLimitInput.value) === 0)) {
@@ -10071,6 +10344,12 @@ paymentBlockedPanel?.addEventListener("click", (event) => {
   startEditingStudent(studentIndex, "Altere o status de pagamento e salve o aluno.");
 });
 
+adminDashboard?.addEventListener("click", (event) => {
+  const completeButton = event.target.closest("[data-complete-student-days]");
+  if (!completeButton) return;
+  startEditingStudentByIdentifier(completeButton.dataset.completeStudentDays, "Complete os dias de treino para ativar os cálculos automáticos.");
+});
+
 cancelEditButton?.addEventListener("click", () => {
   resetStudentForm();
   showMessage("Edicao cancelada.");
@@ -10449,6 +10728,7 @@ function enterTestMode(role, studentName = "", options = {}) {
   fillStudentSelects();
   updateStudentHeader();
   applyUserPermissions();
+  renderHomeDashboard();
   renderCurrentWorkout();
 }
 
@@ -10557,6 +10837,7 @@ function refreshAppAfterRemoteState() {
   normalizeStoredAppData();
   resetExerciseRows();
   renderStudents();
+  renderHomeDashboard();
   renderAdminAlerts();
   renderBillingSettings();
   fillStudentSelects();
