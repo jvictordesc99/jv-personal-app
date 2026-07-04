@@ -455,11 +455,17 @@ function renderMissingTrainingDaysPanel() {
   const title = document.createElement("strong");
   title.textContent = "Cadastros incompletos";
   const detail = document.createElement("span");
-  detail.textContent = `${missing.length} aluno(s) sem dias de treino cadastrados.`;
+  detail.className = "admin-card-detail";
+  const detailNumber = document.createElement("b");
+  detailNumber.className = "admin-card-number";
+  detailNumber.textContent = `${missing.length} aluno(s)`;
+  const detailText = document.createElement("small");
+  detailText.textContent = "sem dias de treino cadastrados.";
+  detail.append(detailNumber, detailText);
   const list = document.createElement("div");
   list.className = "missing-training-days-list";
 
-  missing.forEach((student) => {
+  missing.slice(0, 5).forEach((student) => {
     const row = document.createElement("div");
     row.className = "missing-training-days-item";
     const name = document.createElement("small");
@@ -472,6 +478,13 @@ function renderMissingTrainingDaysPanel() {
     row.append(name, button);
     list.appendChild(row);
   });
+
+  if (missing.length > 5) {
+    const more = document.createElement("small");
+    more.className = "missing-training-days-more";
+    more.textContent = `+${missing.length - 5} alunos...`;
+    list.appendChild(more);
+  }
 
   panel.append(title, detail, list);
 }
