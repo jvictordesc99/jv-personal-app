@@ -443,6 +443,14 @@
             <label>Telefone WhatsApp<input id="student-phone" placeholder="Ex: 19992782696" /></label>
             <label>Data de nascimento<input id="student-birth-date" placeholder="Ex: 15/08/1995" /></label>
             <label>Plano<input id="student-plan" required placeholder="Ex: Personal, Beach" /></label>
+            <label>Modalidade
+              <select id="student-modality">
+                <option value="presencial">Presencial</option>
+                <option value="online">Online</option>
+                <option value="hibrido">Hibrido</option>
+              </select>
+            </label>
+            <label>Data de inicio<input id="student-start-date" placeholder="Ex: 10/06/2026" /></label>
             <label>Frequência semanal
               <select id="student-frequency">
                 <option value="1x">1x por semana</option>
@@ -481,6 +489,7 @@
                 <option>Atrasado</option>
               </select>
             </label>
+            <div class="student-package-preview" id="student-package-preview" hidden></div>
             <label class="student-billing-notes-field">Observacoes de cobranca<textarea id="student-billing-notes" placeholder="Ex: cobrar todo dia 5, plano familiar, desconto combinado..."></textarea></label>
             <button type="submit" id="save-student-button">Salvar aluno</button>
             <button type="button" class="secondary" id="cancel-edit-button" hidden>Cancelar</button>

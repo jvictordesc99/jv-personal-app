@@ -139,6 +139,8 @@ const createStudentAccessButton = document.querySelector("#create-student-access
 const phoneInput = document.querySelector("#student-phone");
 const birthDateInput = document.querySelector("#student-birth-date");
 const planInput = document.querySelector("#student-plan");
+const modalityInput = document.querySelector("#student-modality");
+const studentStartDateInput = document.querySelector("#student-start-date");
 const frequencyInput = document.querySelector("#student-frequency");
 const makeupLimitInput = document.querySelector("#student-makeup-limit");
 const billingDayInputs = document.querySelectorAll('[name="student-billing-day"]');
@@ -149,6 +151,7 @@ const dueInput = document.querySelector("#student-due");
 const paymentMethodInput = document.querySelector("#student-payment-method");
 const paymentInput = document.querySelector("#student-payment");
 const studentBillingNotesInput = document.querySelector("#student-billing-notes");
+const studentPackagePreview = document.querySelector("#student-package-preview");
 const newStudentButton = document.querySelector("[data-focus-student]");
 const workoutFocusButtons = document.querySelectorAll("[data-focus-workout]");
 const adminDashboard = document.querySelector("#admin-dashboard");
@@ -608,7 +611,7 @@ function applyInputMasks(root = document) {
     });
   });
 
-  root.querySelectorAll("#student-due, #student-birth-date, #assessment-date, #workout-start-date, #workout-due-date, #package-start, #package-end, #checkin-filter-date, #dropin-date, #makeup-date, #personal-reschedule-date, #lesson-history-start, #lesson-history-end").forEach((input) => {
+  root.querySelectorAll("#student-due, #student-birth-date, #student-start-date, #assessment-date, #workout-start-date, #workout-due-date, #package-start, #package-end, #checkin-filter-date, #dropin-date, #makeup-date, #personal-reschedule-date, #lesson-history-start, #lesson-history-end").forEach((input) => {
     input.inputMode = "numeric";
     input.addEventListener("input", () => {
       input.value = formatDateBR(input.value);
@@ -1533,6 +1536,8 @@ function normalizeStudentsData(students) {
         phone: String(student.phone || student.whatsapp || "").trim(),
         birthDate: String(student.birthDate || student.birth_date || "").trim(),
         plan: String(student.plan || "Plano nao informado").trim(),
+        modality: String(student.modality || student.attendanceType || student.mode || "").trim(),
+        startDate: String(student.startDate || student.start_date || student.enrollmentDate || "").trim(),
         frequency,
         billingDays: normalizeBillingDays(student.billingDays || student.trainingDays || student.weekdays || []),
         billingType: normalizeBillingType(student.billingType || student.chargeType || student.billing_type),
@@ -1741,6 +1746,44 @@ function updateStudentMonthlyValueFromBilling() {
   valueInput.value = monthlyValue > 0 ? formatCurrencyNumber(monthlyValue) : "";
 }
 
+function getStudentDraftFromForm() {
+  return {
+    id: editingStudentIndex === null ? "" : loadStudents()[editingStudentIndex]?.id || "",
+    name: nameInput?.value.trim() || "",
+    plan: planInput?.value.trim() || "",
+    modality: modalityInput?.value || "presencial",
+    startDate: studentStartDateInput?.value.trim() || formatToday(),
+    frequency: frequencyInput?.value || "3x",
+    billingDays: getSelectedBillingDays(),
+    billingType: billingTypeInput?.value || "fixed",
+    classValue: classValueInput?.value.trim() || "",
+    value: valueInput?.value.trim() || "",
+    due: dueInput?.value.trim() || "",
+    makeupLimit: normalizeMakeupLimit(makeupLimitInput?.value, frequencyInput?.value || "3x"),
+  };
+}
+
+function renderStudentPackagePreview() {
+  if (!studentPackagePreview) return;
+  updateStudentMonthlyValueFromBilling();
+  const draft = getStudentDraftFromForm();
+  const shouldShow = isPresentialStudent(draft) && normalizeBillingDays(draft.billingDays).length > 0;
+  studentPackagePreview.hidden = !shouldShow;
+  studentPackagePreview.innerHTML = "";
+  if (!shouldShow) return;
+
+  const preview = getStudentInitialPackagePreview(draft);
+  const title = document.createElement("strong");
+  title.textContent = "Pacote automático do mês";
+  const details = document.createElement("span");
+  details.textContent = `${preview.remainingLessons} aula(s) previstas em ${preview.monthLabel}. Valor: ${formatCurrencyNumber(preview.totalValue)}.`;
+  const note = document.createElement("small");
+  note.textContent = preview.proportional
+    ? "Valor proporcional do primeiro mês, calculado apenas pelas aulas restantes."
+    : "Pacote calculado para o mês inteiro conforme os dias cadastrados.";
+  studentPackagePreview.append(title, details, note);
+}
+
 function setSelectedBillingDays(days) {
   const selected = normalizeBillingDays(days);
   Array.from(billingDayInputs || []).forEach((input) => {
@@ -1788,6 +1831,10 @@ function getWeekdayName(day) {
   return ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"][Number(day)] || "";
 }
 
+function getWeekdayFullName(day) {
+  return ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"][Number(day)] || "";
+}
+
 function parseHolidayKeys(text) {
   return String(text || "")
     .split(/\n+/)
@@ -1809,6 +1856,63 @@ function countBillingLessonsForMonth(monthKey, weekdays, settings) {
     cursor.setDate(cursor.getDate() + 1);
   }
   return total;
+}
+
+function countBillingLessonsBetweenDates(startDate, endDate, weekdays, settings = loadBillingSettings()) {
+  const days = normalizeBillingDays(weekdays);
+  if (!startDate || !endDate || !days.length) return 0;
+  const holidaySet = settings?.countHolidays === false ? new Set(settings.holidayKeys || []) : new Set();
+  let total = 0;
+  const cursor = new Date(startDate);
+  cursor.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0);
+  while (cursor <= end) {
+    const key = getDateKey(cursor);
+    if (days.includes(cursor.getDay()) && !holidaySet.has(key)) total += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return total;
+}
+
+function isPresentialStudent(student) {
+  const text = `${student?.modality || ""} ${student?.plan || ""}`.toLowerCase();
+  return text.includes("presencial") || (!text.includes("online") && !text.includes("hibrido"));
+}
+
+function getStudentStartDate(student) {
+  return parseBrazilianDate(student?.startDate || "") || new Date();
+}
+
+function getStudentInitialPackagePreview(student, settings = loadBillingSettings()) {
+  const startDate = getStudentStartDate(student);
+  startDate.setHours(0, 0, 0, 0);
+  const monthKey = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}`;
+  const { start, end } = getMonthBounds(monthKey);
+  const remainingLessons = countBillingLessonsBetweenDates(startDate, end, student.billingDays, settings);
+  const fullMonthLessons = countBillingLessonsBetweenDates(start, end, student.billingDays, settings);
+  const billingType = normalizeBillingType(student.billingType);
+  const perClassValue = parseCurrencyValue(student.classValue);
+  const monthlyValue = parseCurrencyValue(student.value);
+  const proportional = startDate > start;
+  const totalValue = billingType === "per_class"
+    ? remainingLessons * perClassValue
+    : fullMonthLessons > 0
+      ? (monthlyValue / fullMonthLessons) * remainingLessons
+      : monthlyValue;
+
+  return {
+    monthKey,
+    monthLabel: getMonthLabel(monthKey),
+    startDate,
+    endDate: end,
+    remainingLessons,
+    fullMonthLessons,
+    totalValue,
+    billingType,
+    proportional,
+    daysText: normalizeBillingDays(student.billingDays).map(getWeekdayFullName).filter(Boolean).join(", "),
+  };
 }
 
 function getBillingDueDate(student, monthKey) {
@@ -1840,11 +1944,20 @@ function getStudentCompletedLessonsForMonth(student, monthKey) {
 
 function getStudentBillingProjection(student, monthKey, settings = loadBillingSettings()) {
   const billingType = normalizeBillingType(student.billingType);
-  const predictedLessons = countBillingLessonsForMonth(monthKey, student.billingDays, settings);
+  const automaticPackage = loadClassPackages().find((item) =>
+    item.autoGenerated === true
+    && item.monthKey === monthKey
+    && ((student.id && item.studentId === student.id) || item.studentName === student.name)
+  );
+  const predictedLessons = automaticPackage
+    ? Number(automaticPackage.total) || 0
+    : countBillingLessonsForMonth(monthKey, student.billingDays, settings);
   const completedLessons = getStudentCompletedLessonsForMonth(student, monthKey);
   const perClassValue = parseCurrencyValue(student.classValue);
   const monthlyValue = parseCurrencyValue(student.value);
-  const totalValue = billingType === "per_class" ? predictedLessons * perClassValue : monthlyValue;
+  const totalValue = automaticPackage
+    ? parseCurrencyValue(automaticPackage.value || automaticPackage.expectedValue)
+    : billingType === "per_class" ? predictedLessons * perClassValue : monthlyValue;
   const attendance = predictedLessons > 0 ? Math.round((completedLessons / predictedLessons) * 1000) / 10 : 0;
   const status = getBillingStatusForStudent(student, monthKey);
 
@@ -3377,6 +3490,12 @@ function normalizeClassPackages(packages) {
       days: item.days || "",
       time: item.time || "",
       notes: item.notes || "",
+      monthKey: item.monthKey || "",
+      predictedLessons: Number(item.predictedLessons) || Number(item.total) || 0,
+      remainingLessons: Number(item.remainingLessons) || Math.max((Number(item.total) || 0) - getCompletedLessons({ ...item, id: item.id || "" }), 0),
+      expectedValue: item.expectedValue || item.value || "",
+      status: item.status || "ativo",
+      autoGenerated: item.autoGenerated === true,
       createdAt: item.createdAt || Date.now(),
       updatedAt: item.updatedAt || item.createdAt || Date.now(),
     }))
@@ -3406,6 +3525,54 @@ function saveClassPackages(packages) {
   } catch {
     showMessage("Pacote salvo na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
   }
+}
+
+function upsertAutomaticMonthlyPackageForStudent(student) {
+  if (!student || !isPresentialStudent(student)) return null;
+  const preview = getStudentInitialPackagePreview(student);
+  if (!preview.remainingLessons || !normalizeBillingDays(student.billingDays).length) return null;
+
+  const packages = loadClassPackages();
+  const existingIndex = packages.findIndex((item) =>
+    item.autoGenerated === true
+    && item.monthKey === preview.monthKey
+    && ((student.id && item.studentId === student.id) || item.studentName === student.name)
+  );
+  const existing = existingIndex >= 0 ? packages[existingIndex] : null;
+  const packageData = {
+    id: existing?.id || createId(),
+    studentName: student.name,
+    studentId: student.id || getStudentIdByName(student.name),
+    name: `Pacote mensal - ${preview.monthLabel}`,
+    total: preview.remainingLessons,
+    frequency: student.frequency || "",
+    value: formatCurrencyNumber(preview.totalValue),
+    startDate: preview.startDate.toLocaleDateString("pt-BR"),
+    endDate: preview.endDate.toLocaleDateString("pt-BR"),
+    makeupLimit: normalizeMakeupLimit(student.makeupLimit, student.frequency),
+    days: preview.daysText,
+    time: "",
+    notes: preview.proportional
+      ? "Pacote criado automaticamente no cadastro do aluno. Valor proporcional do primeiro mês."
+      : "Pacote criado automaticamente no cadastro do aluno.",
+    monthKey: preview.monthKey,
+    predictedLessons: preview.remainingLessons,
+    remainingLessons: preview.remainingLessons,
+    expectedValue: formatCurrencyNumber(preview.totalValue),
+    status: "ativo",
+    autoGenerated: true,
+    createdAt: existing?.createdAt || Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  if (existingIndex >= 0) {
+    packages[existingIndex] = { ...existing, ...packageData };
+  } else {
+    packages.push(packageData);
+  }
+
+  saveClassPackages(packages);
+  return packageData;
 }
 
 function normalizePackageModels(models) {
@@ -8926,6 +9093,8 @@ function resetStudentForm() {
   if (tempPasswordInput) tempPasswordInput.value = "";
   if (phoneInput) phoneInput.value = "";
   if (birthDateInput) birthDateInput.value = "";
+  if (modalityInput) modalityInput.value = "presencial";
+  if (studentStartDateInput) studentStartDateInput.value = formatToday();
   if (frequencyInput) frequencyInput.value = "3x";
   setSelectedBillingDays([]);
   renderStudentFormTrainingDaysWarning(false);
@@ -8943,6 +9112,7 @@ function resetStudentForm() {
   safeSetText(saveStudentButton, "Salvar aluno");
   if (createStudentAccessButton) createStudentAccessButton.hidden = true;
   if (cancelEditButton) cancelEditButton.hidden = true;
+  renderStudentPackagePreview();
   nameInput?.focus();
 }
 
@@ -8957,6 +9127,8 @@ function startEditingStudent(index, message = "Editando aluno. Altere os campos 
   if (phoneInput) phoneInput.value = student.phone || "";
   if (birthDateInput) birthDateInput.value = student.birthDate || "";
   planInput.value = student.plan;
+  if (modalityInput) modalityInput.value = student.modality || "presencial";
+  if (studentStartDateInput) studentStartDateInput.value = student.startDate || formatToday();
   if (frequencyInput) frequencyInput.value = normalizeWeeklyFrequency(student.frequency);
   setSelectedBillingDays(student.billingDays);
   renderStudentFormTrainingDaysWarning(!normalizeBillingDays(student.billingDays).length);
@@ -8969,6 +9141,7 @@ function startEditingStudent(index, message = "Editando aluno. Altere os campos 
   if (paymentMethodInput) paymentMethodInput.value = student.paymentMethod || "";
   paymentInput.value = student.payment;
   if (studentBillingNotesInput) studentBillingNotesInput.value = student.billingNotes || "";
+  renderStudentPackagePreview();
   saveStudentButton.textContent = "Salvar alteracao";
   if (createStudentAccessButton) createStudentAccessButton.hidden = hasStudentAppAccess(student);
   cancelEditButton.hidden = false;
@@ -9004,6 +9177,8 @@ studentForm?.addEventListener("submit", async (event) => {
     phone: phoneInput?.value.trim() || "",
     birthDate: birthDateInput?.value.trim() || "",
     plan: planInput.value.trim(),
+    modality: modalityInput?.value || "presencial",
+    startDate: studentStartDateInput?.value.trim() || formatToday(),
     frequency: frequencyInput?.value || "3x",
     billingDays: getSelectedBillingDays(),
     billingType: billingTypeInput?.value || "fixed",
@@ -9052,8 +9227,15 @@ studentForm?.addEventListener("submit", async (event) => {
     syncStudentNameReferences(previousName, student.name);
   }
 
+  const automaticPackage = upsertAutomaticMonthlyPackageForStudent(student);
+
   renderStudents();
   fillStudentSelects();
+  fillManualCheckinPackageSelect();
+  fillMakeupPackageSelect();
+  renderPackageAdminList();
+  renderStudentPackagePanel();
+  renderBillingList();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
   if (accessResult?.created) {
     showMessage(`Aluno cadastrado e acesso criado com sucesso.\n\nEmail: ${student.email_login || student.email}\nSenha temporária: ${accessResult.temporaryPassword}`);
@@ -9073,7 +9255,9 @@ studentForm?.addEventListener("submit", async (event) => {
     if (missingTrainingDays) {
       showMessage(missingTrainingDaysMessage, "error");
     } else {
-      showMessage("Aluno atualizado com sucesso. Login existente mantido.");
+      showMessage(automaticPackage
+        ? `Aluno atualizado com sucesso. Pacote automático criado/atualizado com ${automaticPackage.total} aula(s).`
+        : "Aluno atualizado com sucesso. Login existente mantido.");
     }
   }
   resetStudentForm();
@@ -9126,6 +9310,8 @@ async function createOrLinkStudentAccessFromForm() {
     phone: phoneInput?.value.trim() || students[existingIndex]?.phone || "",
     birthDate: birthDateInput?.value.trim() || students[existingIndex]?.birthDate || "",
     plan: planInput?.value.trim() || students[existingIndex]?.plan || "Plano nao informado",
+    modality: modalityInput?.value || students[existingIndex]?.modality || "presencial",
+    startDate: studentStartDateInput?.value.trim() || students[existingIndex]?.startDate || formatToday(),
     frequency: frequencyInput?.value || students[existingIndex]?.frequency || "3x",
     billingDays: getSelectedBillingDays().length ? getSelectedBillingDays() : students[existingIndex]?.billingDays || [],
     billingType: billingTypeInput?.value || students[existingIndex]?.billingType || "fixed",
@@ -9205,6 +9391,8 @@ async function sendStudentAccessInviteFromForm() {
     phone: phoneInput?.value.trim() || students[existingIndex]?.phone || "",
     birthDate: birthDateInput?.value.trim() || students[existingIndex]?.birthDate || "",
     plan: planInput?.value.trim() || students[existingIndex]?.plan || "Plano nao informado",
+    modality: modalityInput?.value || students[existingIndex]?.modality || "presencial",
+    startDate: studentStartDateInput?.value.trim() || students[existingIndex]?.startDate || formatToday(),
     frequency: frequencyInput?.value || students[existingIndex]?.frequency || "3x",
     billingDays: getSelectedBillingDays().length ? getSelectedBillingDays() : students[existingIndex]?.billingDays || [],
     billingType: billingTypeInput?.value || students[existingIndex]?.billingType || "fixed",
@@ -9305,6 +9493,8 @@ async function createStudentTemporaryAccessFromForm() {
     phone: phoneInput?.value.trim() || baseStudent.phone || "",
     birthDate: birthDateInput?.value.trim() || baseStudent.birthDate || "",
     plan: planInput?.value.trim() || baseStudent.plan || "Plano nao informado",
+    modality: modalityInput?.value || baseStudent.modality || "presencial",
+    startDate: studentStartDateInput?.value.trim() || baseStudent.startDate || formatToday(),
     frequency: frequencyInput?.value || baseStudent.frequency || "3x",
     makeupLimit: normalizeMakeupLimit(makeupLimitInput?.value || baseStudent.makeupLimit, frequencyInput?.value || baseStudent.frequency || "3x"),
     value: valueInput?.value.trim() || baseStudent.value || "",
@@ -9897,13 +10087,19 @@ frequencyInput?.addEventListener("change", () => {
   if (makeupLimitInput && (!makeupLimitInput.value || Number(makeupLimitInput.value) === 0)) {
     makeupLimitInput.value = String(defaultLimit);
   }
-  updateStudentMonthlyValueFromBilling();
+  renderStudentPackagePreview();
 });
 
-billingTypeInput?.addEventListener("change", updateStudentMonthlyValueFromBilling);
-classValueInput?.addEventListener("input", updateStudentMonthlyValueFromBilling);
+billingTypeInput?.addEventListener("change", renderStudentPackagePreview);
+classValueInput?.addEventListener("input", renderStudentPackagePreview);
+valueInput?.addEventListener("input", () => {
+  if (normalizeBillingType(billingTypeInput?.value) === "fixed") renderStudentPackagePreview();
+});
+modalityInput?.addEventListener("change", renderStudentPackagePreview);
+studentStartDateInput?.addEventListener("input", () => setTimeout(renderStudentPackagePreview, 0));
+studentStartDateInput?.addEventListener("change", renderStudentPackagePreview);
 Array.from(billingDayInputs || []).forEach((input) => {
-  input.addEventListener("change", updateStudentMonthlyValueFromBilling);
+  input.addEventListener("change", renderStudentPackagePreview);
 });
 
 studentCheckinButton?.addEventListener("click", () => {
