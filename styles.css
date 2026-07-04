@@ -4150,6 +4150,13 @@ textarea {
   }
 }
 
+input.readonly-field {
+  background: #f3f7f6;
+  color: var(--green-dark);
+  font-weight: 800;
+  cursor: not-allowed;
+}
+
 /* Keep Gestao cards consistent after broad mobile overrides */
 @media (min-width: 641px) and (max-width: 1100px) {
   #admin-dashboard.admin-grid {

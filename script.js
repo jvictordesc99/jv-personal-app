@@ -1718,6 +1718,29 @@ function getSelectedBillingDays() {
     .filter((day) => Number.isInteger(day));
 }
 
+function getWeeklyClassCountForStudentForm() {
+  const frequency = normalizeWeeklyFrequency(frequencyInput?.value || "3x");
+  if (frequency === "custom") return getSelectedBillingDays().length;
+  return Number(frequency.replace("x", "")) || 0;
+}
+
+function updateStudentMonthlyValueFromBilling() {
+  if (!billingTypeInput || !valueInput) return;
+  const billingType = normalizeBillingType(billingTypeInput.value);
+  const isPerClass = billingType === "per_class";
+
+  valueInput.readOnly = isPerClass;
+  valueInput.classList.toggle("readonly-field", isPerClass);
+  valueInput.setAttribute("aria-readonly", isPerClass ? "true" : "false");
+
+  if (!isPerClass) return;
+
+  const classValue = parseCurrencyValue(classValueInput?.value || "");
+  const weeklyClasses = getWeeklyClassCountForStudentForm();
+  const monthlyValue = classValue * weeklyClasses * 4;
+  valueInput.value = monthlyValue > 0 ? formatCurrencyNumber(monthlyValue) : "";
+}
+
 function setSelectedBillingDays(days) {
   const selected = normalizeBillingDays(days);
   Array.from(billingDayInputs || []).forEach((input) => {
@@ -8909,6 +8932,11 @@ function resetStudentForm() {
   if (makeupLimitInput) makeupLimitInput.value = "3";
   if (billingTypeInput) billingTypeInput.value = "fixed";
   if (classValueInput) classValueInput.value = "";
+  if (valueInput) {
+    valueInput.readOnly = false;
+    valueInput.classList.remove("readonly-field");
+    valueInput.setAttribute("aria-readonly", "false");
+  }
   if (paymentMethodInput) paymentMethodInput.value = "";
   if (studentBillingNotesInput) studentBillingNotesInput.value = "";
   editingStudentIndex = null;
@@ -8936,6 +8964,7 @@ function startEditingStudent(index, message = "Editando aluno. Altere os campos 
   if (billingTypeInput) billingTypeInput.value = normalizeBillingType(student.billingType);
   if (classValueInput) classValueInput.value = student.classValue || "";
   valueInput.value = student.value;
+  updateStudentMonthlyValueFromBilling();
   dueInput.value = student.due;
   if (paymentMethodInput) paymentMethodInput.value = student.paymentMethod || "";
   paymentInput.value = student.payment;
@@ -8958,6 +8987,8 @@ function startEditingStudentByIdentifier(identifier, message) {
 
 studentForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
+
+  updateStudentMonthlyValueFromBilling();
 
   const students = loadStudents();
   const previousName = editingStudentIndex === null ? "" : students[editingStudentIndex]?.name;
@@ -9052,6 +9083,7 @@ async function createOrLinkStudentAccessFromForm() {
   const name = nameInput?.value.trim() || "";
   const email = emailInput?.value.trim().toLowerCase() || "";
   const password = tempPasswordInput?.value.trim() || "";
+  updateStudentMonthlyValueFromBilling();
 
   if (!name || !email || !password) {
     showMessage("Informe nome, e-mail e senha inicial para criar o acesso do aluno.", "error");
@@ -9127,6 +9159,7 @@ async function createOrLinkStudentAccessFromForm() {
 async function sendStudentAccessInviteFromForm() {
   const name = nameInput?.value.trim() || "";
   const email = emailInput?.value.trim().toLowerCase() || "";
+  updateStudentMonthlyValueFromBilling();
 
   if (!name || !isLikelyRealEmail(email)) {
     showMessage("Informe um e-mail real para enviar o convite de acesso.", "error");
@@ -9207,6 +9240,7 @@ async function sendStudentAccessInviteFromForm() {
 async function createStudentTemporaryAccessFromForm() {
   const name = nameInput?.value.trim() || "";
   const email = emailInput?.value.trim().toLowerCase() || "";
+  updateStudentMonthlyValueFromBilling();
 
   if (!name || !isLikelyRealEmail(email)) {
     showMessage("Informe um e-mail real para criar o acesso do aluno.", "error");
@@ -9863,6 +9897,13 @@ frequencyInput?.addEventListener("change", () => {
   if (makeupLimitInput && (!makeupLimitInput.value || Number(makeupLimitInput.value) === 0)) {
     makeupLimitInput.value = String(defaultLimit);
   }
+  updateStudentMonthlyValueFromBilling();
+});
+
+billingTypeInput?.addEventListener("change", updateStudentMonthlyValueFromBilling);
+classValueInput?.addEventListener("input", updateStudentMonthlyValueFromBilling);
+Array.from(billingDayInputs || []).forEach((input) => {
+  input.addEventListener("change", updateStudentMonthlyValueFromBilling);
 });
 
 studentCheckinButton?.addEventListener("click", () => {
