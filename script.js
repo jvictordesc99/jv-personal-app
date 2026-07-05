@@ -48,7 +48,7 @@ function openView(id, options = {}) {
     id = "admin";
   }
 
-  navButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === id));
+  navButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === id && !button.dataset.adminShortcut));
   views.forEach((view) => view.classList.toggle("active", view.id === id));
   activeViewId = id;
   safeSetText(pageTitle, titles[id] || "Painel inicial");
@@ -79,7 +79,13 @@ function openView(id, options = {}) {
 }
 
 navButtons.forEach((button) => {
-  button.addEventListener("click", () => openView(button.dataset.view, { userInitiated: true }));
+  button.addEventListener("click", () => {
+    openView(button.dataset.view, { userInitiated: true });
+    if (button.dataset.adminShortcut && currentUserType === "admin") {
+      openAdminModule(button.dataset.adminShortcut);
+      navButtons.forEach((item) => item.classList.toggle("active", item === button));
+    }
+  });
 });
 
 document.querySelectorAll("[data-jump]").forEach((button) => {
@@ -93,6 +99,7 @@ const assessmentStorageKey = "joao-victor-assessments";
 const checkinStorageKey = "joao-victor-checkins";
 const packageStorageKey = "joao-victor-class-packages";
 const dropInStorageKey = "joao-victor-dropin-classes";
+const agendaEventStorageKey = "joao-victor-agenda-events";
 const makeupStorageKey = "joao-victor-makeup-credits";
 const feedbackStorageKey = "joao-victor-workout-feedbacks";
 const resolvedAlertsStorageKey = "joao-victor-resolved-alerts";
@@ -144,6 +151,7 @@ const studentStartDateInput = document.querySelector("#student-start-date");
 const frequencyInput = document.querySelector("#student-frequency");
 const makeupLimitInput = document.querySelector("#student-makeup-limit");
 const billingDayInputs = document.querySelectorAll('[name="student-billing-day"]');
+const studentWeeklySchedule = document.querySelector("#student-weekly-schedule");
 const billingTypeInput = document.querySelector("#student-billing-type");
 const classValueInput = document.querySelector("#student-class-value");
 const valueInput = document.querySelector("#student-value");
@@ -152,6 +160,27 @@ const paymentMethodInput = document.querySelector("#student-payment-method");
 const paymentInput = document.querySelector("#student-payment");
 const studentBillingNotesInput = document.querySelector("#student-billing-notes");
 const studentPackagePreview = document.querySelector("#student-package-preview");
+const adminAgendaView = document.querySelector("#admin-agenda-view");
+const adminAgendaDate = document.querySelector("#admin-agenda-date");
+const adminAgendaGrid = document.querySelector("#admin-agenda-grid");
+const agendaMakeupForm = document.querySelector("#agenda-makeup-form");
+const agendaDropinForm = document.querySelector("#agenda-dropin-form");
+const agendaCancelForm = document.querySelector("#agenda-cancel-form");
+const agendaMakeupStudent = document.querySelector("#agenda-makeup-student");
+const agendaMakeupDate = document.querySelector("#agenda-makeup-date");
+const agendaMakeupTime = document.querySelector("#agenda-makeup-time");
+const agendaMakeupDuration = document.querySelector("#agenda-makeup-duration");
+const agendaMakeupNote = document.querySelector("#agenda-makeup-note");
+const agendaDropinStudent = document.querySelector("#agenda-dropin-student");
+const agendaDropinName = document.querySelector("#agenda-dropin-name");
+const agendaDropinDate = document.querySelector("#agenda-dropin-date");
+const agendaDropinTime = document.querySelector("#agenda-dropin-time");
+const agendaDropinDuration = document.querySelector("#agenda-dropin-duration");
+const agendaDropinValue = document.querySelector("#agenda-dropin-value");
+const agendaDropinStatus = document.querySelector("#agenda-dropin-status");
+const agendaCancelEvent = document.querySelector("#agenda-cancel-event");
+const agendaCancelReason = document.querySelector("#agenda-cancel-reason");
+const agendaCancelMakeup = document.querySelector("#agenda-cancel-makeup");
 const newStudentButton = document.querySelector("[data-focus-student]");
 const workoutFocusButtons = document.querySelectorAll("[data-focus-workout]");
 const adminDashboard = document.querySelector("#admin-dashboard");
@@ -328,6 +357,7 @@ let memoryCheckins = null;
 let memoryPackages = null;
 let memoryPackageModels = null;
 let memoryDropIns = null;
+let memoryAgendaEvents = null;
 let memoryMakeups = null;
 let memoryFeedbacks = null;
 let memoryFinancialHistory = null;
@@ -604,14 +634,14 @@ function formatRestSeconds(value) {
 }
 
 function applyInputMasks(root = document) {
-  root.querySelectorAll("#student-value, #student-class-value, #package-value, #dropin-value, #manual-checkin-value").forEach((input) => {
+  root.querySelectorAll("#student-value, #student-class-value, #package-value, #dropin-value, #manual-checkin-value, #agenda-dropin-value").forEach((input) => {
     input.inputMode = "numeric";
     input.addEventListener("input", () => {
       input.value = formatCurrencyBR(input.value);
     });
   });
 
-  root.querySelectorAll("#student-due, #student-birth-date, #student-start-date, #assessment-date, #workout-start-date, #workout-due-date, #package-start, #package-end, #checkin-filter-date, #dropin-date, #makeup-date, #personal-reschedule-date, #lesson-history-start, #lesson-history-end").forEach((input) => {
+  root.querySelectorAll("#student-due, #student-birth-date, #student-start-date, #assessment-date, #workout-start-date, #workout-due-date, #package-start, #package-end, #checkin-filter-date, #dropin-date, #makeup-date, #personal-reschedule-date, #lesson-history-start, #lesson-history-end, #admin-agenda-date, #agenda-makeup-date, #agenda-dropin-date").forEach((input) => {
     input.inputMode = "numeric";
     input.addEventListener("input", () => {
       input.value = formatDateBR(input.value);
@@ -777,6 +807,7 @@ function getAppStateSnapshot() {
     classPackages: loadClassPackages(),
     packageModels: loadPackageModels(),
     dropInClasses: loadDropInClasses(),
+    agendaEvents: loadAgendaEvents(),
     makeupCredits: loadMakeupCredits(),
     workoutFeedbacks: loadWorkoutFeedbacks(),
     resolvedAlerts: loadResolvedAlerts(),
@@ -799,6 +830,7 @@ function getAppStateAuditCounts(state = getAppStateSnapshot()) {
     packageModels: normalizeListData(state.packageModels || []).length,
     checkins: normalizeListData(state.checkins || []).length,
     dropInClasses: normalizeListData(state.dropInClasses || []).length,
+    agendaEvents: normalizeListData(state.agendaEvents || []).length,
     makeupCredits: normalizeListData(state.makeupCredits || []).length,
     resolvedAlerts: normalizeListData(state.resolvedAlerts || []).length,
     financialHistory: normalizeListData(state.financialHistory || []).length,
@@ -818,6 +850,7 @@ function writeAppStateToLocalStorage(state) {
     memoryPackages = normalizeClassPackages(state.classPackages || []);
     memoryPackageModels = normalizePackageModels(state.packageModels || []);
     memoryDropIns = normalizeDropInClasses(state.dropInClasses || []);
+    memoryAgendaEvents = normalizeAgendaEvents(state.agendaEvents || []);
     memoryMakeups = normalizeMakeupCredits(state.makeupCredits || []);
     memoryFeedbacks = normalizeWorkoutFeedbacks(state.workoutFeedbacks || []);
     memoryFinancialHistory = normalizeFinancialHistory(state.financialHistory || []);
@@ -830,6 +863,7 @@ function writeAppStateToLocalStorage(state) {
     localStorage.setItem(packageStorageKey, JSON.stringify(memoryPackages));
     localStorage.setItem(packageModelStorageKey, JSON.stringify(memoryPackageModels));
     localStorage.setItem(dropInStorageKey, JSON.stringify(memoryDropIns));
+    localStorage.setItem(agendaEventStorageKey, JSON.stringify(memoryAgendaEvents));
     localStorage.setItem(makeupStorageKey, JSON.stringify(memoryMakeups));
     localStorage.setItem(feedbackStorageKey, JSON.stringify(memoryFeedbacks));
     localStorage.setItem(financialHistoryStorageKey, JSON.stringify(memoryFinancialHistory));
@@ -1521,6 +1555,7 @@ function normalizeStudentsData(students) {
     .filter((student) => student && typeof student === "object")
     .map((student) => {
       const frequency = normalizeWeeklyFrequency(student.frequency || student.weeklyFrequency);
+      const billingDays = normalizeBillingDays(student.billingDays || student.trainingDays || student.weekdays || []);
       return {
         id: student.id || createId(),
         supabaseUserId: String(student.supabaseUserId || student.authUserId || "").trim(),
@@ -1539,7 +1574,8 @@ function normalizeStudentsData(students) {
         modality: String(student.modality || student.attendanceType || student.mode || "").trim(),
         startDate: String(student.startDate || student.start_date || student.enrollmentDate || "").trim(),
         frequency,
-        billingDays: normalizeBillingDays(student.billingDays || student.trainingDays || student.weekdays || []),
+        billingDays,
+        weeklySchedule: normalizeWeeklySchedule(student.weeklySchedule || student.schedule || {}, billingDays),
         billingType: normalizeBillingType(student.billingType || student.chargeType || student.billing_type),
         classValue: String(student.classValue || student.valuePerClass || student.valorAula || "").trim(),
         paymentMethod: String(student.paymentMethod || student.payment_method || "").trim(),
@@ -1711,6 +1747,36 @@ function normalizeBillingDays(days) {
   return [...new Set(source.map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort((a, b) => a - b);
 }
 
+function normalizeWeeklySchedule(schedule = {}, selectedDays = []) {
+  const days = normalizeBillingDays(selectedDays);
+  const source = schedule && typeof schedule === "object" ? schedule : {};
+  return days.reduce((acc, day) => {
+    const item = source[day] || source[String(day)] || {};
+    acc[day] = {
+      time: String(item.time || item.start || "").trim(),
+      duration: Number(item.duration) || 60,
+      location: String(item.location || "").trim(),
+    };
+    return acc;
+  }, {});
+}
+
+function getWeeklyScheduleFromForm() {
+  const days = getSelectedBillingDays();
+  return days.reduce((acc, day) => {
+    acc[day] = {
+      time: document.querySelector(`[data-student-schedule-time="${day}"]`)?.value.trim() || "",
+      duration: Number(document.querySelector(`[data-student-schedule-duration="${day}"]`)?.value) || 60,
+      location: document.querySelector(`[data-student-schedule-location="${day}"]`)?.value.trim() || "",
+    };
+    return acc;
+  }, {});
+}
+
+function getMissingScheduleDays(schedule = getWeeklyScheduleFromForm(), days = getSelectedBillingDays()) {
+  return normalizeBillingDays(days).filter((day) => !String(schedule?.[day]?.time || "").trim());
+}
+
 function normalizeBillingType(value) {
   const text = String(value || "").toLowerCase();
   return text === "per_class" || text.includes("aula") ? "per_class" : "fixed";
@@ -1755,6 +1821,7 @@ function getStudentDraftFromForm() {
     startDate: studentStartDateInput?.value.trim() || formatToday(),
     frequency: frequencyInput?.value || "3x",
     billingDays: getSelectedBillingDays(),
+    weeklySchedule: getWeeklyScheduleFromForm(),
     billingType: billingTypeInput?.value || "fixed",
     classValue: classValueInput?.value.trim() || "",
     value: valueInput?.value.trim() || "",
@@ -1778,9 +1845,12 @@ function renderStudentPackagePreview() {
   const details = document.createElement("span");
   details.textContent = `${preview.remainingLessons} aula(s) previstas em ${preview.monthLabel}. Valor: ${formatCurrencyNumber(preview.totalValue)}.`;
   const note = document.createElement("small");
-  note.textContent = preview.proportional
-    ? "Valor proporcional do primeiro mês, calculado apenas pelas aulas restantes."
-    : "Pacote calculado para o mês inteiro conforme os dias cadastrados.";
+  const missingScheduleDays = getMissingScheduleDays(draft.weeklySchedule, draft.billingDays);
+  note.textContent = missingScheduleDays.length
+    ? `Horario pendente: ${missingScheduleDays.map(getWeekdayName).join(", ")}.`
+    : preview.proportional
+      ? "Valor proporcional do primeiro mês, calculado apenas pelas aulas restantes."
+      : "Pacote calculado para o mês inteiro conforme os dias cadastrados.";
   studentPackagePreview.append(title, details, note);
 }
 
@@ -1788,6 +1858,42 @@ function setSelectedBillingDays(days) {
   const selected = normalizeBillingDays(days);
   Array.from(billingDayInputs || []).forEach((input) => {
     input.checked = selected.includes(Number(input.value));
+  });
+}
+
+function renderStudentWeeklySchedule(schedule = getWeeklyScheduleFromForm()) {
+  if (!studentWeeklySchedule) return;
+  const days = getSelectedBillingDays();
+  studentWeeklySchedule.innerHTML = "";
+  studentWeeklySchedule.hidden = !days.length;
+  if (!days.length) return;
+
+  const title = document.createElement("strong");
+  title.textContent = "Horários das aulas";
+  studentWeeklySchedule.appendChild(title);
+
+  days.forEach((day) => {
+    const item = schedule?.[day] || {};
+    const row = document.createElement("div");
+    row.className = "student-schedule-row";
+    const label = document.createElement("span");
+    label.textContent = getWeekdayName(day);
+    const time = document.createElement("input");
+    time.placeholder = "07:00";
+    time.value = item.time || "";
+    time.dataset.studentScheduleTime = day;
+    const duration = document.createElement("input");
+    duration.type = "number";
+    duration.min = "30";
+    duration.step = "30";
+    duration.value = item.duration || 60;
+    duration.dataset.studentScheduleDuration = day;
+    const location = document.createElement("input");
+    location.placeholder = "Local";
+    location.value = item.location || "";
+    location.dataset.studentScheduleLocation = day;
+    row.append(label, time, duration, location);
+    studentWeeklySchedule.appendChild(row);
   });
 }
 
@@ -3148,6 +3254,7 @@ function persistAppDataMeta() {
         packageModels: loadPackageModels().length,
         checkins: loadCheckins().length,
         dropInClasses: loadDropInClasses().length,
+        agendaEvents: loadAgendaEvents().length,
         makeupCredits: loadMakeupCredits().length,
         feedbacks: loadWorkoutFeedbacks().length,
       },
@@ -3180,6 +3287,7 @@ function normalizeStoredAppData() {
     localStorage.setItem(packageStorageKey, JSON.stringify(loadClassPackages()));
     localStorage.setItem(packageModelStorageKey, JSON.stringify(loadPackageModels()));
     localStorage.setItem(dropInStorageKey, JSON.stringify(loadDropInClasses()));
+    localStorage.setItem(agendaEventStorageKey, JSON.stringify(loadAgendaEvents()));
     localStorage.setItem(makeupStorageKey, JSON.stringify(loadMakeupCredits()));
     localStorage.setItem(feedbackStorageKey, JSON.stringify(loadWorkoutFeedbacks()));
     localStorage.setItem(financialHistoryStorageKey, JSON.stringify(loadFinancialHistory()));
@@ -3369,6 +3477,56 @@ function saveDropInClasses(classes) {
   }
 }
 
+function normalizeAgendaEvents(events) {
+  return normalizeListData(events)
+    .filter((item) => item && typeof item === "object")
+    .map((item) => ({
+      id: item.id || createId(),
+      studentName: String(item.studentName || item.name || "").trim(),
+      studentId: item.studentId || getStudentIdByName(item.studentName || ""),
+      date: item.date || formatToday(),
+      dateKey: item.dateKey || (parseBrazilianDate(item.date) ? getDateKey(parseBrazilianDate(item.date)) : ""),
+      time: String(item.time || "").trim(),
+      duration: Number(item.duration) || 60,
+      type: item.type || "extra",
+      modality: item.modality || "Aula",
+      location: item.location || "",
+      status: item.status || "confirmada",
+      value: item.value || "",
+      note: item.note || "",
+      source: item.source || "manual",
+      packageId: item.packageId || "",
+      createdAt: item.createdAt || Date.now(),
+      updatedAt: item.updatedAt || item.createdAt || Date.now(),
+    }))
+    .filter((item) => item.dateKey && item.time);
+}
+
+function loadAgendaEvents() {
+  if (memoryAgendaEvents) return memoryAgendaEvents;
+
+  try {
+    const saved = localStorage.getItem(agendaEventStorageKey);
+    memoryAgendaEvents = normalizeAgendaEvents(saved ? JSON.parse(saved) : []);
+  } catch {
+    memoryAgendaEvents = [];
+  }
+
+  return memoryAgendaEvents;
+}
+
+function saveAgendaEvents(events) {
+  memoryAgendaEvents = normalizeAgendaEvents(events);
+
+  try {
+    localStorage.setItem(agendaEventStorageKey, JSON.stringify(memoryAgendaEvents));
+    persistAppDataMeta();
+    queueSupabaseAppStateSync();
+  } catch {
+    showMessage("Agenda atualizada na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
+  }
+}
+
 function addDaysToBrazilianDate(dateText, days) {
   const date = parseBrazilianDate(dateText);
   if (!date) return "";
@@ -3488,6 +3646,7 @@ function normalizeClassPackages(packages) {
       endDate: item.endDate || "",
       makeupLimit: Number(item.makeupLimit) || 0,
       days: item.days || "",
+      schedule: normalizeWeeklySchedule(item.schedule || {}, parsePackageDays(item.days || "")),
       time: item.time || "",
       notes: item.notes || "",
       monthKey: item.monthKey || "",
@@ -3551,6 +3710,7 @@ function upsertAutomaticMonthlyPackageForStudent(student) {
     endDate: preview.endDate.toLocaleDateString("pt-BR"),
     makeupLimit: normalizeMakeupLimit(student.makeupLimit, student.frequency),
     days: preview.daysText,
+    schedule: normalizeWeeklySchedule(student.weeklySchedule || {}, student.billingDays),
     time: "",
     notes: preview.proportional
       ? "Pacote criado automaticamente no cadastro do aluno. Valor proporcional do primeiro mês."
@@ -5267,11 +5427,14 @@ function generatePackageSchedule(classPackage) {
   const cursor = new Date(start);
   while (cursor <= end && lessons.length < total) {
     if (weekdays.includes(cursor.getDay())) {
+      const daySchedule = classPackage.schedule?.[cursor.getDay()] || {};
       lessons.push({
         packageId: classPackage.id,
         date: cursor.toLocaleDateString("pt-BR"),
         dateKey: getDateKey(cursor),
-        time: classPackage.time,
+        time: daySchedule.time || classPackage.time,
+        duration: Number(daySchedule.duration) || Number(classPackage.duration) || 60,
+        location: daySchedule.location || classPackage.location || "",
       });
     }
     cursor.setDate(cursor.getDate() + 1);
@@ -5381,6 +5544,197 @@ function getNoticeDifferenceMinutes(lessonTime, noticeTime) {
   const noticeMinutes = getMinutesFromTime(noticeTime);
   if (lessonMinutes === null || noticeMinutes === null) return null;
   return lessonMinutes - noticeMinutes;
+}
+
+function formatMinutesAsTime(minutes) {
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function getAgendaRange(view = "week", referenceDate = new Date()) {
+  const ref = new Date(referenceDate);
+  ref.setHours(0, 0, 0, 0);
+  if (view === "day") return { start: ref, end: new Date(ref), days: [new Date(ref)] };
+  if (view === "month") {
+    const start = new Date(ref.getFullYear(), ref.getMonth(), 1);
+    const end = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+    const days = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      days.push(new Date(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return { start, end, days };
+  }
+  const start = new Date(ref);
+  const day = start.getDay();
+  start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  const days = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    days.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return { start, end, days };
+}
+
+function getAgendaEventsForRange(view = "week", referenceDate = new Date()) {
+  const { start, end } = getAgendaRange(view, referenceDate);
+  const items = [];
+  loadClassPackages().forEach((classPackage) => {
+    generatePackageSchedule(classPackage).forEach((lesson) => {
+      const date = lesson.dateKey ? new Date(`${lesson.dateKey}T00:00:00`) : parseBrazilianDate(lesson.date);
+      if (!date || date < start || date > end) return;
+      const record = getLessonRecord(classPackage.id, lesson.dateKey);
+      items.push({
+        id: `${classPackage.id}-${lesson.dateKey}`,
+        source: "package",
+        packageId: classPackage.id,
+        studentName: classPackage.studentName,
+        date: lesson.date,
+        dateKey: lesson.dateKey,
+        time: lesson.time || "00:00",
+        duration: Number(lesson.duration) || 60,
+        modality: classPackage.name,
+        location: lesson.location || "Studio Joao Victor",
+        status: record ? getCheckinStatusLabel(record) : "confirmada",
+      });
+    });
+  });
+  loadStudents().forEach((student) => {
+    const schedule = normalizeWeeklySchedule(student.weeklySchedule || {}, student.billingDays);
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      const day = cursor.getDay();
+      const item = schedule[day];
+      if (item?.time) {
+        const dateKey = getDateKey(cursor);
+        const duplicated = items.some((event) =>
+          event.studentName === student.name
+          && event.dateKey === dateKey
+          && event.time === item.time
+        );
+        if (!duplicated) {
+          items.push({
+            id: `fixed-${student.id || student.name}-${dateKey}-${item.time}`,
+            source: "student-fixed",
+            studentName: student.name,
+            studentId: student.id || "",
+            date: cursor.toLocaleDateString("pt-BR"),
+            dateKey,
+            time: item.time,
+            duration: Number(item.duration) || 60,
+            modality: student.modality || student.plan || "Aula fixa",
+            location: item.location || "Studio Joao Victor",
+            status: "confirmada",
+          });
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  });
+  loadAgendaEvents().forEach((event) => {
+    const date = event.dateKey ? new Date(`${event.dateKey}T00:00:00`) : parseBrazilianDate(event.date);
+    if (date && date >= start && date <= end) items.push(event);
+  });
+  return items.sort((a, b) => (a.dateKey || "").localeCompare(b.dateKey || "") || (getMinutesFromTime(a.time) ?? 0) - (getMinutesFromTime(b.time) ?? 0));
+}
+
+function hasAgendaConflict(dateText, timeText, duration = 60, ignoreId = "") {
+  const date = parseBrazilianDate(dateText);
+  const dateKey = date ? getDateKey(date) : "";
+  const start = getMinutesFromTime(timeText);
+  if (!dateKey || start === null) return false;
+  const end = start + (Number(duration) || 60);
+  return getAgendaEventsForRange("day", date).some((event) => {
+    if (ignoreId && event.id === ignoreId) return false;
+    if (event.dateKey !== dateKey || String(event.status || "").toLowerCase().includes("cancel")) return false;
+    const eventStart = getMinutesFromTime(event.time);
+    if (eventStart === null) return false;
+    const eventEnd = eventStart + (Number(event.duration) || 60);
+    return start < eventEnd && end > eventStart;
+  });
+}
+
+function fillAgendaStudentSelects() {
+  const students = loadStudents();
+  [agendaMakeupStudent, agendaDropinStudent].forEach((select) => {
+    if (!select) return;
+    const previous = select.value;
+    select.replaceChildren();
+    students.forEach((student) => {
+      const option = document.createElement("option");
+      option.value = student.name;
+      option.textContent = student.name;
+      select.appendChild(option);
+    });
+    select.value = students.some((student) => student.name === previous) ? previous : students[0]?.name || "";
+  });
+}
+
+function fillAgendaCancelSelect() {
+  if (!agendaCancelEvent) return;
+  const events = getAgendaEventsForRange(adminAgendaView?.value || "week", parseBrazilianDate(adminAgendaDate?.value || "") || new Date())
+    .filter((event) => !String(event.status || "").toLowerCase().includes("cancel"));
+  const previous = agendaCancelEvent.value;
+  agendaCancelEvent.replaceChildren();
+  events.forEach((event) => {
+    const option = document.createElement("option");
+    option.value = event.id;
+    option.textContent = `${event.date} ${event.time} | ${event.studentName || "Aluno"} | ${event.modality}`;
+    agendaCancelEvent.appendChild(option);
+  });
+  agendaCancelEvent.value = events.some((event) => event.id === previous) ? previous : events[0]?.id || "";
+}
+
+function renderAdminAgenda() {
+  if (!adminAgendaGrid) return;
+  if (adminAgendaDate && !adminAgendaDate.value) adminAgendaDate.value = formatToday();
+  fillAgendaStudentSelects();
+  const view = adminAgendaView?.value || "week";
+  const referenceDate = parseBrazilianDate(adminAgendaDate?.value || "") || new Date();
+  const { days } = getAgendaRange(view, referenceDate);
+  const events = getAgendaEventsForRange(view, referenceDate);
+  adminAgendaGrid.innerHTML = "";
+  adminAgendaGrid.className = `agenda-grid-panel agenda-view-${view}`;
+
+  const hours = [];
+  for (let minutes = 5 * 60; minutes <= 22 * 60; minutes += 30) hours.push(minutes);
+
+  days.forEach((day) => {
+    const dayKey = getDateKey(day);
+    const column = document.createElement("section");
+    column.className = "agenda-day-column";
+    const title = document.createElement("h3");
+    title.textContent = `${getWeekdayName(day.getDay())} ${day.toLocaleDateString("pt-BR")}`;
+    column.appendChild(title);
+    const dayEvents = events.filter((event) => event.dateKey === dayKey);
+    hours.forEach((minutes) => {
+      const slotEvents = dayEvents.filter((event) => getMinutesFromTime(event.time) === minutes);
+      if (slotEvents.length) {
+        slotEvents.forEach((event) => {
+          const card = document.createElement("article");
+          card.className = `agenda-event-card status-${String(event.status || "confirmada").toLowerCase().replace(/\s+/g, "-")}`;
+          card.innerHTML = `<strong>${event.time} | ${event.studentName || "Aluno"}</strong><span>${event.modality || "Aula"} ${event.location ? `| ${event.location}` : ""}</span><small>${event.status || "confirmada"}</small>`;
+          column.appendChild(card);
+        });
+      } else if (view !== "month") {
+        const free = document.createElement("div");
+        free.className = "agenda-free-slot";
+        free.textContent = `${formatMinutesAsTime(minutes)} livre`;
+        column.appendChild(free);
+      }
+    });
+    if (view === "month" && !dayEvents.length) {
+      const free = document.createElement("div");
+      free.className = "agenda-free-slot";
+      free.textContent = "Sem aulas";
+      column.appendChild(free);
+    }
+    adminAgendaGrid.appendChild(column);
+  });
+  fillAgendaCancelSelect();
 }
 
 function getCompletedLessons(classPackage) {
@@ -9097,6 +9451,7 @@ function resetStudentForm() {
   if (studentStartDateInput) studentStartDateInput.value = formatToday();
   if (frequencyInput) frequencyInput.value = "3x";
   setSelectedBillingDays([]);
+  renderStudentWeeklySchedule({});
   renderStudentFormTrainingDaysWarning(false);
   if (makeupLimitInput) makeupLimitInput.value = "3";
   if (billingTypeInput) billingTypeInput.value = "fixed";
@@ -9131,6 +9486,7 @@ function startEditingStudent(index, message = "Editando aluno. Altere os campos 
   if (studentStartDateInput) studentStartDateInput.value = student.startDate || formatToday();
   if (frequencyInput) frequencyInput.value = normalizeWeeklyFrequency(student.frequency);
   setSelectedBillingDays(student.billingDays);
+  renderStudentWeeklySchedule(student.weeklySchedule || {});
   renderStudentFormTrainingDaysWarning(!normalizeBillingDays(student.billingDays).length);
   if (makeupLimitInput) makeupLimitInput.value = normalizeMakeupLimit(student.makeupLimit, student.frequency);
   if (billingTypeInput) billingTypeInput.value = normalizeBillingType(student.billingType);
@@ -9181,6 +9537,7 @@ studentForm?.addEventListener("submit", async (event) => {
     startDate: studentStartDateInput?.value.trim() || formatToday(),
     frequency: frequencyInput?.value || "3x",
     billingDays: getSelectedBillingDays(),
+    weeklySchedule: getWeeklyScheduleFromForm(),
     billingType: billingTypeInput?.value || "fixed",
     classValue: classValueInput?.value.trim() || "",
     paymentMethod: paymentMethodInput?.value.trim() || "",
@@ -9200,6 +9557,12 @@ studentForm?.addEventListener("submit", async (event) => {
 
   const missingTrainingDays = !normalizeBillingDays(student.billingDays).length;
   renderStudentFormTrainingDaysWarning(missingTrainingDays);
+  const missingScheduleDays = getMissingScheduleDays(student.weeklySchedule, student.billingDays);
+  if (isPresentialStudent(student) && missingScheduleDays.length) {
+    showMessage(`Horario pendente: informe o horario de ${missingScheduleDays.map(getWeekdayName).join(", ")} antes de salvar.`, "error");
+    renderStudentWeeklySchedule(student.weeklySchedule);
+    return;
+  }
 
   let accessResult = null;
   if (!hasStudentAppAccess(student)) {
@@ -9314,6 +9677,7 @@ async function createOrLinkStudentAccessFromForm() {
     startDate: studentStartDateInput?.value.trim() || students[existingIndex]?.startDate || formatToday(),
     frequency: frequencyInput?.value || students[existingIndex]?.frequency || "3x",
     billingDays: getSelectedBillingDays().length ? getSelectedBillingDays() : students[existingIndex]?.billingDays || [],
+    weeklySchedule: getSelectedBillingDays().length ? getWeeklyScheduleFromForm() : students[existingIndex]?.weeklySchedule || {},
     billingType: billingTypeInput?.value || students[existingIndex]?.billingType || "fixed",
     classValue: classValueInput?.value.trim() || students[existingIndex]?.classValue || "",
     paymentMethod: paymentMethodInput?.value.trim() || students[existingIndex]?.paymentMethod || "",
@@ -9395,6 +9759,7 @@ async function sendStudentAccessInviteFromForm() {
     startDate: studentStartDateInput?.value.trim() || students[existingIndex]?.startDate || formatToday(),
     frequency: frequencyInput?.value || students[existingIndex]?.frequency || "3x",
     billingDays: getSelectedBillingDays().length ? getSelectedBillingDays() : students[existingIndex]?.billingDays || [],
+    weeklySchedule: getSelectedBillingDays().length ? getWeeklyScheduleFromForm() : students[existingIndex]?.weeklySchedule || {},
     billingType: billingTypeInput?.value || students[existingIndex]?.billingType || "fixed",
     classValue: classValueInput?.value.trim() || students[existingIndex]?.classValue || "",
     paymentMethod: paymentMethodInput?.value.trim() || students[existingIndex]?.paymentMethod || "",
@@ -9496,6 +9861,10 @@ async function createStudentTemporaryAccessFromForm() {
     modality: modalityInput?.value || baseStudent.modality || "presencial",
     startDate: studentStartDateInput?.value.trim() || baseStudent.startDate || formatToday(),
     frequency: frequencyInput?.value || baseStudent.frequency || "3x",
+    billingDays: getSelectedBillingDays().length ? getSelectedBillingDays() : baseStudent.billingDays || [],
+    weeklySchedule: getSelectedBillingDays().length ? getWeeklyScheduleFromForm() : baseStudent.weeklySchedule || {},
+    billingType: billingTypeInput?.value || baseStudent.billingType || "fixed",
+    classValue: classValueInput?.value.trim() || baseStudent.classValue || "",
     makeupLimit: normalizeMakeupLimit(makeupLimitInput?.value || baseStudent.makeupLimit, frequencyInput?.value || baseStudent.frequency || "3x"),
     value: valueInput?.value.trim() || baseStudent.value || "",
     due: dueInput?.value.trim() || baseStudent.due || "",
@@ -9970,6 +10339,133 @@ packageModuleMenu?.addEventListener("click", (event) => {
   openPackageSubpage(button.dataset.packagePageTarget, button.dataset.packageMode || "");
 });
 
+document.querySelectorAll("[data-agenda-action]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const action = button.dataset.agendaAction;
+    if (agendaMakeupForm) agendaMakeupForm.hidden = action !== "makeup";
+    if (agendaDropinForm) agendaDropinForm.hidden = action !== "dropin";
+    if (agendaCancelForm) agendaCancelForm.hidden = action !== "cancel";
+    fillAgendaStudentSelects();
+    fillAgendaCancelSelect();
+  });
+});
+
+[adminAgendaView, adminAgendaDate].forEach((input) => {
+  input?.addEventListener("change", renderAdminAgenda);
+  input?.addEventListener("input", () => setTimeout(renderAdminAgenda, 0));
+});
+
+agendaMakeupForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const studentName = agendaMakeupStudent?.value || "";
+  const date = agendaMakeupDate?.value.trim() || "";
+  const time = agendaMakeupTime?.value.trim() || "";
+  const duration = Number(agendaMakeupDuration?.value) || 60;
+  if (hasAgendaConflict(date, time, duration)) {
+    showMessage("Esse horario ja esta ocupado.", "error");
+    return;
+  }
+  const parsedDate = parseBrazilianDate(date);
+  const events = loadAgendaEvents();
+  events.push({
+    id: createId(),
+    studentName,
+    studentId: getStudentIdByName(studentName),
+    date,
+    dateKey: parsedDate ? getDateKey(parsedDate) : "",
+    time,
+    duration,
+    type: "makeup",
+    modality: "Reposicao",
+    status: "reposicao",
+    note: agendaMakeupNote?.value.trim() || "",
+    source: "manual",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+  saveAgendaEvents(events);
+  agendaMakeupForm.reset();
+  renderAdminAgenda();
+  showMessage("Reposicao adicionada na agenda.");
+});
+
+agendaDropinForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const studentName = agendaDropinName?.value.trim() || agendaDropinStudent?.value || "";
+  const date = agendaDropinDate?.value.trim() || "";
+  const time = agendaDropinTime?.value.trim() || "";
+  const duration = Number(agendaDropinDuration?.value) || 60;
+  if (hasAgendaConflict(date, time, duration)) {
+    showMessage("Esse horario ja esta ocupado.", "error");
+    return;
+  }
+  const parsedDate = parseBrazilianDate(date);
+  const dropIn = {
+    id: createId(),
+    studentName,
+    studentId: getStudentIdByName(studentName),
+    date,
+    modality: "Aula avulsa",
+    value: agendaDropinValue?.value.trim() || "",
+    status: agendaDropinStatus?.value || "pendente",
+    note: `Agenda ${time}`,
+    createdAt: Date.now(),
+  };
+  saveDropInClasses([...loadDropInClasses(), dropIn]);
+  saveAgendaEvents([...loadAgendaEvents(), {
+    id: createId(),
+    studentName,
+    studentId: getStudentIdByName(studentName),
+    date,
+    dateKey: parsedDate ? getDateKey(parsedDate) : "",
+    time,
+    duration,
+    type: "dropin",
+    modality: "Aula avulsa",
+    status: agendaDropinStatus?.value || "pendente",
+    value: agendaDropinValue?.value.trim() || "",
+    source: "manual",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }]);
+  agendaDropinForm.reset();
+  renderAdminAgenda();
+  renderPackageAdminList();
+  showMessage("Aula avulsa adicionada na agenda.");
+});
+
+agendaCancelForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const eventId = agendaCancelEvent?.value || "";
+  const currentEvent = getAgendaEventsForRange(adminAgendaView?.value || "week", parseBrazilianDate(adminAgendaDate?.value || "") || new Date()).find((item) => item.id === eventId);
+  if (!currentEvent) return;
+  if (currentEvent.source === "package" && currentEvent.packageId && agendaCancelMakeup?.value === "yes") {
+    const classPackage = loadClassPackages().find((item) => item.id === currentEvent.packageId);
+    if (classPackage) {
+      registerPersonalLessonReschedule({
+        studentName: currentEvent.studentName,
+        classPackage,
+        date: currentEvent.date,
+        lessonTime: currentEvent.time,
+        reason: agendaCancelReason?.value.trim() || "Cancelamento registrado pela agenda.",
+      });
+    }
+  }
+  saveAgendaEvents([...loadAgendaEvents(), {
+    ...currentEvent,
+    id: createId(),
+    type: "cancellation",
+    status: agendaCancelMakeup?.value === "yes" ? "cancelada - gera reposicao" : "cancelada",
+    note: agendaCancelReason?.value.trim() || "",
+    source: "manual-cancel",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }]);
+  agendaCancelForm.reset();
+  renderAdminAgenda();
+  showMessage("Cancelamento registrado na agenda.");
+});
+
 document.querySelectorAll("[data-package-page-back]").forEach((button) => {
   button.addEventListener("click", showPackageModuleMenu);
 });
@@ -10099,8 +10595,13 @@ modalityInput?.addEventListener("change", renderStudentPackagePreview);
 studentStartDateInput?.addEventListener("input", () => setTimeout(renderStudentPackagePreview, 0));
 studentStartDateInput?.addEventListener("change", renderStudentPackagePreview);
 Array.from(billingDayInputs || []).forEach((input) => {
-  input.addEventListener("change", renderStudentPackagePreview);
+  input.addEventListener("change", () => {
+    renderStudentWeeklySchedule();
+    renderStudentPackagePreview();
+  });
 });
+
+studentWeeklySchedule?.addEventListener("input", renderStudentPackagePreview);
 
 studentCheckinButton?.addEventListener("click", () => {
   const studentName = workoutViewStudent?.value;
@@ -10720,6 +11221,13 @@ function openAdminModule(moduleName) {
   adminModules.forEach((module) => {
     module.hidden = module.id !== `admin-module-${moduleName}`;
   });
+  navButtons.forEach((button) => {
+    if (button.dataset.adminShortcut) {
+      button.classList.toggle("active", button.dataset.adminShortcut === moduleName);
+    } else if (button.dataset.view === "admin") {
+      button.classList.toggle("active", moduleName !== "schedule");
+    }
+  });
   if (moduleName === "assessments") {
     ensureAssessmentProfessionalUi();
     syncAssessmentStudentSelects();
@@ -10748,6 +11256,9 @@ function openAdminModule(moduleName) {
   }
   if (moduleName === "alerts") {
     renderAdminAlerts();
+  }
+  if (moduleName === "schedule") {
+    renderAdminAgenda();
   }
   if (moduleName === "workouts") {
     showWorkoutStudentDirectory();

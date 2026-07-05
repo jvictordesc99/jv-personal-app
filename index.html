@@ -64,6 +64,7 @@
           <button class="nav-item" data-view="evolucao" data-student-only>Evolução</button>
           <button class="nav-item" data-view="perfil" data-student-only>Perfil</button>
           <button class="nav-item" data-view="admin" data-admin-only>Administrativo</button>
+          <button class="nav-item" data-view="admin" data-admin-only data-admin-shortcut="schedule">Agenda</button>
         </nav>
 
         <a class="whatsapp" href="https://wa.me/5519992782696" target="_blank" rel="noreferrer">
@@ -305,6 +306,7 @@
             <article id="admin-alert-card"><strong>Alertas</strong><span>Dores, cancelamentos e vencimentos.</span><button data-admin-target="alerts">Abrir</button></article>
             <article><strong>Evolução</strong><span>Cargas, recordes, frequência e feedbacks.</span><button data-admin-target="evolution">Abrir</button></article>
             <article><strong>Avaliações</strong><span>Registrar medidas e fotos de evolução.</span><button data-admin-target="assessments">Abrir</button></article>
+            <article><strong>Agenda</strong><span>Semana, mês, horários livres e remarcações.</span><button data-admin-target="schedule">Abrir</button></article>
             <article><strong>Pacotes e Check-ins</strong><span>Pacotes de aulas, agenda e presenças.</span><button data-admin-target="checkins">Abrir</button></article>
             <article><strong>CobranÃ§as</strong><span>PrevisÃ£o mensal, WhatsApp e pagamentos.</span><button data-admin-target="finance">Abrir</button></article>
             <article class="payment-blocked-panel" id="payment-blocked-panel"></article>
@@ -472,6 +474,7 @@
               <label><input type="checkbox" name="student-billing-day" value="6" />Sab</label>
               <label><input type="checkbox" name="student-billing-day" value="0" />Dom</label>
             </fieldset>
+            <div class="student-weekly-schedule" id="student-weekly-schedule"></div>
             <label>Tipo de cobranca
               <select id="student-billing-type">
                 <option value="fixed">Mensalidade fixa</option>
@@ -533,6 +536,59 @@
                 </select>
               </label>
               <div class="alerts-grid" id="admin-alerts-list"></div>
+            </div>
+          </section>
+          <section class="admin-module" id="admin-module-schedule" hidden>
+            <button type="button" class="admin-back-button secondary" data-admin-back>Voltar ao Administrativo</button>
+            <div class="schedule-admin-panel">
+              <div class="section-title compact-title">
+                <p class="eyebrow">Agenda</p>
+                <h2>Agenda do Personal</h2>
+                <span>Aulas fixas, reposições, avulsas, cancelamentos e horários livres.</span>
+              </div>
+              <div class="agenda-toolbar">
+                <label>Visualização
+                  <select id="admin-agenda-view">
+                    <option value="day">Dia</option>
+                    <option value="week" selected>Semana</option>
+                    <option value="month">Mês</option>
+                  </select>
+                </label>
+                <label>Data de referência<input id="admin-agenda-date" placeholder="Ex: 10/06/2026" /></label>
+                <div class="agenda-actions">
+                  <button type="button" class="secondary" data-agenda-action="makeup">Adicionar reposição</button>
+                  <button type="button" class="secondary" data-agenda-action="dropin">Adicionar aula avulsa</button>
+                  <button type="button" class="secondary" data-agenda-action="cancel">Cancelar aula</button>
+                </div>
+              </div>
+              <form class="agenda-form" id="agenda-makeup-form" hidden>
+                <h3>Adicionar reposição</h3>
+                <label>Aluno<select id="agenda-makeup-student"></select></label>
+                <label>Data<input id="agenda-makeup-date" placeholder="Ex: 10/06/2026" /></label>
+                <label>Horário<input id="agenda-makeup-time" placeholder="Ex: 07:00" /></label>
+                <label>Duração<input id="agenda-makeup-duration" type="number" min="30" step="30" value="60" /></label>
+                <label>Observação<textarea id="agenda-makeup-note" placeholder="Observação da reposição"></textarea></label>
+                <button type="submit">Salvar reposição</button>
+              </form>
+              <form class="agenda-form" id="agenda-dropin-form" hidden>
+                <h3>Adicionar aula avulsa</h3>
+                <label>Aluno cadastrado<select id="agenda-dropin-student"></select></label>
+                <label>Nome manual<input id="agenda-dropin-name" placeholder="Opcional, se não estiver cadastrado" /></label>
+                <label>Data<input id="agenda-dropin-date" placeholder="Ex: 10/06/2026" /></label>
+                <label>Horário<input id="agenda-dropin-time" placeholder="Ex: 08:00" /></label>
+                <label>Duração<input id="agenda-dropin-duration" type="number" min="30" step="30" value="60" /></label>
+                <label>Valor<input id="agenda-dropin-value" placeholder="R$ 60,00" /></label>
+                <label>Status<select id="agenda-dropin-status"><option value="pendente">Pendente</option><option value="pago">Pago</option><option value="cancelado">Cancelado</option></select></label>
+                <button type="submit">Salvar aula avulsa</button>
+              </form>
+              <form class="agenda-form" id="agenda-cancel-form" hidden>
+                <h3>Cancelar aula</h3>
+                <label>Aula<select id="agenda-cancel-event"></select></label>
+                <label>Motivo<textarea id="agenda-cancel-reason" placeholder="Motivo do cancelamento"></textarea></label>
+                <label>Gerar reposição?<select id="agenda-cancel-makeup"><option value="no">Não</option><option value="yes">Sim</option></select></label>
+                <button type="submit">Registrar cancelamento</button>
+              </form>
+              <div class="agenda-grid-panel" id="admin-agenda-grid"></div>
             </div>
           </section>
           <section class="admin-module" id="admin-module-assessments" hidden>
