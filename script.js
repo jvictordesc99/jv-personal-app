@@ -9274,16 +9274,24 @@ function createProfileMetric(label, value, detail = "") {
   return card;
 }
 
-function createAccountSecurityPanel() {
+function getStudentBirthDateInputValue(student = {}) {
+  const rawDate = student.birthDate || student.birthdate || student.birth || "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) return rawDate;
+  const parsedDate = parseDateLike(rawDate);
+  if (!parsedDate || Number.isNaN(parsedDate.getTime())) return "";
+  return parsedDate.toISOString().slice(0, 10);
+}
+
+function createStudentDataPanel(student) {
   const section = document.createElement("section");
-  section.className = "account-security-card";
+  section.className = "account-security-card student-data-card";
 
   const title = document.createElement("div");
   const eyebrow = document.createElement("p");
   eyebrow.className = "eyebrow";
-  eyebrow.textContent = "Segurança da Conta";
+  eyebrow.textContent = "Meus dados";
   const heading = document.createElement("h3");
-  heading.textContent = "Alterar senha";
+  heading.textContent = "Dados de acesso";
   title.append(eyebrow, heading);
   section.appendChild(title);
 
@@ -9295,22 +9303,34 @@ function createAccountSecurityPanel() {
   }
 
   const form = document.createElement("form");
-  form.id = "student-password-form";
-  form.className = "account-security-form";
+  form.id = "student-profile-data-form";
+  form.className = "account-security-form student-data-form";
+  const emailValue = student.email_login || student.email || currentSupabaseUser?.email || "";
   form.innerHTML = `
+    <label>Nome completo
+      <input type="text" name="fullName" value="${escapeHtml(student.name || "")}" readonly />
+    </label>
+    <label>E-mail
+      <input type="email" name="email" value="${escapeHtml(emailValue)}" autocomplete="email" />
+    </label>
+    <label>Celular/WhatsApp
+      <input type="tel" name="phone" value="${escapeHtml(student.phone || student.whatsapp || "")}" autocomplete="tel" />
+    </label>
+    <label>Data de nascimento
+      <input type="date" name="birthDate" value="${escapeHtml(getStudentBirthDateInputValue(student))}" />
+    </label>
     <label>Nova senha
       <input type="password" name="newPassword" autocomplete="new-password" minlength="6" placeholder="Mínimo 6 caracteres" />
     </label>
     <label>Confirmar nova senha
       <input type="password" name="confirmPassword" autocomplete="new-password" minlength="6" placeholder="Repita a nova senha" />
     </label>
-    <button type="submit" class="primary">Alterar senha</button>
-    <p class="save-message" data-password-message></p>
+    <button type="submit" class="primary">Salvar alterações</button>
+    <p class="save-message" data-profile-message></p>
   `;
   section.appendChild(form);
   return section;
 }
-
 function getRecentLoadProgressText(studentName) {
   const groups = Object.values(groupProgressByExercise(studentName));
   const latestGroup = groups
@@ -9377,8 +9397,8 @@ function renderStudentProfile() {
   );
 
   studentProfilePanel.append(hero, grid);
-  if (currentUserType === "student" && currentSupabaseUser) {
-    studentProfilePanel.appendChild(createAccountSecurityPanel());
+  if (currentUserType === "student") {
+    studentProfilePanel.appendChild(createStudentDataPanel(student));
   }
 }
 
@@ -10208,66 +10228,141 @@ currentWorkout?.addEventListener("submit", (event) => {
 });
 
 studentProfilePanel?.addEventListener("submit", async (event) => {
-  const form = event.target.closest("#student-password-form");
+  const form = event.target.closest("#student-profile-data-form");
   if (!form) return;
 
   event.preventDefault();
-  const message = form.querySelector("[data-password-message]");
-  const newPassword = form.elements.newPassword?.value || "";
-  const confirmPassword = form.elements.confirmPassword?.value || "";
+  const message = form.querySelector("[data-profile-message]");
+  const setProfileMessage = (text, isError = false) => {
+    if (!message) return;
+    message.textContent = text;
+    message.classList.toggle("error", isError);
+  };
 
-  if (newPassword.length < 6) {
-    if (message) {
-      message.textContent = "A senha deve ter pelo menos 6 caracteres.";
-      message.classList.add("error");
-    }
+  if (currentUserType !== "student") {
+    setProfileMessage("Somente o aluno logado pode editar estes dados.", true);
     return;
   }
 
-  if (newPassword !== confirmPassword) {
-    if (message) {
-      message.textContent = "As senhas não conferem.";
-      message.classList.add("error");
-    }
+  const students = loadStudents();
+  const currentStudent = findStudentByIdentifier(selectedStudentProfile);
+  const studentIndex = students.findIndex((student) => student.id === currentStudent?.id || student.name === currentStudent?.name);
+  if (!currentStudent || studentIndex < 0) {
+    setProfileMessage("Aluno logado não foi encontrado.", true);
+    return;
+  }
+
+  const authId = getStudentAuthUserId(currentStudent);
+  if (currentSupabaseUser?.id && authId && currentSupabaseUser.id !== authId) {
+    setProfileMessage("Este login não pode editar outro aluno.", true);
+    return;
+  }
+  if (currentSupabaseProfile?.student_id && currentStudent.id && String(currentSupabaseProfile.student_id) !== String(currentStudent.id)) {
+    setProfileMessage("Este login não pode editar outro aluno.", true);
     return;
   }
 
   const client = getSupabaseClient();
-  if (!client || !currentSupabaseUser) {
-    if (message) {
-      message.textContent = "Faça login pelo Supabase para alterar a senha.";
-      message.classList.add("error");
-    }
+  const nextEmail = String(form.elements.email?.value || "").trim().toLowerCase();
+  const nextPhone = String(form.elements.phone?.value || "").trim();
+  const nextBirthDate = String(form.elements.birthDate?.value || "").trim();
+  const newPassword = form.elements.newPassword?.value || "";
+  const confirmPassword = form.elements.confirmPassword?.value || "";
+  const emailChanged = nextEmail && nextEmail !== String(currentStudent.email_login || currentStudent.email || currentSupabaseUser?.email || "").toLowerCase();
+  const passwordRequested = Boolean(newPassword || confirmPassword);
+  let passwordChanged = false;
+  let emailConfirmationNotice = "";
+
+  if (nextEmail && !isLikelyRealEmail(nextEmail)) {
+    setProfileMessage("Informe um e-mail válido para salvar.", true);
     return;
   }
 
-  const { error } = await client.auth.updateUser({ password: newPassword });
-  if (error) {
-    console.error("Erro ao alterar senha do aluno.", error);
-    if (message) {
-      message.textContent = "Não foi possível alterar a senha agora.";
-      message.classList.add("error");
+  if (passwordRequested) {
+    if (!newPassword || !confirmPassword) {
+      setProfileMessage("Preencha a nova senha e a confirmação.", true);
+      return;
     }
-    return;
+    if (newPassword.length < 6) {
+      setProfileMessage("A senha deve ter pelo menos 6 caracteres.", true);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setProfileMessage("As senhas não conferem.", true);
+      return;
+    }
+    if (!client || !currentSupabaseUser) {
+      setProfileMessage("Entre com login real para alterar a senha.", true);
+      return;
+    }
+
+    const { error } = await client.auth.updateUser({ password: newPassword });
+    if (error) {
+      console.error("Erro ao alterar senha do aluno.", error);
+      setProfileMessage("Não foi possível alterar a senha agora.", true);
+      return;
+    }
+    passwordChanged = true;
   }
 
-  const profileResult = await upsertSupabaseProfile({
-    ...(currentSupabaseProfile || {}),
-    auth_user_id: currentSupabaseUser.id,
-    email: currentSupabaseUser.email,
-    role: "aluno",
-    first_login: false,
-  });
-  if (!profileResult.error) currentSupabaseProfile = profileResult.data;
-
-  form.reset();
-  if (message) {
-    message.textContent = "Senha alterada com sucesso.";
-    message.classList.remove("error");
+  if (emailChanged && client && currentSupabaseUser) {
+    const { data, error } = await client.auth.updateUser({ email: nextEmail });
+    if (error) {
+      console.error("Erro ao alterar e-mail do aluno.", error);
+      setProfileMessage("Não foi possível alterar o e-mail agora.", true);
+      return;
+    }
+    if (data?.user) currentSupabaseUser = data.user;
+    if (data?.user?.email && data.user.email.toLowerCase() !== nextEmail) {
+      emailConfirmationNotice = " Verifique seu e-mail para confirmar a alteração.";
+    }
   }
+
+  const updatedStudent = {
+    ...students[studentIndex],
+    email: nextEmail || students[studentIndex].email || "",
+    email_login: nextEmail || students[studentIndex].email_login || "",
+    phone: nextPhone,
+    whatsapp: nextPhone,
+    birthDate: nextBirthDate,
+    auth_user_id: students[studentIndex].auth_user_id || currentSupabaseUser?.id || "",
+    authUserId: students[studentIndex].authUserId || currentSupabaseUser?.id || "",
+    supabaseUserId: students[studentIndex].supabaseUserId || currentSupabaseUser?.id || "",
+    role: students[studentIndex].role || "aluno",
+  };
+  students[studentIndex] = updatedStudent;
+  saveStudents(students);
+  selectedStudentProfile = updatedStudent.name;
+  setLocalValue("student-profile", selectedStudentProfile);
+
+  const profileAuthId = currentSupabaseUser?.id || getStudentAuthUserId(updatedStudent);
+  if (profileAuthId) {
+    const profileResult = await upsertSupabaseProfile({
+      ...(currentSupabaseProfile || {}),
+      auth_user_id: profileAuthId,
+      email: nextEmail || currentSupabaseUser?.email || updatedStudent.email || "",
+      role: "aluno",
+      student_id: updatedStudent.id || currentSupabaseProfile?.student_id || "",
+      name: updatedStudent.name,
+      first_login: passwordChanged ? false : currentSupabaseProfile?.first_login !== false,
+    });
+    if (!profileResult.error) {
+      currentSupabaseProfile = profileResult.data;
+    } else {
+      console.warn("Dados do aluno foram salvos, mas o profile não foi atualizado.", profileResult.error);
+    }
+  }
+
+  form.elements.newPassword.value = "";
+  form.elements.confirmPassword.value = "";
+  fillStudentSelects();
   renderStudentProfile();
+  const freshMessage = studentProfilePanel.querySelector("[data-profile-message]");
+  if (freshMessage) {
+    freshMessage.textContent = `Alterações salvas com sucesso.${emailConfirmationNotice}`;
+    freshMessage.classList.remove("error");
+  }
 });
-
 adminLoadStudent?.addEventListener("change", renderAdminLoadEvolution);
 adminEvolutionStudent?.addEventListener("change", () => {
   fillAdminEvolutionExercises();
