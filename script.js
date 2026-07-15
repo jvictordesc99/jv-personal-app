@@ -963,12 +963,12 @@ async function upsertAppStateWithRest(payload) {
 
 async function syncAppStateToSupabase() {
   console.info("syncAppStateToSupabase chamado.");
-  if (isApplyingRemoteState) return;
+  if (isApplyingRemoteState) return { ok: true, skipped: true, reason: "applying-remote-state" };
 
   const client = getSupabaseAppStateClient();
   if (!client) {
     console.error("syncAppStateToSupabase interrompido: cliente Supabase indisponivel.");
-    return;
+    return { ok: false, error: { message: "Cliente Supabase indisponivel." } };
   }
 
   const appState = getAppStateSnapshot();
@@ -999,27 +999,29 @@ async function syncAppStateToSupabase() {
       if (restResult.ok) {
         console.info(`Upsert app_state via REST concluido com sucesso: ${JSON.stringify(restResult.data)}`);
         console.info(`Auditoria app_state sincronizado via REST: ${JSON.stringify(auditCounts)}`);
-        return;
+        return { ok: true, data: restResult.data, via: "rest" };
       }
       showSupabaseSyncWarning("Dados salvos localmente. Supabase indisponivel no momento.");
       console.error(`Erro retornado pelo fallback REST app_state: ${JSON.stringify(restResult.error)}`);
       logSupabaseAppStateError("salvar via REST", restResult.error);
-      return;
+      return { ok: false, error: restResult.error || error };
     }
 
     console.info(`Upsert app_state concluido com sucesso: ${JSON.stringify(data)}`);
     console.info(`Auditoria app_state sincronizado: ${JSON.stringify(auditCounts)}`);
+    return { ok: true, data, via: "supabase" };
   } catch (error) {
     logSupabaseAppStateError("salvar por rede/CDN", error);
     const restResult = await upsertAppStateWithRest(payload);
     if (restResult.ok) {
       console.info(`Upsert app_state via REST concluido com sucesso: ${JSON.stringify(restResult.data)}`);
       console.info(`Auditoria app_state sincronizado via REST: ${JSON.stringify(auditCounts)}`);
-      return;
+      return { ok: true, data: restResult.data, via: "rest" };
     }
     showSupabaseSyncWarning("Dados salvos localmente. Supabase indisponivel no momento.");
     console.error(`Erro retornado pelo fallback REST app_state: ${JSON.stringify(restResult.error)}`);
     logSupabaseAppStateError("salvar via REST", restResult.error);
+    return { ok: false, error: restResult.error || error };
   }
 }
 
@@ -1028,6 +1030,24 @@ function queueSupabaseAppStateSync() {
   window.clearTimeout(supabaseSyncTimer);
   console.info("Sincronizacao app_state agendada.");
   supabaseSyncTimer = window.setTimeout(syncAppStateToSupabase, 300);
+}
+
+async function flushAppStateSyncNow(context = "manual") {
+  window.clearTimeout(supabaseSyncTimer);
+  console.info(`Sincronizando app_state agora: ${context}`);
+  const result = await syncAppStateToSupabase();
+  if (!result?.ok) {
+    console.error("Falha ao sincronizar app_state imediatamente.", {
+      context,
+      error: result?.error,
+    });
+  }
+  return result;
+}
+
+function getStepErrorMessage(error) {
+  if (!error) return "erro desconhecido";
+  return error.message || error.details || error.hint || JSON.stringify(error);
 }
 
 function logLocalPersistenceAudit(context = "local") {
@@ -3497,6 +3517,7 @@ function normalizeAgendaEvents(events) {
       note: item.note || "",
       source: item.source || "manual",
       packageId: item.packageId || "",
+      personalId: item.personalId || item.ownerId || personalAdminEmail,
       createdAt: item.createdAt || Date.now(),
       updatedAt: item.updatedAt || item.createdAt || Date.now(),
     }))
@@ -3529,23 +3550,39 @@ function saveAgendaEvents(events) {
 }
 
 function syncAutomaticPackageAgendaEvents(student, classPackage) {
-  if (!student || !classPackage) return [];
+  if (!student || !classPackage) {
+    return { ok: false, events: [], created: 0, expected: 0, error: new Error("Aluno ou pacote ausente para gerar agenda.") };
+  }
   const todayKey = getDateKey();
   const existingEvents = loadAgendaEvents();
+  const lessons = generatePackageSchedule(classPackage);
   const keptEvents = existingEvents.filter((event) => {
     const samePackage = event.packageId === classPackage.id && event.source === "pacote automático";
     const isFuture = !event.dateKey || event.dateKey >= todayKey;
     return !(samePackage && isFuture);
   });
   const nextEvents = [...keptEvents];
-  generatePackageSchedule(classPackage).forEach((lesson) => {
-    const duplicate = nextEvents.some((event) =>
-      event.studentId === (student.id || "")
+  let created = 0;
+  lessons.forEach((lesson) => {
+    const duplicateIndex = nextEvents.findIndex((event) =>
+      ((student.id && event.studentId === student.id) || event.studentName === student.name)
       && event.dateKey === lesson.dateKey
       && event.time === lesson.time
       && !String(event.status || "").toLowerCase().includes("cancel")
     );
-    if (duplicate) return;
+    if (duplicateIndex >= 0) {
+      nextEvents[duplicateIndex] = {
+        ...nextEvents[duplicateIndex],
+        studentName: student.name,
+        studentId: student.id || nextEvents[duplicateIndex].studentId || "",
+        type: "package",
+        source: nextEvents[duplicateIndex].source === "manual" ? "pacote automático" : nextEvents[duplicateIndex].source,
+        packageId: classPackage.id,
+        personalId: classPackage.personalId || currentSupabaseUser?.id || personalAdminEmail,
+        updatedAt: Date.now(),
+      };
+      return;
+    }
     nextEvents.push({
       id: createId(),
       studentName: student.name,
@@ -3560,12 +3597,14 @@ function syncAutomaticPackageAgendaEvents(student, classPackage) {
       status: "confirmada",
       source: "pacote automático",
       packageId: classPackage.id,
+      personalId: classPackage.personalId || currentSupabaseUser?.id || personalAdminEmail,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
+    created += 1;
   });
   saveAgendaEvents(nextEvents);
-  return nextEvents;
+  return { ok: true, events: nextEvents, created, expected: lessons.length };
 }
 
 function addDaysToBrazilianDate(dateText, days) {
@@ -3696,6 +3735,7 @@ function normalizeClassPackages(packages) {
       expectedValue: item.expectedValue || item.value || "",
       status: item.status || "ativo",
       autoGenerated: item.autoGenerated === true,
+      personalId: item.personalId || item.ownerId || personalAdminEmail,
       createdAt: item.createdAt || Date.now(),
       updatedAt: item.updatedAt || item.createdAt || Date.now(),
     }))
@@ -3762,6 +3802,7 @@ function upsertAutomaticMonthlyPackageForStudent(student) {
     expectedValue: formatCurrencyNumber(preview.totalValue),
     status: "ativo",
     autoGenerated: true,
+    personalId: currentSupabaseUser?.id || personalAdminEmail,
     createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now(),
   };
@@ -5375,7 +5416,15 @@ function getDateKey(date = new Date()) {
 }
 
 function parseBrazilianDate(dateText) {
-  const match = String(dateText || "").match(/(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?/);
+  const value = String(dateText || "").trim();
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const date = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+    date.setHours(0, 0, 0, 0);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const match = value.match(/(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?/);
   if (!match) return null;
 
   const day = Number(match[1]);
@@ -9625,6 +9674,10 @@ studentForm?.addEventListener("submit", async (event) => {
 
   const missingTrainingDays = !normalizeBillingDays(student.billingDays).length;
   renderStudentFormTrainingDaysWarning(missingTrainingDays);
+  if (isPresentialStudent(student) && missingTrainingDays) {
+    showMessage("Aluno presencial precisa ter dias de treino cadastrados para criar pacote e agenda automaticamente.", "error");
+    return;
+  }
   const missingScheduleDays = getMissingScheduleDays(student.weeklySchedule, student.billingDays);
   if (isPresentialStudent(student) && missingScheduleDays.length) {
     showMessage(`Horario pendente: informe o horario de ${missingScheduleDays.map(getWeekdayName).join(", ")} antes de salvar.`, "error");
@@ -9652,14 +9705,60 @@ studentForm?.addEventListener("submit", async (event) => {
     students[editingStudentIndex] = student;
   }
 
-  saveStudents(students);
+  let automaticPackage = null;
+  let agendaResult = null;
+  let supabaseSyncResult = null;
 
-  if (previousName && previousName !== student.name) {
-    syncStudentNameReferences(previousName, student.name);
+  try {
+    saveStudents(students);
+
+    if (previousName && previousName !== student.name) {
+      syncStudentNameReferences(previousName, student.name);
+    }
+
+    if (isPresentialStudent(student)) {
+      automaticPackage = upsertAutomaticMonthlyPackageForStudent(student);
+      if (!automaticPackage?.id) {
+        throw new Error("pacote automático não foi criado. Verifique data de início, dias da semana, frequência e valores do aluno.");
+      }
+
+      agendaResult = syncAutomaticPackageAgendaEvents(student, automaticPackage);
+      if (!agendaResult?.ok) {
+        throw new Error(`agenda não foi gerada: ${getStepErrorMessage(agendaResult?.error)}`);
+      }
+
+      const packageAgendaCount = loadAgendaEvents().filter((event) =>
+        event.packageId === automaticPackage.id
+        && ((student.id && event.studentId === student.id) || event.studentName === student.name)
+        && !String(event.status || "").toLowerCase().includes("cancel")
+      ).length;
+      if (packageAgendaCount < Number(automaticPackage.total || 0)) {
+        throw new Error(`agenda incompleta: ${packageAgendaCount}/${automaticPackage.total} aulas vinculadas ao pacote.`);
+      }
+    }
+
+    supabaseSyncResult = await flushAppStateSyncNow("cadastro de aluno, pacote e agenda");
+    if (!supabaseSyncResult?.ok) {
+      console.error("Aluno/pacote/agenda salvos localmente, mas Supabase falhou.", {
+        aluno: student.name,
+        pacote: automaticPackage,
+        agenda: agendaResult,
+        supabase: supabaseSyncResult?.error,
+      });
+      showMessage(`Aluno${automaticPackage ? ", pacote e aulas" : ""} salvos localmente, mas Supabase falhou na sincronização: ${getStepErrorMessage(supabaseSyncResult?.error)}.`, "error");
+      return;
+    }
+  } catch (error) {
+    console.error("Falha no fluxo de cadastro do aluno.", {
+      aluno: student,
+      etapa: automaticPackage ? "agenda" : "pacote",
+      pacote: automaticPackage,
+      agenda: agendaResult,
+      erro: error,
+    });
+    showMessage(`Aluno salvo, mas falhou na etapa ${automaticPackage ? "agenda" : "pacote"}: ${getStepErrorMessage(error)}`, "error");
+    return;
   }
-
-  const automaticPackage = upsertAutomaticMonthlyPackageForStudent(student);
-  if (automaticPackage) syncAutomaticPackageAgendaEvents(student, automaticPackage);
 
   renderStudents();
   fillStudentSelects();
@@ -9671,7 +9770,10 @@ studentForm?.addEventListener("submit", async (event) => {
   renderBillingList();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
   if (accessResult?.created) {
-    showMessage(`Aluno cadastrado e acesso criado com sucesso.\n\nEmail: ${student.email_login || student.email}\nSenha temporária: ${accessResult.temporaryPassword}`);
+    const successMessage = automaticPackage
+      ? `Aluno, pacote e aulas criados com sucesso.\n\nEmail: ${student.email_login || student.email}\nSenha temporária: ${accessResult.temporaryPassword}`
+      : `Aluno cadastrado e acesso criado com sucesso.\n\nEmail: ${student.email_login || student.email}\nSenha temporária: ${accessResult.temporaryPassword}`;
+    showMessage(successMessage);
     if (accessResult.profileCreated === false) {
       console.warn("Profile do aluno nao foi salvo, mas o acesso Auth foi criado e o aluno foi vinculado localmente.", {
         aluno: student.name,
@@ -9681,17 +9783,12 @@ studentForm?.addEventListener("submit", async (event) => {
         observacao: "Se quiser usar profiles como fonte de permissao, ajuste as policies/RLS ou crie trigger no Supabase. O app tambem localiza aluno por auth_user_id/email no app_state.",
       });
     }
-    if (missingTrainingDays) showMessage(missingTrainingDaysMessage, "error");
   } else if (accessResult?.error) {
     showMessage(`Aluno salvo, mas o acesso ao aplicativo não foi criado: ${accessResult.error.message}`, "error");
   } else {
-    if (missingTrainingDays) {
-      showMessage(missingTrainingDaysMessage, "error");
-    } else {
-      showMessage(automaticPackage
-        ? `Aluno atualizado com sucesso. Pacote automático criado/atualizado com ${automaticPackage.total} aula(s).`
-        : "Aluno atualizado com sucesso. Login existente mantido.");
-    }
+    showMessage(automaticPackage
+      ? "Aluno, pacote e aulas criados com sucesso."
+      : "Aluno atualizado com sucesso. Login existente mantido.");
   }
   resetStudentForm();
 });
