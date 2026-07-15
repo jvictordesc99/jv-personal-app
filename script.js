@@ -1784,8 +1784,9 @@ function normalizeWeeklySchedule(schedule = {}, selectedDays = []) {
 function getWeeklyScheduleFromForm() {
   const days = getSelectedBillingDays();
   return days.reduce((acc, day) => {
+    const timeInput = document.querySelector(`[data-student-schedule-time="${day}"]`);
     acc[day] = {
-      time: document.querySelector(`[data-student-schedule-time="${day}"]`)?.value.trim() || "",
+      time: normalizeTimeText(timeInput?.value || ""),
       duration: Number(document.querySelector(`[data-student-schedule-duration="${day}"]`)?.value) || 60,
       location: document.querySelector(`[data-student-schedule-location="${day}"]`)?.value.trim() || "",
     };
@@ -1795,6 +1796,29 @@ function getWeeklyScheduleFromForm() {
 
 function getMissingScheduleDays(schedule = getWeeklyScheduleFromForm(), days = getSelectedBillingDays()) {
   return normalizeBillingDays(days).filter((day) => !String(schedule?.[day]?.time || "").trim());
+}
+
+function getInvalidScheduleDays(schedule = getWeeklyScheduleFromForm(), days = getSelectedBillingDays()) {
+  return normalizeBillingDays(days).filter((day) => {
+    const time = String(schedule?.[day]?.time || "").trim();
+    return time && !parseFlexibleTimeText(time).valid;
+  });
+}
+
+function formatStudentScheduleTimeInput(input) {
+  if (!input) return true;
+  const parsed = parseFlexibleTimeText(input.value);
+  input.classList.remove("field-error");
+  input.removeAttribute("aria-invalid");
+  if (parsed.empty) return true;
+  if (!parsed.valid) {
+    input.classList.add("field-error");
+    input.setAttribute("aria-invalid", "true");
+    showMessage("Horário inválido. Use um horário entre 00:00 e 23:59.", "error");
+    return false;
+  }
+  input.value = parsed.value;
+  return true;
 }
 
 function normalizeBillingType(value) {
@@ -5629,9 +5653,41 @@ function getMinutesFromTime(timeText) {
   return hours * 60 + minutes;
 }
 
+function parseFlexibleTimeText(timeText) {
+  const value = String(timeText || "").trim();
+  if (!value) return { valid: false, empty: true, value: "", minutes: null };
+
+  const normalized = value.replace(/\s+/g, "").toLowerCase();
+  let hours = null;
+  let minutes = 0;
+  const separated = normalized.match(/^(\d{1,2})(?::|h)(\d{0,2})$/);
+
+  if (separated) {
+    hours = Number(separated[1]);
+    minutes = separated[2] === "" ? 0 : Number(separated[2]);
+  } else if (/^\d{1,4}$/.test(normalized)) {
+    if (normalized.length <= 2) {
+      hours = Number(normalized);
+      minutes = 0;
+    } else {
+      hours = Number(normalized.slice(0, -2));
+      minutes = Number(normalized.slice(-2));
+    }
+  } else {
+    return { valid: false, empty: false, value, minutes: null };
+  }
+
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return { valid: false, empty: false, value, minutes: null };
+  }
+
+  const totalMinutes = hours * 60 + minutes;
+  return { valid: true, empty: false, value: formatMinutesAsTime(totalMinutes), minutes: totalMinutes };
+}
+
 function normalizeTimeText(timeText) {
-  const minutes = getMinutesFromTime(timeText);
-  return minutes === null ? String(timeText || "").trim() : formatMinutesAsTime(minutes);
+  const parsed = parseFlexibleTimeText(timeText);
+  return parsed.valid ? parsed.value : String(timeText || "").trim();
 }
 
 function getNoticeDifferenceMinutes(lessonTime, noticeTime) {
@@ -9705,6 +9761,12 @@ studentForm?.addEventListener("submit", async (event) => {
     showMessage("Aluno presencial precisa ter dias de treino cadastrados para criar pacote e agenda automaticamente.", "error");
     return;
   }
+  const invalidScheduleDays = getInvalidScheduleDays(student.weeklySchedule, student.billingDays);
+  if (isPresentialStudent(student) && invalidScheduleDays.length) {
+    showMessage(`Horário inválido em: ${invalidScheduleDays.map(getWeekdayName).join(", ")}. Use horários entre 00:00 e 23:59.`, "error");
+    renderStudentWeeklySchedule(student.weeklySchedule);
+    return;
+  }
   const missingScheduleDays = getMissingScheduleDays(student.weeklySchedule, student.billingDays);
   if (isPresentialStudent(student) && missingScheduleDays.length) {
     showMessage(`Horario pendente: informe o horario de ${missingScheduleDays.map(getWeekdayName).join(", ")} antes de salvar.`, "error");
@@ -10739,6 +10801,13 @@ document.querySelectorAll("[data-package-page-back]").forEach((button) => {
   button.addEventListener("click", showPackageModuleMenu);
 });
 
+studentWeeklySchedule?.addEventListener("blur", (event) => {
+  const input = event.target.closest("[data-student-schedule-time]");
+  if (!input) return;
+  formatStudentScheduleTimeInput(input);
+  renderStudentPackagePreview();
+}, true);
+
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden" && currentUserType) {
     saveNavigationState();
@@ -10795,7 +10864,7 @@ packageForm?.addEventListener("submit", (event) => {
     endDate: packageEnd?.value.trim() || "",
     makeupLimit: Number(packageMakeupLimit?.value) || 0,
     days: packageDays?.value.trim() || "",
-    time: packageTime?.value.trim() || "",
+    time: normalizeTimeText(packageTime?.value || ""),
     notes: packageNotes?.value.trim() || "",
     createdAt: Date.now(),
     updatedAt: Date.now(),
