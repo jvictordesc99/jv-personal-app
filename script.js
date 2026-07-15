@@ -1773,7 +1773,7 @@ function normalizeWeeklySchedule(schedule = {}, selectedDays = []) {
   return days.reduce((acc, day) => {
     const item = source[day] || source[String(day)] || {};
     acc[day] = {
-      time: String(item.time || item.start || "").trim(),
+      time: normalizeTimeText(item.time || item.start || ""),
       duration: Number(item.duration) || 60,
       location: String(item.location || "").trim(),
     };
@@ -3507,7 +3507,7 @@ function normalizeAgendaEvents(events) {
       studentId: item.studentId || getStudentIdByName(item.studentName || ""),
       date: item.date || formatToday(),
       dateKey: item.dateKey || (parseBrazilianDate(item.date) ? getDateKey(parseBrazilianDate(item.date)) : ""),
-      time: String(item.time || "").trim(),
+      time: normalizeTimeText(item.time || ""),
       duration: Number(item.duration) || 60,
       type: item.type || "extra",
       modality: item.modality || "Aula",
@@ -5629,6 +5629,11 @@ function getMinutesFromTime(timeText) {
   return hours * 60 + minutes;
 }
 
+function normalizeTimeText(timeText) {
+  const minutes = getMinutesFromTime(timeText);
+  return minutes === null ? String(timeText || "").trim() : formatMinutesAsTime(minutes);
+}
+
 function getNoticeDifferenceMinutes(lessonTime, noticeTime) {
   const lessonMinutes = getMinutesFromTime(lessonTime);
   const noticeMinutes = getMinutesFromTime(noticeTime);
@@ -5696,11 +5701,12 @@ function getAgendaEventsForRange(view = "week", referenceDate = new Date()) {
   });
   loadStudents().forEach((student) => {
     const schedule = normalizeWeeklySchedule(student.weeklySchedule || {}, student.billingDays);
+    const studentStartDate = getStudentStartDate(student);
     const cursor = new Date(start);
     while (cursor <= end) {
       const day = cursor.getDay();
       const item = schedule[day];
-      if (item?.time) {
+      if (item?.time && cursor >= studentStartDate) {
         const dateKey = getDateKey(cursor);
         const duplicated = items.some((event) =>
           event.studentName === student.name
@@ -5793,6 +5799,14 @@ function renderAdminAgenda() {
   const referenceDate = parseBrazilianDate(adminAgendaDate?.value || "") || new Date();
   const { days } = getAgendaRange(view, referenceDate);
   const events = getAgendaEventsForRange(view, referenceDate);
+  console.info("Auditoria agenda renderizada.", {
+    view,
+    referenceDate: referenceDate.toLocaleDateString("pt-BR"),
+    storedEvents: loadAgendaEvents().length,
+    eventsInRange: events.length,
+    rangeStart: days[0] ? getDateKey(days[0]) : "",
+    rangeEnd: days[days.length - 1] ? getDateKey(days[days.length - 1]) : "",
+  });
   adminAgendaGrid.innerHTML = "";
   adminAgendaGrid.className = `agenda-grid-panel agenda-view-${view}`;
 
@@ -5807,10 +5821,15 @@ function renderAdminAgenda() {
     title.textContent = `${getWeekdayName(day.getDay())} ${day.toLocaleDateString("pt-BR")}`;
     column.appendChild(title);
     const dayEvents = events.filter((event) => event.dateKey === dayKey);
+    const renderedEventIds = new Set();
     hours.forEach((minutes) => {
-      const slotEvents = dayEvents.filter((event) => getMinutesFromTime(event.time) === minutes);
+      const slotEvents = dayEvents.filter((event) => {
+        const eventMinutes = getMinutesFromTime(event.time);
+        return eventMinutes !== null && eventMinutes >= minutes && eventMinutes < minutes + 30;
+      });
       if (slotEvents.length) {
         slotEvents.forEach((event) => {
+          renderedEventIds.add(event.id);
           const card = document.createElement("article");
           card.className = `agenda-event-card status-${String(event.status || "confirmada").toLowerCase().replace(/\s+/g, "-")}`;
           card.innerHTML = `<strong>${event.time} | ${event.studentName || "Aluno"}</strong><span>${event.modality || "Aula"} ${event.location ? `| ${event.location}` : ""}</span><small>${event.status || "confirmada"}</small>`;
@@ -5823,6 +5842,14 @@ function renderAdminAgenda() {
         column.appendChild(free);
       }
     });
+    dayEvents
+      .filter((event) => !renderedEventIds.has(event.id))
+      .forEach((event) => {
+        const card = document.createElement("article");
+        card.className = `agenda-event-card status-${String(event.status || "confirmada").toLowerCase().replace(/\s+/g, "-")}`;
+        card.innerHTML = `<strong>${event.time || "Horário pendente"} | ${event.studentName || "Aluno"}</strong><span>${event.modality || "Aula"} ${event.location ? `| ${event.location}` : ""}</span><small>${event.status || "confirmada"}</small>`;
+        column.appendChild(card);
+      });
     if (view === "month" && !dayEvents.length) {
       const free = document.createElement("div");
       free.className = "agenda-free-slot";
