@@ -449,6 +449,15 @@ function safeSetText(element, text = "") {
   if (element) element.textContent = text;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function getOrCreateElement(id, className = "", tag = "div") {
   let element = document.querySelector(`#${id}`);
   if (!element) {
@@ -10425,195 +10434,6 @@ studentForm?.addEventListener("submit", async (event) => {
   }
   resetStudentForm();
 });
-
-async function createOrLinkStudentAccessFromForm() {
-  const name = nameInput?.value.trim() || "";
-  const email = emailInput?.value.trim().toLowerCase() || "";
-  const password = tempPasswordInput?.value.trim() || "";
-  updateStudentMonthlyValueFromBilling();
-
-  if (!name || !email || !password) {
-    showMessage("Informe nome, e-mail e senha inicial para criar o acesso do aluno.", "error");
-    return;
-  }
-
-  const students = loadStudents();
-  const existingIndex = editingStudentIndex !== null
-    ? editingStudentIndex
-    : students.findIndex((student) => student.name.toLowerCase() === name.toLowerCase() || student.email === email);
-
-  createStudentAccessButton.disabled = true;
-  safeSetText(createStudentAccessButton, "Criando acesso...");
-
-  const authResult = await createStudentAuthUser(email, password, name);
-  const { userId, error } = authResult;
-  if (authResult?.alreadyExists) {
-    showMessage("Este e-mail já possui acesso. A senha existente não foi alterada.", "error");
-    createStudentAccessButton.disabled = false;
-    safeSetText(createStudentAccessButton, "Criar acesso do aluno");
-    return;
-  }
-  if (error || !userId || !authResult?.loginVerified) {
-    console.error("Falha ao criar acesso do aluno no Supabase Auth.", {
-      email,
-      aluno: name,
-      erro: error,
-    });
-    showMessage(`Nao foi possivel criar o acesso no Supabase: ${error?.message || "login de validacao nao confirmado"}.`, "error");
-    createStudentAccessButton.disabled = false;
-    safeSetText(createStudentAccessButton, "Criar acesso do aluno");
-    return;
-  }
-
-  const linkedStudent = {
-    id: existingIndex >= 0 ? students[existingIndex].id : createId(),
-    supabaseUserId: userId,
-    authUserId: userId,
-    auth_user_id: userId,
-    email_login: email,
-    role: "aluno",
-    name,
-    email,
-    phone: phoneInput?.value.trim() || students[existingIndex]?.phone || "",
-    birthDate: birthDateInput?.value.trim() || students[existingIndex]?.birthDate || "",
-    plan: planInput?.value.trim() || students[existingIndex]?.plan || "Plano nao informado",
-    modality: modalityInput?.value || students[existingIndex]?.modality || "presencial",
-    startDate: studentStartDateInput?.value.trim() || students[existingIndex]?.startDate || formatToday(),
-    frequency: frequencyInput?.value || students[existingIndex]?.frequency || "3x",
-    billingDays: getSelectedBillingDays().length ? getSelectedBillingDays() : students[existingIndex]?.billingDays || [],
-    weeklySchedule: getSelectedBillingDays().length ? getWeeklyScheduleFromForm() : students[existingIndex]?.weeklySchedule || {},
-    billingType: billingTypeInput?.value || students[existingIndex]?.billingType || "fixed",
-    classValue: classValueInput?.value.trim() || students[existingIndex]?.classValue || "",
-    paymentMethod: paymentMethodInput?.value.trim() || students[existingIndex]?.paymentMethod || "",
-    billingNotes: studentBillingNotesInput?.value.trim() || students[existingIndex]?.billingNotes || "",
-    makeupLimit: normalizeMakeupLimit(makeupLimitInput?.value || students[existingIndex]?.makeupLimit, frequencyInput?.value || students[existingIndex]?.frequency || "3x"),
-    value: valueInput?.value.trim() || students[existingIndex]?.value || "",
-    due: dueInput?.value.trim() || students[existingIndex]?.due || "",
-    payment: paymentInput?.value || students[existingIndex]?.payment || "Em dia",
-  };
-
-  if (existingIndex >= 0) {
-    students[existingIndex] = { ...students[existingIndex], ...linkedStudent };
-    editingStudentIndex = existingIndex;
-  } else {
-    students.push(linkedStudent);
-    editingStudentIndex = students.length - 1;
-  }
-
-  saveStudents(students);
-  const accessSync = await supabaseSyncPromise;
-  if (!accessSync?.ok) {
-    showMessage("Nao sincronizado. Acesso criado no Auth, mas o vinculo do aluno ficou pendente no app_state.", "error");
-    createStudentAccessButton.disabled = false;
-    safeSetText(createStudentAccessButton, "Criar acesso do aluno");
-    return;
-  }
-  if (tempPasswordInput) tempPasswordInput.value = "";
-  renderStudents();
-  fillStudentSelects();
-  if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
-  showMessage("Acesso criado com sucesso. O aluno ja pode entrar com e-mail e senha.");
-  createStudentAccessButton.disabled = false;
-  safeSetText(createStudentAccessButton, "Criar acesso do aluno");
-}
-
-async function sendStudentAccessInviteFromForm() {
-  const name = nameInput?.value.trim() || "";
-  const email = emailInput?.value.trim().toLowerCase() || "";
-  updateStudentMonthlyValueFromBilling();
-
-  if (!name || !isLikelyRealEmail(email)) {
-    showMessage("Informe um e-mail real para enviar o convite de acesso.", "error");
-    emailInput?.focus();
-    return;
-  }
-
-  const students = loadStudents();
-  const existingIndex = editingStudentIndex !== null
-    ? editingStudentIndex
-    : students.findIndex((student) => student.name.toLowerCase() === name.toLowerCase() || student.email === email || student.email_login === email);
-
-  createStudentAccessButton.disabled = true;
-  safeSetText(createStudentAccessButton, "Enviando convite...");
-
-  const inviteAuth = await createStudentAuthUser(email, createTemporaryInvitePassword(), name);
-  const { userId, error } = inviteAuth;
-  const alreadyExists = Boolean(inviteAuth?.alreadyExists);
-  if (alreadyExists) {
-    showMessage("Este e-mail já possui acesso. A senha existente não foi alterada.", "error");
-    createStudentAccessButton.disabled = false;
-    safeSetText(createStudentAccessButton, "Enviar convite de acesso");
-    return;
-  }
-  if (error || !userId || !inviteAuth?.loginVerified) {
-    console.error("Falha ao criar acesso do aluno no Supabase Auth.", { email, aluno: name, erro: error });
-    showMessage(`Nao foi possivel criar o convite no Supabase: ${error?.message || "login de validacao nao confirmado"}.`, "error");
-    createStudentAccessButton.disabled = false;
-    safeSetText(createStudentAccessButton, "Enviar convite de acesso");
-    return;
-  }
-
-  const inviteResult = await sendStudentPasswordInvite(email);
-  if (inviteResult?.error) {
-    console.error("Falha ao enviar e-mail de definicao de senha.", { email, aluno: name, erro: inviteResult.error });
-    showMessage("Acesso preparado, mas o e-mail de convite nao foi enviado. Tente reenviar em alguns minutos.", "error");
-  }
-
-  const linkedStudent = {
-    id: existingIndex >= 0 ? students[existingIndex].id : createId(),
-    supabaseUserId: userId || students[existingIndex]?.supabaseUserId || "",
-    authUserId: userId || students[existingIndex]?.authUserId || "",
-    auth_user_id: userId || students[existingIndex]?.auth_user_id || "",
-    email_login: email,
-    role: "aluno",
-    acesso_status: "convite_enviado",
-    convite_enviado_em: new Date().toISOString(),
-    name,
-    email,
-    phone: phoneInput?.value.trim() || students[existingIndex]?.phone || "",
-    birthDate: birthDateInput?.value.trim() || students[existingIndex]?.birthDate || "",
-    plan: planInput?.value.trim() || students[existingIndex]?.plan || "Plano nao informado",
-    modality: modalityInput?.value || students[existingIndex]?.modality || "presencial",
-    startDate: studentStartDateInput?.value.trim() || students[existingIndex]?.startDate || formatToday(),
-    frequency: frequencyInput?.value || students[existingIndex]?.frequency || "3x",
-    billingDays: getSelectedBillingDays().length ? getSelectedBillingDays() : students[existingIndex]?.billingDays || [],
-    weeklySchedule: getSelectedBillingDays().length ? getWeeklyScheduleFromForm() : students[existingIndex]?.weeklySchedule || {},
-    billingType: billingTypeInput?.value || students[existingIndex]?.billingType || "fixed",
-    classValue: classValueInput?.value.trim() || students[existingIndex]?.classValue || "",
-    paymentMethod: paymentMethodInput?.value.trim() || students[existingIndex]?.paymentMethod || "",
-    billingNotes: studentBillingNotesInput?.value.trim() || students[existingIndex]?.billingNotes || "",
-    makeupLimit: normalizeMakeupLimit(makeupLimitInput?.value || students[existingIndex]?.makeupLimit, frequencyInput?.value || students[existingIndex]?.frequency || "3x"),
-    value: valueInput?.value.trim() || students[existingIndex]?.value || "",
-    due: dueInput?.value.trim() || students[existingIndex]?.due || "",
-    payment: paymentInput?.value || students[existingIndex]?.payment || "Em dia",
-  };
-
-  if (existingIndex >= 0) {
-    students[existingIndex] = { ...students[existingIndex], ...linkedStudent };
-    editingStudentIndex = existingIndex;
-  } else {
-    students.push(linkedStudent);
-    editingStudentIndex = students.length - 1;
-  }
-
-  saveStudents(students);
-  const inviteSync = await supabaseSyncPromise;
-  if (!inviteSync?.ok) {
-    showMessage("Nao sincronizado. Convite preparado, mas o vinculo do aluno ficou pendente no app_state.", "error");
-    createStudentAccessButton.disabled = false;
-    safeSetText(createStudentAccessButton, "Enviar convite de acesso");
-    return;
-  }
-  if (tempPasswordInput) tempPasswordInput.value = "";
-  renderStudents();
-  fillStudentSelects();
-  if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
-  showMessage(alreadyExists
-    ? "Usuário já existe. Convite reenviado. Se o aluno não receber, peça para verificar spam/lixo eletrônico ou usar Esqueci senha."
-    : "Convite enviado. O aluno deve acessar o e-mail e definir a senha.");
-  createStudentAccessButton.disabled = false;
-  safeSetText(createStudentAccessButton, "Enviar convite de acesso");
-}
 
 async function createStudentTemporaryAccessFromForm() {
   const name = nameInput?.value.trim() || "";
