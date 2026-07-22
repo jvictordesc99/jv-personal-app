@@ -109,6 +109,7 @@ const billingSettingsStorageKey = "joao-victor-billing-settings";
 const financialHistoryStorageKey = "joao-victor-financial-history";
 const packageModelStorageKey = "joao-victor-package-models";
 const navigationStateStorageKey = "joao-victor-navigation-state";
+const pendingSupabaseSyncStorageKey = "joao-victor-pending-supabase-sync";
 const supabaseTables = {
   appState: "app_state",
   profiles: "profiles",
@@ -381,6 +382,7 @@ const activeSessionByWorkout = {};
 let appEventsBound = false;
 let isApplyingRemoteState = false;
 let supabaseSyncTimer = null;
+let supabaseSyncPromise = Promise.resolve();
 let lastSupabaseSyncWarning = 0;
 const missingTrainingDaysMessage = "Este aluno ainda não possui dias de treino cadastrados. Sem isso, o sistema não consegue calcular aulas previstas, cobranças e treinos do mês.";
 
@@ -388,6 +390,13 @@ function showMessage(text, type = "success") {
   if (!saveMessage) return;
   saveMessage.textContent = text;
   saveMessage.classList.toggle("error", type === "error");
+}
+
+function isPublishedApp() {
+  const host = window.location.hostname;
+  return window.location.protocol.startsWith("http")
+    && host
+    && !["localhost", "127.0.0.1", "::1"].includes(host);
 }
 
 function safeSetText(element, text = "") {
@@ -975,6 +984,106 @@ function markStudentsSyncStatus(studentIds = [], status = "pending", error = "")
   }
 }
 
+function getPendingSupabaseSync() {
+  try {
+    const saved = localStorage.getItem(pendingSupabaseSyncStorageKey);
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setPendingSupabaseSync(context = "alteracao", error = "") {
+  const previous = getPendingSupabaseSync() || {};
+  const contexts = Array.from(new Set([...(previous.contexts || []), context].filter(Boolean)));
+  const payload = {
+    pending: true,
+    contexts,
+    lastError: String(error || "Supabase indisponivel.").slice(0, 500),
+    attempts: Number(previous.attempts || 0) + 1,
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    localStorage.setItem(pendingSupabaseSyncStorageKey, JSON.stringify(payload));
+  } catch (storageError) {
+    console.warn("Nao foi possivel registrar pendencia de sincronizacao.", storageError);
+  }
+  return payload;
+}
+
+function clearPendingSupabaseSync() {
+  try {
+    localStorage.removeItem(pendingSupabaseSyncStorageKey);
+  } catch {
+    // Controle auxiliar; se falhar, o app segue com cache local.
+  }
+}
+
+function getPendingStudentIdsFromLocalCache() {
+  return loadStudents()
+    .filter((student) => student.syncStatus === "pending")
+    .map((student) => student.id)
+    .filter(Boolean);
+}
+
+async function persistAppStateSafely(options = {}) {
+  const {
+    context = "alteracao",
+    showSuccess = false,
+    pendingStudentIds = [],
+  } = options;
+
+  if (isApplyingRemoteState) return { ok: true, skipped: true, reason: "applying-remote-state" };
+
+  window.clearTimeout(supabaseSyncTimer);
+  console.info("Persistencia segura solicitada.", { context });
+  const result = await syncAppStateToSupabase();
+
+  if (result?.ok) {
+    clearPendingSupabaseSync();
+    markStudentsSyncStatus([...pendingStudentIds, ...getPendingStudentIdsFromLocalCache()], "synced");
+    console.info("Salvo no Supabase.", {
+      context,
+      via: result.via || "supabase",
+      auditoria: getAppStateAuditCounts(),
+    });
+    if (showSuccess) showMessage("Salvo no Supabase.");
+    return result;
+  }
+
+  const message = getStepErrorMessage(result?.error);
+  setPendingSupabaseSync(context, message);
+  markStudentsSyncStatus([...pendingStudentIds, ...getPendingStudentIdsFromLocalCache()], "pending", message);
+  console.error("Nao sincronizado com Supabase. Dados mantidos no localStorage como backup temporario.", {
+    context,
+    erro: result?.error,
+  });
+  if (showSuccess) showMessage("Nao sincronizado. Dados mantidos no navegador e aguardando nova tentativa.", "error");
+  return { ok: false, error: result?.error || { message } };
+}
+
+function queueSupabaseAppStateSync(context = "alteracao", options = {}) {
+  if (isApplyingRemoteState) return supabaseSyncPromise;
+  window.clearTimeout(supabaseSyncTimer);
+  console.info("Sincronizacao app_state solicitada pela fila central.", { context });
+  supabaseSyncPromise = supabaseSyncPromise
+    .catch(() => null)
+    .then(() => persistAppStateSafely({ context, showSuccess: options.showSuccess !== false }));
+  return supabaseSyncPromise;
+}
+
+async function retryPendingAppStateSync(context = "retry pendente") {
+  const pending = getPendingSupabaseSync();
+  const pendingStudentIds = getPendingStudentIdsFromLocalCache();
+  if (!pending?.pending && !pendingStudentIds.length) return { ok: true, skipped: true, reason: "no-pending-sync" };
+  console.info("Tentando reenviar pendencias locais ao Supabase.", {
+    context,
+    pending,
+    pendingStudents: pendingStudentIds.length,
+  });
+  return persistAppStateSafely({ context, pendingStudentIds });
+}
+
 function writeAppStateToLocalStorage(state) {
   if (!state || typeof state !== "object") return false;
 
@@ -1187,17 +1296,10 @@ async function syncAppStateToSupabase() {
   }
 }
 
-function queueSupabaseAppStateSync() {
-  if (isApplyingRemoteState) return;
-  window.clearTimeout(supabaseSyncTimer);
-  console.info("Sincronizacao app_state agendada.");
-  supabaseSyncTimer = window.setTimeout(syncAppStateToSupabase, 300);
-}
-
 async function flushAppStateSyncNow(context = "manual") {
   window.clearTimeout(supabaseSyncTimer);
   console.info(`Sincronizando app_state agora: ${context}`);
-  const result = await syncAppStateToSupabase();
+  const result = await persistAppStateSafely({ context, showSuccess: false });
   if (!result?.ok) {
     console.error("Falha ao sincronizar app_state imediatamente.", {
       context,
@@ -1828,9 +1930,9 @@ function loadBillingSettings() {
 function saveBillingSettings(settings) {
   try {
     localStorage.setItem(billingSettingsStorageKey, JSON.stringify(settings));
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("configuracoes de cobranca");
     if (billingSettingsMessage) {
-      billingSettingsMessage.textContent = "Configuracoes de cobranca salvas.";
+      billingSettingsMessage.textContent = "Sincronizando configuracoes de cobranca com Supabase...";
       billingSettingsMessage.classList.remove("error");
     }
   } catch {
@@ -1874,7 +1976,7 @@ function saveFinancialHistory(records, { silent = false } = {}) {
   try {
     localStorage.setItem(financialHistoryStorageKey, JSON.stringify(memoryFinancialHistory));
     persistAppDataMeta();
-    if (!silent) queueSupabaseAppStateSync();
+    if (!silent) queueSupabaseAppStateSync("historico financeiro");
   } catch {
     console.warn("Historico financeiro apareceu na tela, mas o navegador bloqueou salvar ao recarregar.");
   }
@@ -2304,7 +2406,7 @@ function markStudentBillingAsPaid(studentId) {
   renderStudents();
   renderBillingList();
   renderHomeDashboard();
-  showMessage(`Pagamento de ${students[index].name} marcado como pago.`);
+  showMessage(`Sincronizando pagamento de ${students[index].name} com Supabase...`);
   return true;
 }
 
@@ -2446,31 +2548,6 @@ function renderStudentStatusSummary() {
 }
 
 function renderAssessmentSupportSummaries() {
-  const studentName = assessmentStudent?.value || loadStudents()[0]?.name || "";
-  const assessments = getStudentAssessments(studentName);
-  if (assessmentChartSummary) {
-    assessmentChartSummary.innerHTML = "";
-    assessments.slice(-6).forEach((item) => assessmentChartSummary.appendChild(renderSummaryCard(item.date, `Peso ${item.weight || "-"} | Gordura ${item.fat || "-"} | Massa ${item.muscle || "-"}`)));
-    if (!assessments.length) assessmentChartSummary.textContent = "Nenhuma avaliação para montar gráficos ainda.";
-  }
-  if (assessmentPhotoSummary) {
-    assessmentPhotoSummary.innerHTML = "";
-    assessments.filter((item) => item.fileName || item.fileUrl || item.fileData).forEach((item) => assessmentPhotoSummary.appendChild(renderSummaryCard(item.date, item.fileName || "Anexo salvo")));
-    if (!assessmentPhotoSummary.children.length) assessmentPhotoSummary.textContent = "Nenhuma foto/anexo de evolução cadastrado.";
-  }
-  if (assessmentCompareSummary) {
-    assessmentCompareSummary.innerHTML = "";
-    const first = assessments[0];
-    const last = assessments[assessments.length - 1];
-    if (first && last && first !== last) {
-      assessmentCompareSummary.appendChild(renderSummaryCard(`${first.date} x ${last.date}`, `Peso: ${first.weight || "-"} -> ${last.weight || "-"} | Gordura: ${first.fat || "-"} -> ${last.fat || "-"} | Massa: ${first.muscle || "-"} -> ${last.muscle || "-"}`));
-    } else {
-      assessmentCompareSummary.textContent = "Cadastre pelo menos duas avaliações para comparar.";
-    }
-  }
-}
-
-function renderAssessmentSupportSummaries() {
   ensureAssessmentProfessionalUi();
   syncAssessmentStudentSelects();
   const studentName = assessmentStudent?.value || loadStudents()[0]?.name || "";
@@ -2558,7 +2635,7 @@ function saveResolvedAlerts(alerts) {
   try {
     localStorage.setItem(resolvedAlertsStorageKey, JSON.stringify(normalizeResolvedAlerts(alerts)));
     persistAppDataMeta();
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("alertas resolvidos");
   } catch (error) {
     console.error("Nao foi possivel salvar alertas resolvidos.", error);
   }
@@ -2993,8 +3070,8 @@ function confirmStudentDeletion(student) {
   });
 }
 
-function deleteStudentWithLinkedData(student) {
-  if (!student?.name) return;
+async function deleteStudentWithLinkedData(student) {
+  if (!student?.name) return null;
   const studentName = student.name;
   const studentId = student.id;
 
@@ -3021,6 +3098,7 @@ function deleteStudentWithLinkedData(student) {
   if (selectedAdminProfileStudent === studentName) selectedAdminProfileStudent = "";
   if (selectedAdminWorkoutStudent === studentName) selectedAdminWorkoutStudent = "";
   delete activeWorkoutByStudent[studentName];
+  return supabaseSyncPromise;
 }
 
 function renderBillingSettings() {
@@ -3239,6 +3317,11 @@ function restoreLocalAppSession() {
   if (!session?.active || !["admin", "student"].includes(session.role)) return false;
 
   if (session.role === "admin") {
+    if (isPublishedApp() && session.provider !== "supabase") {
+      console.warn("Sessao local de Personal ignorada na versao publicada. Login real obrigatorio.");
+      clearAppLoginSession();
+      return false;
+    }
     console.info("Sessao local encontrada. Abrindo area Personal/Admin.", session);
     enterModeForSessionRestore("admin");
     restoreNavigationState();
@@ -3265,7 +3348,7 @@ function enterModeForSessionRestore(role, studentName = "") {
   const previousRestoringState = isRestoringNavigation;
   isRestoringNavigation = true;
   try {
-    enterTestMode(role, studentName, { persist: false });
+    enterTestMode(role, studentName, { persist: false, provider: currentSupabaseUser ? "supabase" : "local" });
   } finally {
     isRestoringNavigation = previousRestoringState;
   }
@@ -3527,7 +3610,7 @@ function saveStudents(students) {
   try {
     localStorage.setItem(studentStorageKey, JSON.stringify(memoryStudents));
     persistAppDataMeta();
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("alunos");
   } catch {
     showMessage("Aluno apareceu na lista, mas este navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -3552,9 +3635,9 @@ function saveWorkouts(workouts) {
   try {
     localStorage.setItem(workoutStorageKey, JSON.stringify(memoryWorkouts));
     persistAppDataMeta();
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("fichas e treinos");
     if (workoutMessage) {
-      workoutMessage.textContent = "Treino salvo para o aluno.";
+      workoutMessage.textContent = "Sincronizando treino com Supabase...";
       workoutMessage.classList.remove("error");
     }
   } catch {
@@ -3583,7 +3666,7 @@ function saveProgressRecords(records) {
   try {
     localStorage.setItem(loadProgressStorageKey, JSON.stringify(memoryLoadProgress));
     persistAppDataMeta();
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("evolucao de carga");
   } catch {
     showMessage("Carga registrada na tela, mas este navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -3608,9 +3691,9 @@ function saveAssessments(assessments) {
   try {
     localStorage.setItem(assessmentStorageKey, JSON.stringify(memoryAssessments));
     persistAppDataMeta();
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("avaliacoes fisicas");
     if (assessmentMessage) {
-      assessmentMessage.textContent = "Avaliação salva no histórico.";
+      assessmentMessage.textContent = "Sincronizando avaliacao com Supabase...";
       assessmentMessage.classList.remove("error");
     }
   } catch {
@@ -3640,7 +3723,7 @@ function saveCheckins(checkins) {
   try {
     localStorage.setItem(checkinStorageKey, JSON.stringify(memoryCheckins));
     persistAppDataMeta();
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("check-ins");
     if (currentUserType === "admin") renderBillingList();
   } catch {
     showMessage("Check-in registrado na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
@@ -3680,7 +3763,7 @@ function saveDropInClasses(classes) {
   try {
     localStorage.setItem(dropInStorageKey, JSON.stringify(memoryDropIns));
     persistAppDataMeta();
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("aulas avulsas");
   } catch {
     showMessage("Aula avulsa apareceu na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -3731,7 +3814,7 @@ function saveAgendaEvents(events) {
   try {
     localStorage.setItem(agendaEventStorageKey, JSON.stringify(memoryAgendaEvents));
     persistAppDataMeta();
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("agenda");
   } catch {
     showMessage("Agenda atualizada na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -3893,7 +3976,7 @@ function saveMakeupCredits(credits) {
   try {
     localStorage.setItem(makeupStorageKey, JSON.stringify(memoryMakeups));
     persistAppDataMeta();
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("reposicoes");
   } catch {
     showMessage("Reposição apareceu na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -3949,7 +4032,7 @@ function saveClassPackages(packages) {
   try {
     localStorage.setItem(packageStorageKey, JSON.stringify(memoryPackages));
     persistAppDataMeta();
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("pacotes");
   } catch {
     showMessage("Pacote salvo na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -4045,7 +4128,7 @@ function savePackageModels(models) {
   try {
     localStorage.setItem(packageModelStorageKey, JSON.stringify(memoryPackageModels));
     persistAppDataMeta();
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("modelos de pacote");
   } catch {
     showMessage("Modelo de pacote salvo na tela, mas o navegador limitou o cache local.", "error");
   }
@@ -4111,7 +4194,7 @@ function saveWorkoutFeedbacks(feedbacks) {
   try {
     localStorage.setItem(feedbackStorageKey, JSON.stringify(memoryFeedbacks));
     persistAppDataMeta();
-    queueSupabaseAppStateSync();
+    queueSupabaseAppStateSync("feedbacks de treino");
   } catch {
     showMessage("Feedback salvo na tela, mas este navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -7444,61 +7527,6 @@ function renderPersonalRecords(studentName, exerciseKey) {
   adminPersonalRecords.appendChild(card);
 }
 
-function renderAdherenceSummary(studentName) {
-  if (!adminAdherenceSummary) return;
-  adminAdherenceSummary.innerHTML = "";
-  const month = new Date().toISOString().slice(0, 7);
-  const feedbacks = loadWorkoutFeedbacks().filter((item) => item.studentName === studentName && new Date(item.timestamp).toISOString().slice(0, 7) === month);
-  const checkins = loadCheckins().filter((item) => item.studentName === studentName && (item.month === month || new Date(item.timestamp || Date.now()).toISOString().slice(0, 7) === month));
-  const prescribed = (loadWorkouts()[studentName] || []).reduce((total, workout) => total + (workout.sessions?.length || 1), 0);
-  const completed = feedbacks.length;
-  const adherence = prescribed ? Math.min(100, Math.round((completed / prescribed) * 100)) : 0;
-
-  [
-    ["Treinos concluídos no mês", completed],
-    ["Treinos prescritos", prescribed],
-    ["Adesão", `${adherence}%`],
-    ["Check-ins realizados", checkins.filter(isConsumedLesson).length],
-  ].forEach(([label, value]) => {
-    adminAdherenceSummary.appendChild(createAdminMetric(label, value));
-  });
-}
-
-function renderAdminFeedbacks(studentName) {
-  if (!adminFeedbackHistory || !adminFeedbackNotes) return;
-  const feedbacks = loadWorkoutFeedbacks()
-    .filter((feedback) => !studentName || feedback.studentName === studentName)
-    .sort((a, b) => b.timestamp - a.timestamp);
-
-  adminFeedbackHistory.innerHTML = "";
-  adminFeedbackNotes.innerHTML = "";
-
-  if (!feedbacks.length) {
-    adminFeedbackHistory.textContent = "Nenhum feedback registrado ainda.";
-    adminFeedbackNotes.textContent = "Nenhuma observação enviada.";
-    return;
-  }
-
-  feedbacks.forEach((feedback) => {
-    const item = document.createElement("article");
-    item.className = "feedback-card";
-    item.classList.toggle("alert-focus-card", highlightedFeedbackId === feedback.id);
-    item.innerHTML = `<strong>${feedback.date} | ${feedback.workoutTitle}</strong><span>${feedback.studentName} | Nota ${feedback.rating || "-"} | ${feedback.difficulty || "Sem intensidade"} | Dor: ${feedback.pain ? feedback.painLocation || "sim" : "não"}</span><small>${feedback.note || "Sem observação."}</small>`;
-    adminFeedbackHistory.appendChild(item);
-    if (highlightedFeedbackId === feedback.id) {
-      setTimeout(() => item.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
-    }
-
-    if (feedback.note || feedback.painLocation) {
-      const note = document.createElement("article");
-      note.className = "feedback-card";
-      note.classList.toggle("alert-focus-card", highlightedFeedbackId === feedback.id);
-      note.innerHTML = `<strong>${feedback.studentName} | ${feedback.date}</strong><small>${feedback.note || feedback.painLocation}</small>`;
-      adminFeedbackNotes.appendChild(note);
-    }
-  });
-}
-
 function renderAdherenceSummary() {
   if (!adminAdherenceSummary) return;
   adminAdherenceSummary.innerHTML = "";
@@ -10000,7 +10028,7 @@ studentForm?.addEventListener("submit", async (event) => {
         agenda: agendaResult,
         supabase: supabaseSyncResult?.error,
       });
-      showMessage(`Aluno${automaticPackage ? ", pacote e aulas" : ""} salvos localmente e aguardando sincronização. Supabase falhou: ${syncErrorMessage}.`, "error");
+      showMessage(`Nao sincronizado. Aluno${automaticPackage ? ", pacote e aulas" : ""} ficaram no localStorage e aguardam nova tentativa. Supabase falhou: ${syncErrorMessage}.`, "error");
       return;
     }
   } catch (error) {
@@ -10026,8 +10054,8 @@ studentForm?.addEventListener("submit", async (event) => {
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
   if (accessResult?.created) {
     const successMessage = automaticPackage
-      ? `Aluno, pacote e aulas criados com sucesso.\n\nEmail: ${student.email_login || student.email}\nSenha temporária: ${accessResult.temporaryPassword}`
-      : `Aluno cadastrado e acesso criado com sucesso.\n\nEmail: ${student.email_login || student.email}\nSenha temporária: ${accessResult.temporaryPassword}`;
+      ? `Salvo no Supabase.\n\nAluno, pacote e aulas criados com sucesso.\n\nEmail: ${student.email_login || student.email}\nSenha temporária: ${accessResult.temporaryPassword}`
+      : `Salvo no Supabase.\n\nAluno cadastrado e acesso criado com sucesso.\n\nEmail: ${student.email_login || student.email}\nSenha temporária: ${accessResult.temporaryPassword}`;
     showMessage(successMessage);
     if (accessResult.profileCreated === false) {
       console.warn("Profile do aluno nao foi salvo, mas o acesso Auth foi criado e o aluno foi vinculado localmente.", {
@@ -10042,8 +10070,8 @@ studentForm?.addEventListener("submit", async (event) => {
     showMessage(`Aluno salvo, mas o acesso ao aplicativo não foi criado: ${accessResult.error.message}`, "error");
   } else {
     showMessage(automaticPackage
-      ? "Aluno, pacote e aulas criados com sucesso."
-      : "Aluno atualizado com sucesso. Login existente mantido.");
+      ? "Salvo no Supabase. Aluno, pacote e aulas criados com sucesso."
+      : "Salvo no Supabase. Aluno atualizado com sucesso. Login existente mantido.");
   }
   resetStudentForm();
 });
@@ -10119,6 +10147,13 @@ async function createOrLinkStudentAccessFromForm() {
   }
 
   saveStudents(students);
+  const accessSync = await supabaseSyncPromise;
+  if (!accessSync?.ok) {
+    showMessage("Nao sincronizado. Acesso criado no Auth, mas o vinculo do aluno ficou pendente no app_state.", "error");
+    createStudentAccessButton.disabled = false;
+    safeSetText(createStudentAccessButton, "Criar acesso do aluno");
+    return;
+  }
   if (tempPasswordInput) tempPasswordInput.value = "";
   renderStudents();
   fillStudentSelects();
@@ -10201,6 +10236,13 @@ async function sendStudentAccessInviteFromForm() {
   }
 
   saveStudents(students);
+  const inviteSync = await supabaseSyncPromise;
+  if (!inviteSync?.ok) {
+    showMessage("Nao sincronizado. Convite preparado, mas o vinculo do aluno ficou pendente no app_state.", "error");
+    createStudentAccessButton.disabled = false;
+    safeSetText(createStudentAccessButton, "Enviar convite de acesso");
+    return;
+  }
   if (tempPasswordInput) tempPasswordInput.value = "";
   renderStudents();
   fillStudentSelects();
@@ -10320,6 +10362,13 @@ async function createStudentTemporaryAccessFromForm() {
   }
 
   saveStudents(students);
+  const accessSync = await supabaseSyncPromise;
+  if (!accessSync?.ok) {
+    showMessage("Nao sincronizado. Acesso criado no Auth, mas o vinculo do aluno ficou pendente no app_state.", "error");
+    createStudentAccessButton.disabled = false;
+    safeSetText(createStudentAccessButton, "Criar acesso do aluno");
+    return;
+  }
   renderStudents();
   fillStudentSelects();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
@@ -10338,7 +10387,7 @@ async function createStudentTemporaryAccessFromForm() {
 createStudentAccessButton?.addEventListener("click", createStudentTemporaryAccessFromForm);
 if (createStudentAccessButton) createStudentAccessButton.hidden = true;
 
-workoutForm?.addEventListener("submit", (event) => {
+workoutForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const workouts = loadWorkouts();
@@ -10392,6 +10441,7 @@ workoutForm?.addEventListener("submit", (event) => {
   saveWorkoutButton.textContent = "Salvar ficha";
   cancelWorkoutEditButton.hidden = true;
   saveNavigationState();
+  await supabaseSyncPromise;
 });
 
 function readAssessmentAttachment(file) {
@@ -10448,6 +10498,7 @@ assessmentForm?.addEventListener("submit", async (event) => {
     renderStudentAssessments();
     renderStudentProfile();
   }
+  await supabaseSyncPromise;
 });
 
 workoutViewStudent?.addEventListener("change", () => {
@@ -10465,7 +10516,7 @@ workoutTabs?.addEventListener("click", (event) => {
   renderCurrentWorkout();
 });
 
-currentWorkout?.addEventListener("click", (event) => {
+currentWorkout?.addEventListener("click", async (event) => {
   const sessionTab = event.target.closest("[data-session-tab]");
   if (sessionTab) {
     activeSessionByWorkout[activeWorkoutByStudent[workoutViewStudent.value]] = sessionTab.dataset.sessionTab;
@@ -10498,6 +10549,7 @@ currentWorkout?.addEventListener("click", (event) => {
         timestamp: Date.now(),
       });
       saveWorkoutFeedbacks(feedbacks);
+      await supabaseSyncPromise;
       const completedWorkout = (loadWorkouts()[form.dataset.studentName] || []).find((item) => item.id === form.dataset.workoutId);
       if (completedWorkout) activeSessionByWorkout[completedWorkout.id] = getNextSessionIdAfterCompletion(completedWorkout, form.dataset.sessionId);
       saveNavigationState();
@@ -10541,13 +10593,14 @@ currentWorkout?.addEventListener("click", (event) => {
   });
 
   saveProgressRecords(records);
+  await supabaseSyncPromise;
   loadInput.value = "";
   noteInput.value = "";
   renderCurrentWorkout();
   renderStudentProfile();
 });
 
-currentWorkout?.addEventListener("submit", (event) => {
+currentWorkout?.addEventListener("submit", async (event) => {
   const form = event.target.closest(".workout-feedback-form");
   if (!form) return;
 
@@ -10571,6 +10624,7 @@ currentWorkout?.addEventListener("submit", (event) => {
     timestamp: Date.now(),
   });
   saveWorkoutFeedbacks(feedbacks);
+  await supabaseSyncPromise;
   const completedWorkout = (loadWorkouts()[form.dataset.studentName] || []).find((item) => item.id === form.dataset.workoutId);
   if (completedWorkout) activeSessionByWorkout[completedWorkout.id] = getNextSessionIdAfterCompletion(completedWorkout, form.dataset.sessionId);
   saveNavigationState();
@@ -10684,6 +10738,11 @@ studentProfilePanel?.addEventListener("submit", async (event) => {
   };
   students[studentIndex] = updatedStudent;
   saveStudents(students);
+  const profileSync = await supabaseSyncPromise;
+  if (!profileSync?.ok) {
+    setProfileMessage("Nao sincronizado. Seus dados ficaram salvos neste navegador e serao reenviados automaticamente.", true);
+    return;
+  }
   selectedStudentProfile = updatedStudent.name;
   setLocalValue("student-profile", selectedStudentProfile);
 
@@ -10711,7 +10770,7 @@ studentProfilePanel?.addEventListener("submit", async (event) => {
   renderStudentProfile();
   const freshMessage = studentProfilePanel.querySelector("[data-profile-message]");
   if (freshMessage) {
-    freshMessage.textContent = `Alterações salvas com sucesso.${emailConfirmationNotice}`;
+    freshMessage.textContent = `Salvo no Supabase.${emailConfirmationNotice}`;
     freshMessage.classList.remove("error");
   }
 });
@@ -10852,7 +10911,7 @@ document.querySelectorAll("[data-agenda-action]").forEach((button) => {
   input?.addEventListener("input", () => setTimeout(renderAdminAgenda, 0));
 });
 
-agendaMakeupForm?.addEventListener("submit", (event) => {
+agendaMakeupForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const studentName = agendaMakeupStudent?.value || "";
   const date = agendaMakeupDate?.value.trim() || "";
@@ -10883,10 +10942,10 @@ agendaMakeupForm?.addEventListener("submit", (event) => {
   saveAgendaEvents(events);
   agendaMakeupForm.reset();
   renderAdminAgenda();
-  showMessage("Reposicao adicionada na agenda.");
+  await supabaseSyncPromise;
 });
 
-agendaDropinForm?.addEventListener("submit", (event) => {
+agendaDropinForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const studentName = agendaDropinName?.value.trim() || agendaDropinStudent?.value || "";
   const date = agendaDropinDate?.value.trim() || "";
@@ -10928,10 +10987,10 @@ agendaDropinForm?.addEventListener("submit", (event) => {
   agendaDropinForm.reset();
   renderAdminAgenda();
   renderPackageAdminList();
-  showMessage("Aula avulsa adicionada na agenda.");
+  await supabaseSyncPromise;
 });
 
-agendaCancelForm?.addEventListener("submit", (event) => {
+agendaCancelForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const eventId = agendaCancelEvent?.value || "";
   const currentEvent = getAgendaEventsForRange(adminAgendaView?.value || "week", parseBrazilianDate(adminAgendaDate?.value || "") || new Date()).find((item) => item.id === eventId);
@@ -10960,7 +11019,7 @@ agendaCancelForm?.addEventListener("submit", (event) => {
   }]);
   agendaCancelForm.reset();
   renderAdminAgenda();
-  showMessage("Cancelamento registrado na agenda.");
+  await supabaseSyncPromise;
 });
 
 document.querySelectorAll("[data-package-page-back]").forEach((button) => {
@@ -10995,6 +11054,15 @@ window.addEventListener("pageshow", () => {
     const restored = restoreNavigationState();
     console.info("Navegacao restaurada apos reexibir pagina.", { restored });
   }
+  retryPendingAppStateSync("pagina reexibida");
+});
+
+window.addEventListener("online", () => {
+  retryPendingAppStateSync("internet restaurada").then((result) => {
+    if (result?.ok && !result.skipped) {
+      console.info("Pendencias locais sincronizadas apos retorno da internet.");
+    }
+  });
 });
 
 newPackageButton?.addEventListener("click", () => {
@@ -11014,7 +11082,7 @@ newPackageButton?.addEventListener("click", () => {
   packageName?.focus();
 });
 
-packageForm?.addEventListener("submit", (event) => {
+packageForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const packages = loadClassPackages();
@@ -11056,9 +11124,10 @@ packageForm?.addEventListener("submit", (event) => {
   renderStudentPackagePanel();
   renderBillingList();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
+  await supabaseSyncPromise;
 });
 
-billingSettingsForm?.addEventListener("submit", (event) => {
+billingSettingsForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   saveBillingSettings({
@@ -11069,6 +11138,7 @@ billingSettingsForm?.addEventListener("submit", (event) => {
     holidaysText: billingHolidays?.value.trim() || "",
   });
   renderBillingList();
+  await supabaseSyncPromise;
 });
 
 [billingFilterMonth, billingFilterStatus, billingFilterName, billingCountHolidays, billingHolidays].forEach((input) => {
@@ -11076,10 +11146,11 @@ billingSettingsForm?.addEventListener("submit", (event) => {
   input?.addEventListener("change", renderBillingList);
 });
 
-billingList?.addEventListener("click", (event) => {
+billingList?.addEventListener("click", async (event) => {
   const paidButton = event.target.closest("[data-mark-billing-paid]");
   if (!paidButton) return;
   markStudentBillingAsPaid(paidButton.dataset.markBillingPaid);
+  await supabaseSyncPromise;
 });
 
 frequencyInput?.addEventListener("change", () => {
@@ -11295,7 +11366,7 @@ makeupCreditList?.addEventListener("click", (event) => {
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
 });
 
-packageAdminList?.addEventListener("click", (event) => {
+packageAdminList?.addEventListener("click", async (event) => {
   const actionButton = event.target.closest("[data-package-list-action]");
   if (actionButton) {
     const packageId = actionButton.dataset.packageId;
@@ -11322,6 +11393,7 @@ packageAdminList?.addEventListener("click", (event) => {
     if (action === "presence") {
       const detail = packageAdminList.querySelector(`[data-package-list-detail="${classPackage.id}"]`);
       const saved = registerPackageCheckin(classPackage.studentName, classPackage, "personal");
+      if (saved) await supabaseSyncPromise;
       renderCheckinHistory();
       renderPackageAdminList();
       renderStudentPackagePanel();
@@ -11343,6 +11415,7 @@ packageAdminList?.addEventListener("click", (event) => {
     if (action === "delete") {
       if (!window.confirm("Excluir este pacote? O histórico antigo será mantido.")) return;
       saveClassPackages(loadClassPackages().filter((item) => item.id !== classPackage.id));
+      await supabaseSyncPromise;
       renderPackageAdminList();
       renderStudentPackagePanel();
       if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
@@ -11403,13 +11476,14 @@ packageAdminList?.addEventListener("click", (event) => {
   if (!window.confirm("Marcar falta nesta aula? Esta acao contabiliza uma aula do pacote.")) return;
 
   registerLessonAbsence(classPackage.studentName, classPackage, lesson);
+  await supabaseSyncPromise;
   renderCheckinHistory();
   renderPackageAdminList();
   renderStudentPackagePanel();
   if (selectedAdminProfileStudent) renderAdminStudentProfile(selectedAdminProfileStudent);
 });
 
-studentPackagePanel?.addEventListener("click", (event) => {
+studentPackagePanel?.addEventListener("click", async (event) => {
   const packageAction = event.target.closest("[data-student-package-action]");
   if (packageAction) {
     renderStudentPackageDetail(packageAction.dataset.studentPackageAction);
@@ -11435,6 +11509,7 @@ studentPackagePanel?.addEventListener("click", (event) => {
     if (!studentName || !classPackage || !lesson || getLessonRecord(classPackage.id, lesson.dateKey)) return;
 
     const result = registerLessonCancellation(studentName, classPackage, lesson);
+    await supabaseSyncPromise;
     renderStudentCheckinStatus();
     renderStudentCancelSuccess(result);
     renderCheckinHistory();
@@ -11448,6 +11523,7 @@ studentPackagePanel?.addEventListener("click", (event) => {
   const requestMakeupButton = event.target.closest("[data-student-request-makeup]");
   if (requestMakeupButton) {
     const url = requestStudentMakeupReschedule(requestMakeupButton.dataset.studentRequestMakeup);
+    await supabaseSyncPromise;
     if (url) window.open(url, "_blank", "noopener");
     renderStudentPackagePanel();
     renderStudentPackageDetail("history");
@@ -11465,6 +11541,7 @@ studentPackagePanel?.addEventListener("click", (event) => {
   if (!studentName || !classPackage) return;
 
   registerPackageCheckin(studentName, classPackage, "aluno");
+  await supabaseSyncPromise;
   renderStudentCheckinStatus();
   renderStudentPackagePanel();
   renderCheckinHistory();
@@ -11493,7 +11570,7 @@ createWorkoutForStudent?.addEventListener("click", () => {
   showWorkoutFormForStudent(selectedAdminWorkoutStudent, "create");
 });
 
-workoutList?.addEventListener("click", (event) => {
+workoutList?.addEventListener("click", async (event) => {
   const editButton = event.target.closest("[data-edit-workout-id]");
   if (editButton) {
     const studentName = editButton.dataset.editWorkoutStudent;
@@ -11541,6 +11618,7 @@ workoutList?.addEventListener("click", (event) => {
   workouts[studentName] = (workouts[studentName] || []).filter((workout) => workout.id !== removeButton.dataset.removeWorkoutId);
   if (!workouts[studentName].length) delete workouts[studentName];
   saveWorkouts(workouts);
+  await supabaseSyncPromise;
   renderWorkouts();
 });
 
@@ -11578,7 +11656,7 @@ studentList?.addEventListener("click", async (event) => {
   const student = students.find((item) => item.id === removeButton.dataset.removeStudent || item.name === removeButton.dataset.removeStudent);
   if (!student || !(await confirmStudentDeletion(student))) return;
 
-  deleteStudentWithLinkedData(student);
+  await deleteStudentWithLinkedData(student);
   renderStudents();
   fillStudentSelects();
   renderWorkouts();
@@ -11610,7 +11688,7 @@ cancelEditButton?.addEventListener("click", () => {
   showMessage("Edicao cancelada.");
 });
 
-studentAdminProfile?.addEventListener("click", (event) => {
+studentAdminProfile?.addEventListener("click", async (event) => {
   const closeButton = event.target.closest("[data-close-student-profile]");
   if (closeButton) {
     openAdminSubpage("students-list");
@@ -11643,6 +11721,7 @@ studentAdminProfile?.addEventListener("click", (event) => {
       if (!window.confirm("Excluir este pacote? O histórico antigo será mantido.")) return;
       const packages = loadClassPackages().filter((item) => item.id !== classPackage.id);
       saveClassPackages(packages);
+      await supabaseSyncPromise;
       renderPackageAdminList();
       renderStudentPackagePanel();
       renderAdminStudentProfile(studentName);
@@ -11654,6 +11733,7 @@ studentAdminProfile?.addEventListener("click", (event) => {
       if (!lesson || getLessonRecord(classPackage.id, lesson.dateKey)) return;
       if (!window.confirm("Marcar falta nesta aula? Esta acao contabiliza uma aula do pacote.")) return;
       registerLessonAbsence(studentName, classPackage, lesson);
+      await supabaseSyncPromise;
       renderCheckinHistory();
       renderPackageAdminList();
       renderStudentPackagePanel();
@@ -11966,6 +12046,11 @@ const logoutButton = document.querySelector("#logout-button");
 
 function enterTestMode(role, studentName = "", options = {}) {
   if (!["student", "admin"].includes(role)) return;
+  if (role === "admin" && isPublishedApp() && options.provider !== "supabase" && !currentSupabaseUser) {
+    showSupabaseLoginMessage("Na versao publicada, use o login real do Personal para cadastrar ou alterar dados.", "error");
+    showMessage("Login real obrigatorio para alteracoes no Supabase.", "error");
+    return;
+  }
   const shouldPersist = options.persist !== false;
   const provider = options.provider || "local";
 
@@ -12147,7 +12232,11 @@ function initializeApp() {
   renderBillingSettings();
   logLocalPersistenceAudit("início");
   fillStudentSelects();
-  loadSupabaseAppState()
+  retryPendingAppStateSync("abertura do app")
+    .catch((error) => {
+      console.warn("Nao foi possivel reenviar pendencias antes do carregamento online.", error);
+    })
+    .then(() => loadSupabaseAppState())
     .then((status) => {
       if (status === "loaded") {
         logLocalPersistenceAudit("supabase carregado");
@@ -12156,7 +12245,7 @@ function initializeApp() {
       }
       if (status === "missing") {
         console.warn("Supabase app_state ainda sem registro main. Enviando cache local como estado inicial.");
-        queueSupabaseAppStateSync();
+        queueSupabaseAppStateSync("estado inicial app_state", { showSuccess: false });
         return;
       }
       console.warn(`Supabase app_state nao carregado (${status}). LocalStorage segue como cache/fallback.`);
