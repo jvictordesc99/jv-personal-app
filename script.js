@@ -29,6 +29,11 @@ let supabaseClient = null;
 let supabaseAppStateClient = null;
 let currentSupabaseUser = null;
 let currentSupabaseProfile = null;
+let supabaseAuthListenerBound = false;
+let applySupabaseUserPromise = null;
+let applyingSupabaseUserId = "";
+let globalErrorHandlersBound = false;
+const supabaseOperationTimeoutMs = 15000;
 try {
   selectedStudentProfile = localStorage.getItem("student-profile") || "";
 } catch {
@@ -390,6 +395,44 @@ function showMessage(text, type = "success") {
   if (!saveMessage) return;
   saveMessage.textContent = text;
   saveMessage.classList.toggle("error", type === "error");
+}
+
+function showAppErrorRecovery(message = "O aplicativo encontrou um erro ao carregar.") {
+  let recovery = document.querySelector("#app-error-recovery");
+  if (!recovery) {
+    recovery = document.createElement("div");
+    recovery.id = "app-error-recovery";
+    recovery.style.cssText = "position:fixed;inset:auto 16px 16px 16px;z-index:9999;padding:16px;border-radius:16px;background:#111827;color:#fff;box-shadow:0 18px 50px rgba(15,23,42,.25);font-family:Manrope,Arial,sans-serif;display:grid;gap:10px;max-width:520px;margin:auto;";
+    const text = document.createElement("span");
+    text.dataset.appErrorText = "true";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Recarregar aplicativo";
+    button.style.cssText = "border:0;border-radius:12px;padding:12px 16px;background:#22c55e;color:#052e16;font-weight:800;cursor:pointer;";
+    button.addEventListener("click", () => window.location.reload());
+    recovery.append(text, button);
+    document.body?.appendChild(recovery);
+  }
+  safeSetText(recovery.querySelector("[data-app-error-text]"), `${message} Seus dados salvos nao serao apagados.`);
+}
+
+function bindGlobalErrorHandlers() {
+  if (globalErrorHandlersBound) return;
+  globalErrorHandlersBound = true;
+  window.addEventListener("error", (event) => {
+    console.error("Erro global capturado pelo app.", {
+      message: event.message,
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+      error: event.error,
+    });
+    showAppErrorRecovery("O aplicativo encontrou um erro inesperado.");
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    console.error("Promessa rejeitada sem tratamento capturada pelo app.", event.reason);
+    showAppErrorRecovery("Uma operacao demorou ou falhou durante o carregamento.");
+  });
 }
 
 function isPublishedApp() {
@@ -1888,13 +1931,66 @@ function showSupabaseLoginMessage(text, type = "success") {
   supabaseLoginMessage.classList.toggle("error", type === "error");
 }
 
+function withTimeout(promise, timeoutMs = supabaseOperationTimeoutMs, label = "operacao") {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error(`Tempo esgotado em ${label}.`)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
+}
+
+function setSupabaseLoginButtonLoading(isLoading) {
+  const submitButton = supabaseLoginForm?.querySelector('button[type="submit"]');
+  if (!submitButton) return;
+  submitButton.disabled = isLoading;
+  submitButton.textContent = isLoading ? "Entrando..." : "Entrar";
+}
+
+function applySupabaseUserOnce(user, source = "manual") {
+  if (!user?.id) return Promise.resolve(false);
+  if (applySupabaseUserPromise && applyingSupabaseUserId === user.id) {
+    console.info("Aplicacao de usuario Supabase ja em andamento; reutilizando tentativa.", { source, auth_user_id: user.id });
+    return applySupabaseUserPromise;
+  }
+
+  applyingSupabaseUserId = user.id;
+  applySupabaseUserPromise = withTimeout(applySupabaseUser(user), supabaseOperationTimeoutMs, "aplicar usuario Supabase")
+    .finally(() => {
+      applyingSupabaseUserId = "";
+      applySupabaseUserPromise = null;
+    });
+  return applySupabaseUserPromise;
+}
+
+function scheduleSupabaseUserApplication(user, source = "auth-state") {
+  if (!user?.id) return;
+  window.setTimeout(() => {
+    applySupabaseUserOnce(user, source).catch((error) => {
+      console.error("Falha ao aplicar usuario Supabase agendado.", {
+        source,
+        auth_user_id: user.id,
+        email: user.email || "",
+        erro: error,
+      });
+      showSupabaseLoginMessage("Login autenticado, mas houve falha ao abrir sua área. Recarregue o aplicativo.", "error");
+    });
+  }, 0);
+}
+
 async function applySupabaseUser(user) {
   currentSupabaseUser = user || null;
   currentSupabaseProfile = null;
   if (!user) return false;
 
   const userEmail = String(user.email || "").trim().toLowerCase();
-  const profile = await getSupabaseProfileByUser(user);
+  const profile = await withTimeout(getSupabaseProfileByUser(user), supabaseOperationTimeoutMs, "carregar profiles").catch((error) => {
+    console.warn("Profile nao carregou dentro do tempo esperado. Buscando aluno pelo app_state.", {
+      email: userEmail,
+      auth_user_id: user.id,
+      erro: error,
+    });
+    return null;
+  });
   currentSupabaseProfile = profile;
   if (!profile) {
     console.warn("Login Supabase sem profile vinculado.", {
@@ -1923,12 +2019,14 @@ async function applySupabaseUser(user) {
       motivo: userEmail === personalAdminEmail ? "email_admin_configurado" : "profile_role_personal",
     });
     if (userEmail === personalAdminEmail && (!profile || profile.role !== "personal")) {
-      await upsertSupabaseProfile({
+      await withTimeout(upsertSupabaseProfile({
         auth_user_id: user.id,
         email: user.email,
         role: "personal",
         name: "Personal João Victor",
         first_login: false,
+      }), supabaseOperationTimeoutMs, "salvar profile personal").catch((error) => {
+        console.warn("Profile do Personal nao foi atualizado, mas o login admin sera liberado pelo e-mail configurado.", error);
       });
     }
     enterModeForSessionRestore("admin");
@@ -1947,10 +2045,17 @@ async function applySupabaseUser(user) {
     email: userEmail,
     auth_user_id: user.id,
   });
-  await loadSupabaseAppState();
-  const student = profile?.student_id
+  await withTimeout(loadSupabaseAppState(), supabaseOperationTimeoutMs, "carregar app_state").catch((error) => {
+    console.warn("app_state nao carregou dentro do tempo esperado. Usando cache local para localizar aluno.", {
+      email: userEmail,
+      auth_user_id: user.id,
+      erro: error,
+    });
+    return "timeout";
+  });
+  const student = (profile?.student_id
     ? loadStudents().find((item) => item.id === profile.student_id || item.auth_user_id === user.id || item.authUserId === user.id || item.supabaseUserId === user.id)
-    : findStudentFromSupabaseUser(user);
+    : null) || findStudentFromSupabaseUser(user);
   if (!student) {
     console.warn("Aluno nao encontrado para usuario Supabase.", {
       email: userEmail,
@@ -1994,23 +2099,20 @@ async function applySupabaseUser(user) {
 async function restoreSupabaseSession() {
   const client = getSupabaseClient();
   if (!client) {
-    showSupabaseLoginMessage("Supabase ainda nao configurado. Use o acesso local temporario.");
+    showSupabaseLoginMessage("Supabase ainda nao configurado.", "error");
     return false;
   }
 
-  const { data } = await client.auth.getSession();
-  if (data?.session?.user) {
-    const restored = await applySupabaseUser(data.session.user);
-    client.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) await applySupabaseUser(session.user);
+  if (!supabaseAuthListenerBound) {
+    supabaseAuthListenerBound = true;
+    client.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) scheduleSupabaseUserApplication(session.user, "auth-state-change");
     });
-    return restored;
   }
 
-  client.auth.onAuthStateChange(async (_event, session) => {
-    if (session?.user) await applySupabaseUser(session.user);
-  });
-  return false;
+  const { data } = await withTimeout(client.auth.getSession(), supabaseOperationTimeoutMs, "restaurar sessao Supabase");
+  if (!data?.session?.user) return false;
+  return applySupabaseUserOnce(data.session.user, "restore-session");
 }
 
 function normalizeStudentsData(students) {
@@ -12324,33 +12426,55 @@ supabaseLoginForm?.addEventListener("submit", async (event) => {
 
   console.info("Tentativa de login Supabase.", { email });
   showSupabaseLoginMessage("Entrando...");
-  const { data, error } = await client.auth.signInWithPassword({ email, password });
-  if (error) {
-    console.error("Erro no login Supabase Auth.", {
-      email,
-      status: error.status,
-      name: error.name,
-      message: error.message,
-      supabaseUrl: getSupabaseConfig().url,
+  setSupabaseLoginButtonLoading(true);
+  try {
+    const { data, error } = await withTimeout(
+      client.auth.signInWithPassword({ email, password }),
+      supabaseOperationTimeoutMs,
+      "login Supabase",
+    );
+    if (error) {
+      console.error("Erro no login Supabase Auth.", {
+        email,
+        status: error.status,
+        name: error.name,
+        message: error.message,
+        supabaseUrl: getSupabaseConfig().url,
+      });
+      const invalidCredentials = /invalid login credentials/i.test(error.message || "");
+      showSupabaseLoginMessage(
+        invalidCredentials
+          ? "E-mail ou senha incorretos. No primeiro acesso, use a senha temporária informada pelo personal."
+          : "Nao foi possivel entrar. Confira e-mail e senha.",
+        "error",
+      );
+      return;
+    }
+    console.info("Supabase Auth autenticou usuario.", {
+      emailInformado: email,
+      userId: data?.user?.id || "",
+      userEmail: data?.user?.email || "",
     });
-    const invalidCredentials = /invalid login credentials/i.test(error.message || "");
+
+    const applied = await applySupabaseUserOnce(data.user, "login-submit");
+    if (applied) {
+      supabaseLoginForm.reset();
+      showSupabaseLoginMessage("");
+    }
+  } catch (error) {
+    console.error("Login Supabase finalizado com erro/timeout.", {
+      email,
+      erro: error,
+      message: error?.message || "",
+    });
     showSupabaseLoginMessage(
-      invalidCredentials
-        ? "E-mail ou senha incorretos. No primeiro acesso, use a senha temporária informada pelo personal."
-        : "Nao foi possivel entrar. Confira e-mail e senha.",
+      /tempo esgotado/i.test(error?.message || "")
+        ? "O login demorou mais que o esperado. Confira sua conexão e tente novamente."
+        : "Nao foi possivel entrar agora. Tente novamente.",
       "error",
     );
-    return;
-  }
-  console.info("Supabase Auth autenticou usuario.", {
-    emailInformado: email,
-    userId: data?.user?.id || "",
-    userEmail: data?.user?.email || "",
-  });
-
-  if (await applySupabaseUser(data.user)) {
-    supabaseLoginForm.reset();
-    showSupabaseLoginMessage("");
+  } finally {
+    setSupabaseLoginButtonLoading(false);
   }
 });
 
@@ -12426,6 +12550,7 @@ function initializeApp() {
   if (appEventsBound) return;
   appEventsBound = true;
 
+  bindGlobalErrorHandlers();
   currentUserType = null;
   console.info(`Supabase URL utilizada: ${getSupabaseConfig().url}`);
   updateTodayLabel();
@@ -12450,7 +12575,7 @@ function initializeApp() {
     .catch((error) => {
       console.warn("Nao foi possivel reenviar pendencias antes do carregamento online.", error);
     })
-    .then(() => loadSupabaseAppState())
+    .then(() => withTimeout(loadSupabaseAppState(), supabaseOperationTimeoutMs, "carregar app_state inicial"))
     .then((status) => {
       if (status === "loaded") {
         logLocalPersistenceAudit("supabase carregado");
@@ -12468,7 +12593,11 @@ function initializeApp() {
       console.warn("Supabase app_state nao carregou. App local continua funcionando.", error);
     })
     .finally(async () => {
-      const supabaseRestored = await restoreSupabaseSession();
+      const supabaseRestored = await restoreSupabaseSession().catch((error) => {
+        console.warn("Sessao Supabase nao restaurada dentro do esperado.", error);
+        showSupabaseLoginMessage("Nao foi possivel restaurar a sessao. Entre novamente.", "error");
+        return false;
+      });
       if (!supabaseRestored) {
         if (loginScreen) loginScreen.hidden = false;
         if (appShell) appShell.hidden = true;
