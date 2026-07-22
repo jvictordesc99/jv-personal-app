@@ -837,6 +837,144 @@ function getAppStateAuditCounts(state = getAppStateSnapshot()) {
   };
 }
 
+function getMergeItemKey(item, fallbackPrefix = "item") {
+  const id = String(item?.id || "").trim();
+  if (id) return id;
+  const fallbackParts = [
+    item?.studentId,
+    item?.studentName,
+    item?.name,
+    item?.email,
+    item?.monthKey,
+    item?.dateKey,
+    item?.date,
+    item?.time,
+    item?.exerciseKey,
+    item?.exerciseName,
+    item?.createdAt,
+    item?.timestamp,
+  ].map((part) => String(part || "").trim()).filter(Boolean);
+  return fallbackParts.length ? fallbackParts.join("::") : fallbackPrefix;
+}
+
+function mergeListsById(onlineItems = [], localItems = []) {
+  const merged = new Map();
+  normalizeListData(onlineItems).forEach((item, index) => {
+    if (!item || typeof item !== "object") return;
+    const key = getMergeItemKey(item, `online-${index}`);
+    if (key) {
+      merged.set(key, { ...item });
+    }
+  });
+  normalizeListData(localItems).forEach((item, index) => {
+    if (!item || typeof item !== "object") return;
+    const key = getMergeItemKey(item, `local-${index}`);
+    if (key) {
+      merged.set(key, { ...(merged.get(key) || {}), ...item });
+    } else {
+      merged.set(`local-${merged.size}-${Date.now()}`, { ...item });
+    }
+  });
+  return Array.from(merged.values());
+}
+
+function mergeStudentsById(onlineStudents = [], localStudents = []) {
+  return normalizeStudentsData(mergeListsById(onlineStudents, localStudents)).map((student) => {
+    const status = String(student.syncStatus || student.sync_status || "").trim();
+    return {
+      ...student,
+      syncStatus: status === "pending" ? "pending" : "synced",
+      syncError: String(student.syncError || student.sync_error || "").trim(),
+      syncUpdatedAt: student.syncUpdatedAt || student.sync_updated_at || "",
+    };
+  });
+}
+
+function mergeWorkoutsByStudent(onlineWorkouts = {}, localWorkouts = {}) {
+  const merged = { ...(onlineWorkouts && typeof onlineWorkouts === "object" ? onlineWorkouts : {}) };
+  Object.entries(localWorkouts && typeof localWorkouts === "object" ? localWorkouts : {}).forEach(([studentKey, workouts]) => {
+    merged[studentKey] = mergeListsById(merged[studentKey] || [], workouts || []);
+  });
+  return merged;
+}
+
+function mergeAppStateForSupabase(onlineState = {}, localState = getAppStateSnapshot()) {
+  return {
+    ...onlineState,
+    ...localState,
+    schemaVersion: Math.max(Number(onlineState?.schemaVersion) || 0, Number(localState?.schemaVersion) || 0, 2),
+    savedAt: new Date().toISOString(),
+    students: mergeStudentsById(onlineState?.students || [], localState?.students || []),
+    workouts: mergeWorkoutsByStudent(onlineState?.workouts || {}, localState?.workouts || {}),
+    loadProgress: mergeListsById(onlineState?.loadProgress || [], localState?.loadProgress || []),
+    assessments: mergeListsById(onlineState?.assessments || [], localState?.assessments || []),
+    checkins: mergeListsById(onlineState?.checkins || [], localState?.checkins || []),
+    classPackages: mergeListsById(onlineState?.classPackages || [], localState?.classPackages || []),
+    packageModels: mergeListsById(onlineState?.packageModels || [], localState?.packageModels || []),
+    dropInClasses: mergeListsById(onlineState?.dropInClasses || [], localState?.dropInClasses || []),
+    agendaEvents: mergeListsById(onlineState?.agendaEvents || [], localState?.agendaEvents || []),
+    makeupCredits: mergeListsById(onlineState?.makeupCredits || [], localState?.makeupCredits || []),
+    workoutFeedbacks: mergeListsById(onlineState?.workoutFeedbacks || [], localState?.workoutFeedbacks || []),
+    resolvedAlerts: mergeListsById(onlineState?.resolvedAlerts || [], localState?.resolvedAlerts || []),
+    financialHistory: mergeListsById(onlineState?.financialHistory || [], localState?.financialHistory || []),
+    billingSettings: {
+      ...(onlineState?.billingSettings || {}),
+      ...(localState?.billingSettings || {}),
+    },
+  };
+}
+
+async function fetchSupabaseAppStateData(client = getSupabaseAppStateClient()) {
+  if (!client) {
+    return { ok: false, error: { message: "Cliente Supabase indisponivel." } };
+  }
+
+  try {
+    const { data, error } = await client
+      .from(supabaseTables.appState)
+      .select("data,updated_at")
+      .eq("id", "main")
+      .maybeSingle();
+
+    if (error) {
+      logSupabaseAppStateError("carregar para mesclagem", error);
+      return { ok: false, error };
+    }
+
+    return {
+      ok: true,
+      data: data?.data || null,
+      updatedAt: data?.updated_at || "",
+      missing: !data?.data,
+    };
+  } catch (error) {
+    logSupabaseAppStateError("carregar para mesclagem por rede/CDN", error);
+    return { ok: false, error };
+  }
+}
+
+function markStudentsSyncStatus(studentIds = [], status = "pending", error = "") {
+  const ids = new Set(studentIds.filter(Boolean));
+  if (!ids.size) return;
+
+  const students = loadStudents().map((student) => {
+    if (!ids.has(student.id)) return student;
+    return {
+      ...student,
+      syncStatus: status,
+      syncError: status === "pending" ? String(error || "Aguardando sincronizacao com Supabase.").slice(0, 300) : "",
+      syncUpdatedAt: new Date().toISOString(),
+    };
+  });
+  memoryStudents = normalizeStudentsData(students);
+  try {
+    localStorage.setItem(studentStorageKey, JSON.stringify(memoryStudents));
+    persistAppDataMeta();
+  } catch (storageError) {
+    console.warn("Nao foi possivel marcar status de sincronizacao do aluno no cache local.", storageError);
+  }
+}
+
 function writeAppStateToLocalStorage(state) {
   if (!state || typeof state !== "object") return false;
 
@@ -886,24 +1024,18 @@ async function loadSupabaseAppState() {
   const client = getSupabaseAppStateClient();
   if (!client) return "unconfigured";
 
-  try {
-    const { data, error } = await client
-      .from(supabaseTables.appState)
-      .select("data,updated_at")
-      .eq("id", "main")
-      .maybeSingle();
+  const result = await fetchSupabaseAppStateData(client);
+  if (!result.ok) return "failed";
+  if (result.missing) return "missing";
 
-    if (error) {
-      logSupabaseAppStateError("carregar", error);
-      return "failed";
-    }
-
-    if (!data?.data) return "missing";
-    return writeAppStateToLocalStorage(data.data) ? "loaded" : "failed";
-  } catch (error) {
-    logSupabaseAppStateError("carregar por rede/CDN", error);
-    return "failed";
-  }
+  const localState = getAppStateSnapshot();
+  const mergedState = mergeAppStateForSupabase(result.data || {}, localState);
+  console.info("app_state carregado do Supabase e mesclado com cache local.", {
+    online: getAppStateAuditCounts(result.data || {}),
+    local: getAppStateAuditCounts(localState),
+    merged: getAppStateAuditCounts(mergedState),
+  });
+  return writeAppStateToLocalStorage(mergedState) ? "loaded" : "failed";
 }
 
 async function upsertAppStateWithRest(payload) {
@@ -971,13 +1103,40 @@ async function syncAppStateToSupabase() {
     return { ok: false, error: { message: "Cliente Supabase indisponivel." } };
   }
 
-  const appState = getAppStateSnapshot();
+  const localState = getAppStateSnapshot();
+  const remoteResult = await fetchSupabaseAppStateData(client);
+  if (!remoteResult.ok) {
+    console.error("Sincronizacao interrompida: nao foi possivel carregar app_state online para mesclagem segura.", remoteResult.error);
+    showSupabaseSyncWarning("Dados salvos localmente. Supabase indisponivel no momento.");
+    return { ok: false, error: remoteResult.error };
+  }
+
+  const appState = mergeAppStateForSupabase(remoteResult.data || {}, localState);
+  appState.students = normalizeStudentsData(appState.students || []).map((student) => ({
+    ...student,
+    syncStatus: "synced",
+    syncError: "",
+    syncUpdatedAt: new Date().toISOString(),
+  }));
+  memoryStudents = normalizeStudentsData(appState.students || []);
+  try {
+    localStorage.setItem(studentStorageKey, JSON.stringify(memoryStudents));
+    persistAppDataMeta();
+  } catch (storageError) {
+    console.warn("Nao foi possivel atualizar o cache local apos mesclagem segura de alunos.", storageError);
+  }
   const payload = {
     id: "main",
     data: appState,
     updated_at: new Date().toISOString(),
   };
   const auditCounts = getAppStateAuditCounts(appState);
+  console.info("Mesclagem segura app_state antes do envio.", {
+    online: getAppStateAuditCounts(remoteResult.data || {}),
+    local: getAppStateAuditCounts(localState),
+    merged: auditCounts,
+    remoteUpdatedAt: remoteResult.updatedAt || "",
+  });
   console.info(`Enviando app_state para Supabase: ${JSON.stringify({
     table: supabaseTables.appState,
     id: payload.id,
@@ -999,6 +1158,7 @@ async function syncAppStateToSupabase() {
       if (restResult.ok) {
         console.info(`Upsert app_state via REST concluido com sucesso: ${JSON.stringify(restResult.data)}`);
         console.info(`Auditoria app_state sincronizado via REST: ${JSON.stringify(auditCounts)}`);
+        writeAppStateToLocalStorage(appState);
         return { ok: true, data: restResult.data, via: "rest" };
       }
       showSupabaseSyncWarning("Dados salvos localmente. Supabase indisponivel no momento.");
@@ -1009,6 +1169,7 @@ async function syncAppStateToSupabase() {
 
     console.info(`Upsert app_state concluido com sucesso: ${JSON.stringify(data)}`);
     console.info(`Auditoria app_state sincronizado: ${JSON.stringify(auditCounts)}`);
+    writeAppStateToLocalStorage(appState);
     return { ok: true, data, via: "supabase" };
   } catch (error) {
     logSupabaseAppStateError("salvar por rede/CDN", error);
@@ -1016,6 +1177,7 @@ async function syncAppStateToSupabase() {
     if (restResult.ok) {
       console.info(`Upsert app_state via REST concluido com sucesso: ${JSON.stringify(restResult.data)}`);
       console.info(`Auditoria app_state sincronizado via REST: ${JSON.stringify(auditCounts)}`);
+      writeAppStateToLocalStorage(appState);
       return { ok: true, data: restResult.data, via: "rest" };
     }
     showSupabaseSyncWarning("Dados salvos localmente. Supabase indisponivel no momento.");
@@ -1605,6 +1767,9 @@ function normalizeStudentsData(students) {
         due: String(student.due || "").trim(),
         payment: validPayments.includes(student.payment) ? student.payment : "Em dia",
         lastPaymentDate: String(student.lastPaymentDate || student.last_payment_date || "").trim(),
+        syncStatus: String(student.syncStatus || student.sync_status || "synced").trim(),
+        syncError: String(student.syncError || student.sync_error || "").trim(),
+        syncUpdatedAt: String(student.syncUpdatedAt || student.sync_updated_at || "").trim(),
       };
     })
     .filter((student) => student.name);
@@ -3363,7 +3528,6 @@ function saveStudents(students) {
     localStorage.setItem(studentStorageKey, JSON.stringify(memoryStudents));
     persistAppDataMeta();
     queueSupabaseAppStateSync();
-    showMessage("Aluno salvo neste navegador.");
   } catch {
     showMessage("Aluno apareceu na lista, mas este navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -9828,13 +9992,15 @@ studentForm?.addEventListener("submit", async (event) => {
 
     supabaseSyncResult = await flushAppStateSyncNow("cadastro de aluno, pacote e agenda");
     if (!supabaseSyncResult?.ok) {
+      const syncErrorMessage = getStepErrorMessage(supabaseSyncResult?.error);
+      markStudentsSyncStatus([student.id], "pending", syncErrorMessage);
       console.error("Aluno/pacote/agenda salvos localmente, mas Supabase falhou.", {
         aluno: student.name,
         pacote: automaticPackage,
         agenda: agendaResult,
         supabase: supabaseSyncResult?.error,
       });
-      showMessage(`Aluno${automaticPackage ? ", pacote e aulas" : ""} salvos localmente, mas Supabase falhou na sincronização: ${getStepErrorMessage(supabaseSyncResult?.error)}.`, "error");
+      showMessage(`Aluno${automaticPackage ? ", pacote e aulas" : ""} salvos localmente e aguardando sincronização. Supabase falhou: ${syncErrorMessage}.`, "error");
       return;
     }
   } catch (error) {
