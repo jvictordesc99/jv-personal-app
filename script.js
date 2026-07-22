@@ -33,7 +33,10 @@ let supabaseAuthListenerBound = false;
 let applySupabaseUserPromise = null;
 let applyingSupabaseUserId = "";
 let globalErrorHandlersBound = false;
+let activeLoginSource = "";
 const supabaseOperationTimeoutMs = 15000;
+const supabaseQueryTimeoutMs = 7000;
+const supabaseUserApplyTimeoutMs = 30000;
 try {
   selectedStudentProfile = localStorage.getItem("student-profile") || "";
 } catch {
@@ -1523,7 +1526,9 @@ function saveSupabaseStudentLink(studentName, user) {
   if (index < 0) return;
 
   const email = String(user.email || "").toLowerCase();
-  if (students[index].supabaseUserId === user.id && (!email || students[index].email === email)) return;
+  if (getStudentAuthUserId(students[index]) === user.id
+    && (!email || (students[index].email === email && students[index].email_login === email))
+  ) return;
 
   students[index] = {
     ...students[index],
@@ -1954,10 +1959,12 @@ function applySupabaseUserOnce(user, source = "manual") {
   }
 
   applyingSupabaseUserId = user.id;
-  applySupabaseUserPromise = withTimeout(applySupabaseUser(user), supabaseOperationTimeoutMs, "aplicar usuario Supabase")
+  activeLoginSource = source;
+  applySupabaseUserPromise = withTimeout(applySupabaseUser(user), supabaseUserApplyTimeoutMs, "aplicar usuario Supabase")
     .finally(() => {
       applyingSupabaseUserId = "";
       applySupabaseUserPromise = null;
+      activeLoginSource = "";
     });
   return applySupabaseUserPromise;
 }
@@ -1965,6 +1972,13 @@ function applySupabaseUserOnce(user, source = "manual") {
 function scheduleSupabaseUserApplication(user, source = "auth-state") {
   if (!user?.id) return;
   window.setTimeout(() => {
+    if (activeLoginSource === "login-submit" || (applySupabaseUserPromise && applyingSupabaseUserId === user.id)) {
+      console.info("Evento Auth ignorado porque o login do formulario ja esta aplicando o usuario.", {
+        source,
+        auth_user_id: user.id,
+      });
+      return;
+    }
     applySupabaseUserOnce(user, source).catch((error) => {
       console.error("Falha ao aplicar usuario Supabase agendado.", {
         source,
@@ -1972,7 +1986,6 @@ function scheduleSupabaseUserApplication(user, source = "auth-state") {
         email: user.email || "",
         erro: error,
       });
-      showSupabaseLoginMessage("Login autenticado, mas houve falha ao abrir sua área. Recarregue o aplicativo.", "error");
     });
   }, 0);
 }
@@ -1983,14 +1996,30 @@ async function applySupabaseUser(user) {
   if (!user) return false;
 
   const userEmail = String(user.email || "").trim().toLowerCase();
-  const profile = await withTimeout(getSupabaseProfileByUser(user), supabaseOperationTimeoutMs, "carregar profiles").catch((error) => {
-    console.warn("Profile nao carregou dentro do tempo esperado. Buscando aluno pelo app_state.", {
+  const localStudentBeforeRemote = findStudentFromSupabaseUser(user);
+  const [profileResult, appStateResult] = await Promise.allSettled([
+    withTimeout(getSupabaseProfileByUser(user), supabaseQueryTimeoutMs, "profiles"),
+    withTimeout(loadSupabaseAppState(), supabaseQueryTimeoutMs, "app_state"),
+  ]);
+
+  const profile = profileResult.status === "fulfilled" ? profileResult.value : null;
+  const appStateStatus = appStateResult.status === "fulfilled" ? appStateResult.value : "failed";
+  if (profileResult.status === "rejected") {
+    console.warn("Consulta de profiles falhou ou demorou. Login seguira pelo app_state quando possivel.", {
+      etapa: "profiles",
       email: userEmail,
       auth_user_id: user.id,
-      erro: error,
+      erro: profileResult.reason,
     });
-    return null;
-  });
+  }
+  if (appStateResult.status === "rejected") {
+    console.warn("Carregamento de app_state falhou ou demorou. Login tentara usar cache local.", {
+      etapa: "app_state",
+      email: userEmail,
+      auth_user_id: user.id,
+      erro: appStateResult.reason,
+    });
+  }
   currentSupabaseProfile = profile;
   if (!profile) {
     console.warn("Login Supabase sem profile vinculado.", {
@@ -1998,18 +2027,22 @@ async function applySupabaseUser(user) {
       email: userEmail,
       tabelaEsperada: supabaseTables.profiles,
       buscaRealizadaPor: "auth_user_id",
+      fallback: "app_state auth_user_id/email",
     });
   }
   const profileRole = String(profile?.role || "").toLowerCase();
+  const metadataRole = String(user?.user_metadata?.role || user?.app_metadata?.role || "").toLowerCase();
   const role = userEmail === personalAdminEmail || profileRole === "personal"
     ? "admin"
-    : profileRole === "aluno" ? "student" : getSupabaseUserRole(user);
+    : profileRole === "aluno" || metadataRole === "aluno" ? "student" : getSupabaseUserRole(user);
   console.info("Login Supabase realizado.", {
     email: userEmail,
     auth_user_id: user.id,
     profile,
     roleDetectada: role,
-    origemPerfil: "profiles",
+    origemPerfil: profile ? "profiles" : "metadata/app_state",
+    appStateStatus,
+    alunoLocalAntesDoRemoto: localStudentBeforeRemote?.name || "",
   });
 
   if (role === "admin") {
@@ -2025,7 +2058,7 @@ async function applySupabaseUser(user) {
         role: "personal",
         name: "Personal João Victor",
         first_login: false,
-      }), supabaseOperationTimeoutMs, "salvar profile personal").catch((error) => {
+      }), supabaseQueryTimeoutMs, "salvar profile personal").catch((error) => {
         console.warn("Profile do Personal nao foi atualizado, mas o login admin sera liberado pelo e-mail configurado.", error);
       });
     }
@@ -2041,25 +2074,23 @@ async function applySupabaseUser(user) {
     return true;
   }
 
-  console.info("Tentativa de login aluno: carregando app_state antes de procurar vinculo.", {
+  console.info("Tentativa de login aluno: procurando vinculo no app_state/cache.", {
     email: userEmail,
     auth_user_id: user.id,
   });
-  await withTimeout(loadSupabaseAppState(), supabaseOperationTimeoutMs, "carregar app_state").catch((error) => {
-    console.warn("app_state nao carregou dentro do tempo esperado. Usando cache local para localizar aluno.", {
-      email: userEmail,
-      auth_user_id: user.id,
-      erro: error,
-    });
-    return "timeout";
-  });
   const student = (profile?.student_id
     ? loadStudents().find((item) => item.id === profile.student_id || item.auth_user_id === user.id || item.authUserId === user.id || item.supabaseUserId === user.id)
-    : null) || findStudentFromSupabaseUser(user);
+    : null) || localStudentBeforeRemote || findStudentFromSupabaseUser(user);
   if (!student) {
+    const failedStages = [
+      profileResult.status === "rejected" ? `profiles: ${getStepErrorMessage(profileResult.reason)}` : "",
+      appStateResult.status === "rejected" ? `app_state: ${getStepErrorMessage(appStateResult.reason)}` : "",
+      "vinculo do aluno: nao encontrado por auth_user_id nem e-mail",
+    ].filter(Boolean);
     console.warn("Aluno nao encontrado para usuario Supabase.", {
       email: userEmail,
       auth_user_id: user.id,
+      etapas: failedStages,
       alunosDisponiveis: loadStudents().map((item) => ({
         id: item.id,
         nome: item.name,
@@ -2067,7 +2098,7 @@ async function applySupabaseUser(user) {
         auth_user_id: item.auth_user_id || item.authUserId || item.supabaseUserId || "",
       })),
     });
-    showSupabaseLoginMessage("Seu login existe, mas ainda não está vinculado ao seu cadastro. Fale com o personal.", "error");
+    showSupabaseLoginMessage(`Login autenticado, mas nao encontrei seu cadastro. Etapa: ${failedStages.join(" | ")}. Fale com o personal.`, "error");
     return false;
   }
 
@@ -2078,7 +2109,21 @@ async function applySupabaseUser(user) {
     profile,
     auth_user_id: student.auth_user_id || student.authUserId || student.supabaseUserId || "",
   });
+  const alreadyLinkedToAuth = getStudentAuthUserId(student) === user.id;
   saveSupabaseStudentLink(student.name, user);
+  if (!alreadyLinkedToAuth) {
+    supabaseSyncPromise
+      .then((result) => console.info("Vinculo auth_user_id do aluno sincronizado apos login.", {
+        aluno: student.name,
+        auth_user_id: user.id,
+        ok: Boolean(result?.ok),
+      }))
+      .catch((error) => console.warn("Vinculo auth_user_id ficou pendente de sincronizacao.", {
+        aluno: student.name,
+        auth_user_id: user.id,
+        erro: error,
+      }));
+  }
   enterModeForSessionRestore("student", student.name);
   saveAppLoginSession({
     role: "student",
@@ -12427,6 +12472,7 @@ supabaseLoginForm?.addEventListener("submit", async (event) => {
   console.info("Tentativa de login Supabase.", { email });
   showSupabaseLoginMessage("Entrando...");
   setSupabaseLoginButtonLoading(true);
+  activeLoginSource = "login-submit";
   try {
     const { data, error } = await withTimeout(
       client.auth.signInWithPassword({ email, password }),
@@ -12474,6 +12520,7 @@ supabaseLoginForm?.addEventListener("submit", async (event) => {
       "error",
     );
   } finally {
+    if (!applySupabaseUserPromise) activeLoginSource = "";
     setSupabaseLoginButtonLoading(false);
   }
 });
