@@ -5979,3 +5979,98 @@ label,
     grid-template-columns: 1fr !important;
   }
 }
+
+/* Final navigation card guard: prevents clipped icons and cramped grids. */
+.nav-card-grid,
+.package-module-menu {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(14px, 2vw, 22px);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.nav-card,
+.package-module-menu button {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 184px;
+  display: grid;
+  grid-template-rows: 52px auto minmax(42px, 1fr) auto;
+  align-items: start;
+  align-content: start;
+  justify-items: start;
+  gap: 12px;
+  padding: clamp(18px, 2.5vw, 24px);
+  overflow: hidden;
+  white-space: normal;
+}
+
+.nav-card-icon {
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  min-height: 52px;
+  max-width: 52px;
+  max-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 52px;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  overflow: hidden;
+}
+
+.nav-card strong,
+.package-module-menu button strong {
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.2;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.nav-card small,
+.package-module-menu button small,
+.package-module-menu button span:not(.nav-card-icon) {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.nav-card em,
+.package-module-menu button em {
+  align-self: end;
+  width: 100%;
+  margin-top: auto;
+}
+
+@media (max-width: 1023px) {
+  .nav-card-grid,
+  .package-module-menu {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .nav-card-grid,
+  .package-module-menu {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .nav-card,
+  .package-module-menu button {
+    min-height: 172px;
+  }
+}
