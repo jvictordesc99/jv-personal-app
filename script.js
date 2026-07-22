@@ -17,9 +17,7 @@ const pageTitle = document.querySelector("#page-title");
 const todayLabel = document.querySelector("#today-label");
 const loginScreen = document.querySelector("#login-screen");
 const appShell = document.querySelector("#app-shell");
-const loginButtons = document.querySelectorAll("[data-login-role]");
 const loginStudentSelect = document.querySelector("#login-student-select");
-const loginStudentButton = document.querySelector("#login-student-button");
 const supabaseLoginForm = document.querySelector("#supabase-login-form");
 const supabaseLoginEmail = document.querySelector("#supabase-login-email");
 const supabaseLoginPassword = document.querySelector("#supabase-login-password");
@@ -1572,15 +1570,79 @@ async function createStudentAuthUser(email, password, studentName) {
       },
     });
 
+    const alreadyExists = /already|registered|exists|user.*exist|already registered/i.test(error?.message || "")
+      || (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0);
+
     console.info("Criacao de acesso do aluno no Supabase Auth.", {
       email,
       aluno: studentName,
       userId: data?.user?.id || "",
+      novoUsuario: Boolean(data?.user?.id && !alreadyExists),
+      emailJaExistia: Boolean(alreadyExists),
       confirmationSentAt: data?.user?.confirmation_sent_at || "",
       emailConfirmedAt: data?.user?.email_confirmed_at || "",
       error,
     });
-    return { userId: data?.user?.id || "", error };
+
+    if (alreadyExists) {
+      await signupClient.auth.signOut().catch(() => null);
+      return {
+        userId: "",
+        error: null,
+        alreadyExists: true,
+        created: false,
+        loginVerified: false,
+      };
+    }
+
+    if (error) return { userId: "", error };
+
+    const userId = data?.user?.id || "";
+    if (!userId) {
+      await signupClient.auth.signOut().catch(() => null);
+      return { userId: "", error: new Error("Supabase nao retornou o id do usuario criado.") };
+    }
+
+    const validationClient = window.supabase.createClient(config.url, config.anonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        storageKey: `signup-validation-${Date.now()}`,
+      },
+    });
+    const { data: validationData, error: validationError } = await validationClient.auth.signInWithPassword({ email, password });
+    await validationClient.auth.signOut().catch(() => null);
+    await signupClient.auth.signOut().catch(() => null);
+
+    if (validationError || validationData?.user?.id !== userId) {
+      console.error("Teste de login do aluno falhou apos signUp.", {
+        email,
+        aluno: studentName,
+        auth_user_id: userId,
+        erro: validationError,
+        userIdValidado: validationData?.user?.id || "",
+      });
+      return {
+        userId: "",
+        error: validationError || new Error("Login de validacao nao retornou o mesmo usuario criado."),
+        created: false,
+        loginVerified: false,
+      };
+    }
+
+    console.info("Teste de login do aluno validado com sucesso.", {
+      email,
+      aluno: studentName,
+      auth_user_id: userId,
+    });
+    return {
+      userId,
+      error: null,
+      alreadyExists: false,
+      created: true,
+      loginVerified: true,
+    };
   } catch (error) {
     console.error("Erro ao criar usuario do aluno no Supabase Auth.", {
       message: error?.message,
@@ -1608,37 +1670,38 @@ async function createStudentAccessForRecord(student) {
 
   const temporaryPassword = getTemporaryStudentPassword(student);
   console.info("Criando acesso do aluno no Supabase.", { email, aluno: name });
-  const { userId, error } = await createStudentAuthUser(email, temporaryPassword, name);
-  const alreadyExists = /already|registered|exists|user.*exist|already registered/i.test(error?.message || "");
-  let authUserId = userId;
+  const authResult = await createStudentAuthUser(email, temporaryPassword, name);
+  const { userId, error } = authResult;
 
-  if (error && !alreadyExists) {
-    console.error("Erro detalhado ao criar usuario do aluno.", { email, aluno: name, erro: error });
-    return { student, temporaryPassword, created: false, error };
-  }
-
-  if (alreadyExists && !authUserId) {
-    const existingProfile = await getSupabaseProfileByEmail(email);
-    authUserId = existingProfile?.auth_user_id || existingProfile?.id || "";
-    if (!authUserId) {
-      return {
-        student,
-        temporaryPassword,
-        created: false,
-        error: new Error("Usuário já existe no Supabase, mas ainda não há profile vinculado."),
-      };
-    }
-  }
-
-  if (!authUserId) {
+  if (authResult?.alreadyExists) {
+    console.warn("E-mail ja possui acesso no Supabase Auth. Senha provisoria nao foi aplicada.", {
+      email,
+      aluno: name,
+    });
     return {
       student,
-      temporaryPassword,
+      temporaryPassword: "",
       created: false,
-      error: new Error("Supabase não retornou o id do usuário criado."),
+      alreadyExists: true,
+      error: new Error("Este e-mail ja possui acesso. A senha existente nao foi alterada."),
     };
   }
 
+  if (error) {
+    console.error("Erro detalhado ao criar usuario do aluno.", { email, aluno: name, erro: error });
+    return { student, temporaryPassword: "", created: false, error };
+  }
+
+  if (!userId || !authResult?.loginVerified) {
+    return {
+      student,
+      temporaryPassword: "",
+      created: false,
+      error: new Error("Acesso nao vinculado porque o teste de login nao foi confirmado."),
+    };
+  }
+
+  const authUserId = userId;
   const linkedStudent = {
     ...student,
     supabaseUserId: authUserId,
@@ -3312,43 +3375,11 @@ function clearAppLoginSession() {
   removeLocalValue("student-profile");
 }
 
-function restoreLocalAppSession() {
-  const session = getLocalJson(appSessionStorageKey, null);
-  if (!session?.active || !["admin", "student"].includes(session.role)) return false;
-
-  if (session.role === "admin") {
-    if (isPublishedApp() && session.provider !== "supabase") {
-      console.warn("Sessao local de Personal ignorada na versao publicada. Login real obrigatorio.");
-      clearAppLoginSession();
-      return false;
-    }
-    console.info("Sessao local encontrada. Abrindo area Personal/Admin.", session);
-    enterModeForSessionRestore("admin");
-    restoreNavigationState();
-    return true;
-  }
-
-  const student = findStudentByIdentifier(session.studentName || selectedStudentProfile);
-  if (!student) {
-    console.warn("Sessao local de aluno invalida. Aluno nao encontrado.", session);
-    clearAppLoginSession();
-    return false;
-  }
-
-  console.info("Sessao local encontrada. Abrindo area do aluno.", {
-    aluno: student.name,
-    provider: session.provider,
-  });
-  enterModeForSessionRestore("student", student.name);
-  restoreNavigationState();
-  return true;
-}
-
 function enterModeForSessionRestore(role, studentName = "") {
   const previousRestoringState = isRestoringNavigation;
   isRestoringNavigation = true;
   try {
-    enterTestMode(role, studentName, { persist: false, provider: currentSupabaseUser ? "supabase" : "local" });
+    enterTestMode(role, studentName, { persist: false, provider: "supabase" });
   } finally {
     isRestoringNavigation = previousRestoringState;
   }
@@ -10066,6 +10097,8 @@ studentForm?.addEventListener("submit", async (event) => {
         observacao: "Se quiser usar profiles como fonte de permissao, ajuste as policies/RLS ou crie trigger no Supabase. O app tambem localiza aluno por auth_user_id/email no app_state.",
       });
     }
+  } else if (accessResult?.alreadyExists) {
+    showMessage("Este e-mail já possui acesso. A senha existente não foi alterada.", "error");
   } else if (accessResult?.error) {
     showMessage(`Aluno salvo, mas o acesso ao aplicativo não foi criado: ${accessResult.error.message}`, "error");
   } else {
@@ -10095,17 +10128,21 @@ async function createOrLinkStudentAccessFromForm() {
   createStudentAccessButton.disabled = true;
   safeSetText(createStudentAccessButton, "Criando acesso...");
 
-  const { userId, error } = await createStudentAuthUser(email, password, name);
-  if (error || !userId) {
+  const authResult = await createStudentAuthUser(email, password, name);
+  const { userId, error } = authResult;
+  if (authResult?.alreadyExists) {
+    showMessage("Este e-mail já possui acesso. A senha existente não foi alterada.", "error");
+    createStudentAccessButton.disabled = false;
+    safeSetText(createStudentAccessButton, "Criar acesso do aluno");
+    return;
+  }
+  if (error || !userId || !authResult?.loginVerified) {
     console.error("Falha ao criar acesso do aluno no Supabase Auth.", {
       email,
       aluno: name,
       erro: error,
     });
-    const alreadyExists = /already|registered|exists|user.*exist/i.test(error?.message || "");
-    showMessage(alreadyExists
-      ? "Usuário já existe. Vincule manualmente ou use o mesmo email."
-      : `Nao foi possivel criar o acesso no Supabase: ${error?.message || "usuario nao retornado"}.`, "error");
+    showMessage(`Nao foi possivel criar o acesso no Supabase: ${error?.message || "login de validacao nao confirmado"}.`, "error");
     createStudentAccessButton.disabled = false;
     safeSetText(createStudentAccessButton, "Criar acesso do aluno");
     return;
@@ -10182,11 +10219,18 @@ async function sendStudentAccessInviteFromForm() {
   createStudentAccessButton.disabled = true;
   safeSetText(createStudentAccessButton, "Enviando convite...");
 
-  const { userId, error } = await createStudentAuthUser(email, createTemporaryInvitePassword(), name);
-  const alreadyExists = /already|registered|exists|user.*exist|already registered/i.test(error?.message || "");
-  if (error && !alreadyExists) {
+  const inviteAuth = await createStudentAuthUser(email, createTemporaryInvitePassword(), name);
+  const { userId, error } = inviteAuth;
+  const alreadyExists = Boolean(inviteAuth?.alreadyExists);
+  if (alreadyExists) {
+    showMessage("Este e-mail já possui acesso. A senha existente não foi alterada.", "error");
+    createStudentAccessButton.disabled = false;
+    safeSetText(createStudentAccessButton, "Enviar convite de acesso");
+    return;
+  }
+  if (error || !userId || !inviteAuth?.loginVerified) {
     console.error("Falha ao criar acesso do aluno no Supabase Auth.", { email, aluno: name, erro: error });
-    showMessage(`Nao foi possivel criar o convite no Supabase: ${error?.message || "usuario nao retornado"}.`, "error");
+    showMessage(`Nao foi possivel criar o convite no Supabase: ${error?.message || "login de validacao nao confirmado"}.`, "error");
     createStudentAccessButton.disabled = false;
     safeSetText(createStudentAccessButton, "Enviar convite de acesso");
     return;
@@ -10284,11 +10328,19 @@ async function createStudentTemporaryAccessFromForm() {
   createStudentAccessButton.disabled = true;
   safeSetText(createStudentAccessButton, "Criando acesso...");
 
-  const { userId, error } = await createStudentAuthUser(email, temporaryPassword, name);
-  const alreadyExists = /already|registered|exists|user.*exist|already registered/i.test(error?.message || "");
+  const authResult = await createStudentAuthUser(email, temporaryPassword, name);
+  const { userId, error } = authResult;
+  const alreadyExists = Boolean(authResult?.alreadyExists);
   let authUserId = userId;
 
-  if (error && !alreadyExists) {
+  if (alreadyExists) {
+    showMessage("Este e-mail já possui acesso. A senha existente não foi alterada.", "error");
+    createStudentAccessButton.disabled = false;
+    safeSetText(createStudentAccessButton, "Criar acesso do aluno");
+    return;
+  }
+
+  if (error) {
     console.error("Erro detalhado ao criar usuario do aluno.", { email, aluno: name, erro: error });
     showMessage(`Nao foi possivel criar o acesso: ${error?.message || "erro desconhecido"}.`, "error");
     createStudentAccessButton.disabled = false;
@@ -10296,15 +10348,11 @@ async function createStudentTemporaryAccessFromForm() {
     return;
   }
 
-  if (alreadyExists && !authUserId) {
-    const existingProfile = await getSupabaseProfileByEmail(email);
-    authUserId = existingProfile?.auth_user_id || existingProfile?.id || "";
-    if (!authUserId) {
-      showMessage("Usuário já existe no Supabase. Vincule pelo mesmo e-mail quando houver profile ou use recuperação de senha.", "error");
-      createStudentAccessButton.disabled = false;
-      safeSetText(createStudentAccessButton, "Criar acesso do aluno");
-      return;
-    }
+  if (!authUserId || !authResult?.loginVerified) {
+    showMessage("Acesso nao criado: o teste de login com a senha temporaria nao foi confirmado.", "error");
+    createStudentAccessButton.disabled = false;
+    safeSetText(createStudentAccessButton, "Criar acesso do aluno");
+    return;
   }
 
   const linkedStudent = {
@@ -12046,13 +12094,13 @@ const logoutButton = document.querySelector("#logout-button");
 
 function enterTestMode(role, studentName = "", options = {}) {
   if (!["student", "admin"].includes(role)) return;
-  if (role === "admin" && isPublishedApp() && options.provider !== "supabase" && !currentSupabaseUser) {
-    showSupabaseLoginMessage("Na versao publicada, use o login real do Personal para cadastrar ou alterar dados.", "error");
-    showMessage("Login real obrigatorio para alteracoes no Supabase.", "error");
+  if (options.provider !== "supabase" || !currentSupabaseUser) {
+    showSupabaseLoginMessage("Use o login real com e-mail e senha.", "error");
+    console.warn("Entrada local/teste bloqueada. Login real Supabase obrigatorio.");
     return;
   }
   const shouldPersist = options.persist !== false;
-  const provider = options.provider || "local";
+  const provider = "supabase";
 
   Object.keys(activeWorkoutByStudent).forEach((key) => delete activeWorkoutByStudent[key]);
   Object.keys(activeSessionByWorkout).forEach((key) => delete activeSessionByWorkout[key]);
@@ -12061,7 +12109,7 @@ function enterTestMode(role, studentName = "", options = {}) {
 
   if (role === "student") {
     const students = loadStudents();
-    const requestedStudent = studentName || loginStudentSelect?.value || students[0]?.name || "";
+    const requestedStudent = studentName || "";
     selectedStudentProfile = students.some((student) => student.name === requestedStudent) ? requestedStudent : students[0]?.name || "";
     setLocalValue("student-profile", selectedStudentProfile);
     if (workoutViewStudent) workoutViewStudent.value = selectedStudentProfile;
@@ -12081,16 +12129,6 @@ function enterTestMode(role, studentName = "", options = {}) {
   renderHomeDashboard();
   renderCurrentWorkout();
 }
-
-loginButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    enterTestMode(button.dataset.loginRole);
-  });
-});
-
-loginStudentButton?.addEventListener("click", () => {
-  enterTestMode("student", loginStudentSelect?.value);
-});
 
 supabaseLoginForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -12255,8 +12293,7 @@ function initializeApp() {
     })
     .finally(async () => {
       const supabaseRestored = await restoreSupabaseSession();
-      const localRestored = supabaseRestored ? true : restoreLocalAppSession();
-      if (!localRestored) {
+      if (!supabaseRestored) {
         if (loginScreen) loginScreen.hidden = false;
         if (appShell) appShell.hidden = true;
       }
