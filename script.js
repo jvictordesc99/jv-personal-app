@@ -108,6 +108,8 @@ const financialHistoryStorageKey = "joao-victor-financial-history";
 const packageModelStorageKey = "joao-victor-package-models";
 const navigationStateStorageKey = "joao-victor-navigation-state";
 const pendingSupabaseSyncStorageKey = "joao-victor-pending-supabase-sync";
+const deletionTombstoneStorageKey = "joao-victor-deletion-tombstones";
+const tombstoneRetentionMs = 180 * 24 * 60 * 60 * 1000;
 const supabaseTables = {
   appState: "app_state",
   profiles: "profiles",
@@ -806,6 +808,7 @@ function getAppStateSnapshot() {
   return {
     schemaVersion: 2,
     savedAt: new Date().toISOString(),
+    deletionTombstones: loadDeletionTombstones(),
     students: loadStudents(),
     workouts: loadWorkouts(),
     loadProgress: loadProgressRecords(),
@@ -841,6 +844,7 @@ function getAppStateAuditCounts(state = getAppStateSnapshot()) {
     makeupCredits: normalizeListData(state.makeupCredits || []).length,
     resolvedAlerts: normalizeListData(state.resolvedAlerts || []).length,
     financialHistory: normalizeListData(state.financialHistory || []).length,
+    deletionTombstones: normalizeDeletionTombstones(state.deletionTombstones || []).length,
   };
 }
 
@@ -864,11 +868,113 @@ function getMergeItemKey(item, fallbackPrefix = "item") {
   return fallbackParts.length ? fallbackParts.join("::") : fallbackPrefix;
 }
 
-function mergeListsById(onlineItems = [], localItems = []) {
+function normalizeDeletionTombstones(tombstones = []) {
+  const cutoff = Date.now() - tombstoneRetentionMs;
+  const merged = new Map();
+  normalizeListData(tombstones).forEach((item) => {
+    if (!item || typeof item !== "object") return;
+    const collection = String(item.collection || "").trim();
+    const itemId = String(item.itemId || item.id || "").trim();
+    if (!collection || !itemId) return;
+    const deletedAt = item.deletedAt || new Date().toISOString();
+    const deletedTime = Date.parse(deletedAt);
+    if (Number.isFinite(deletedTime) && deletedTime < cutoff) return;
+    const key = `${collection}::${itemId}`;
+    const previous = merged.get(key);
+    if (previous && Date.parse(previous.deletedAt || "") > Date.parse(deletedAt || "")) return;
+    merged.set(key, {
+      id: key,
+      collection,
+      itemId,
+      name: String(item.name || "").trim(),
+      studentId: String(item.studentId || "").trim(),
+      studentName: String(item.studentName || "").trim(),
+      deletedAt,
+      reason: String(item.reason || "exclusao_intencional").trim(),
+    });
+  });
+  return Array.from(merged.values());
+}
+
+function loadDeletionTombstones() {
+  return normalizeDeletionTombstones(getLocalJson(deletionTombstoneStorageKey, []));
+}
+
+function saveDeletionTombstones(tombstones) {
+  const normalized = normalizeDeletionTombstones(tombstones);
+  try {
+    localStorage.setItem(deletionTombstoneStorageKey, JSON.stringify(normalized));
+    persistAppDataMeta();
+  } catch (error) {
+    console.warn("Nao foi possivel salvar tombstones no cache local.", error);
+  }
+  return normalized;
+}
+
+function getTombstoneKey(collection, itemId) {
+  return `${String(collection || "").trim()}::${String(itemId || "").trim()}`;
+}
+
+function createTombstoneSet(tombstones = []) {
+  return new Set(normalizeDeletionTombstones(tombstones).map((item) => getTombstoneKey(item.collection, item.itemId)));
+}
+
+function hasDeletionTombstone(tombstoneSet, collection, itemId) {
+  if (!collection || !itemId) return false;
+  return tombstoneSet.has(getTombstoneKey(collection, itemId));
+}
+
+function addDeletionTombstones(entries = []) {
+  const existing = loadDeletionTombstones();
+  const deletedAt = new Date().toISOString();
+  const next = [
+    ...existing,
+    ...entries
+      .filter((entry) => entry?.collection && entry?.itemId)
+      .map((entry) => ({
+        ...entry,
+        deletedAt: entry.deletedAt || deletedAt,
+        reason: entry.reason || "exclusao_intencional",
+      })),
+  ];
+  return saveDeletionTombstones(next);
+}
+
+function getItemTombstoneIds(item = {}) {
+  const ids = [
+    item.id,
+    getMergeItemKey(item, ""),
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+  return Array.from(new Set(ids));
+}
+
+function isItemDeletedByTombstone(item, collection, tombstoneSet) {
+  return getItemTombstoneIds(item).some((id) => hasDeletionTombstone(tombstoneSet, collection, id));
+}
+
+function filterListByTombstones(items = [], collection, tombstoneSet = createTombstoneSet()) {
+  return normalizeListData(items).filter((item) => !isItemDeletedByTombstone(item, collection, tombstoneSet));
+}
+
+function filterWorkoutsByTombstones(workouts = {}, tombstoneSet = createTombstoneSet()) {
+  const result = {};
+  Object.entries(workouts && typeof workouts === "object" ? workouts : {}).forEach(([studentName, items]) => {
+    const visible = filterListByTombstones(items, "workouts", tombstoneSet);
+    if (visible.length && !hasDeletionTombstone(tombstoneSet, "workoutStudents", studentName)) {
+      result[studentName] = visible;
+    }
+  });
+  return result;
+}
+
+function mergeListsById(onlineItems = [], localItems = [], options = {}) {
+  const collection = options.collection || "";
+  const tombstoneSet = options.tombstoneSet || createTombstoneSet();
   const merged = new Map();
   normalizeListData(onlineItems).forEach((item, index) => {
     if (!item || typeof item !== "object") return;
     const key = getMergeItemKey(item, `online-${index}`);
+    if (collection && hasDeletionTombstone(tombstoneSet, collection, key)) return;
     if (key) {
       merged.set(key, { ...item });
     }
@@ -876,6 +982,7 @@ function mergeListsById(onlineItems = [], localItems = []) {
   normalizeListData(localItems).forEach((item, index) => {
     if (!item || typeof item !== "object") return;
     const key = getMergeItemKey(item, `local-${index}`);
+    if (collection && hasDeletionTombstone(tombstoneSet, collection, key)) return;
     if (key) {
       merged.set(key, { ...(merged.get(key) || {}), ...item });
     } else {
@@ -885,8 +992,8 @@ function mergeListsById(onlineItems = [], localItems = []) {
   return Array.from(merged.values());
 }
 
-function mergeStudentsById(onlineStudents = [], localStudents = []) {
-  return normalizeStudentsData(mergeListsById(onlineStudents, localStudents)).map((student) => {
+function mergeStudentsById(onlineStudents = [], localStudents = [], tombstoneSet = createTombstoneSet()) {
+  return normalizeStudentsData(mergeListsById(onlineStudents, localStudents, { collection: "students", tombstoneSet })).map((student) => {
     const status = String(student.syncStatus || student.sync_status || "").trim();
     return {
       ...student,
@@ -897,33 +1004,43 @@ function mergeStudentsById(onlineStudents = [], localStudents = []) {
   });
 }
 
-function mergeWorkoutsByStudent(onlineWorkouts = {}, localWorkouts = {}) {
+function mergeWorkoutsByStudent(onlineWorkouts = {}, localWorkouts = {}, tombstoneSet = createTombstoneSet()) {
   const merged = { ...(onlineWorkouts && typeof onlineWorkouts === "object" ? onlineWorkouts : {}) };
   Object.entries(localWorkouts && typeof localWorkouts === "object" ? localWorkouts : {}).forEach(([studentKey, workouts]) => {
-    merged[studentKey] = mergeListsById(merged[studentKey] || [], workouts || []);
+    if (hasDeletionTombstone(tombstoneSet, "workoutStudents", studentKey)) {
+      delete merged[studentKey];
+      return;
+    }
+    merged[studentKey] = mergeListsById(merged[studentKey] || [], workouts || [], { collection: "workouts", tombstoneSet });
   });
-  return merged;
+  return filterWorkoutsByTombstones(merged, tombstoneSet);
 }
 
 function mergeAppStateForSupabase(onlineState = {}, localState = getAppStateSnapshot()) {
+  const deletionTombstones = normalizeDeletionTombstones([
+    ...(onlineState?.deletionTombstones || []),
+    ...(localState?.deletionTombstones || []),
+  ]);
+  const tombstoneSet = createTombstoneSet(deletionTombstones);
   return {
     ...onlineState,
     ...localState,
     schemaVersion: Math.max(Number(onlineState?.schemaVersion) || 0, Number(localState?.schemaVersion) || 0, 2),
     savedAt: new Date().toISOString(),
-    students: mergeStudentsById(onlineState?.students || [], localState?.students || []),
-    workouts: mergeWorkoutsByStudent(onlineState?.workouts || {}, localState?.workouts || {}),
-    loadProgress: mergeListsById(onlineState?.loadProgress || [], localState?.loadProgress || []),
-    assessments: mergeListsById(onlineState?.assessments || [], localState?.assessments || []),
-    checkins: mergeListsById(onlineState?.checkins || [], localState?.checkins || []),
-    classPackages: mergeListsById(onlineState?.classPackages || [], localState?.classPackages || []),
-    packageModels: mergeListsById(onlineState?.packageModels || [], localState?.packageModels || []),
-    dropInClasses: mergeListsById(onlineState?.dropInClasses || [], localState?.dropInClasses || []),
-    agendaEvents: mergeListsById(onlineState?.agendaEvents || [], localState?.agendaEvents || []),
-    makeupCredits: mergeListsById(onlineState?.makeupCredits || [], localState?.makeupCredits || []),
-    workoutFeedbacks: mergeListsById(onlineState?.workoutFeedbacks || [], localState?.workoutFeedbacks || []),
-    resolvedAlerts: mergeListsById(onlineState?.resolvedAlerts || [], localState?.resolvedAlerts || []),
-    financialHistory: mergeListsById(onlineState?.financialHistory || [], localState?.financialHistory || []),
+    deletionTombstones,
+    students: mergeStudentsById(onlineState?.students || [], localState?.students || [], tombstoneSet),
+    workouts: mergeWorkoutsByStudent(onlineState?.workouts || {}, localState?.workouts || {}, tombstoneSet),
+    loadProgress: mergeListsById(onlineState?.loadProgress || [], localState?.loadProgress || [], { collection: "loadProgress", tombstoneSet }),
+    assessments: mergeListsById(onlineState?.assessments || [], localState?.assessments || [], { collection: "assessments", tombstoneSet }),
+    checkins: mergeListsById(onlineState?.checkins || [], localState?.checkins || [], { collection: "checkins", tombstoneSet }),
+    classPackages: mergeListsById(onlineState?.classPackages || [], localState?.classPackages || [], { collection: "classPackages", tombstoneSet }),
+    packageModels: mergeListsById(onlineState?.packageModels || [], localState?.packageModels || [], { collection: "packageModels", tombstoneSet }),
+    dropInClasses: mergeListsById(onlineState?.dropInClasses || [], localState?.dropInClasses || [], { collection: "dropInClasses", tombstoneSet }),
+    agendaEvents: mergeListsById(onlineState?.agendaEvents || [], localState?.agendaEvents || [], { collection: "agendaEvents", tombstoneSet }),
+    makeupCredits: mergeListsById(onlineState?.makeupCredits || [], localState?.makeupCredits || [], { collection: "makeupCredits", tombstoneSet }),
+    workoutFeedbacks: mergeListsById(onlineState?.workoutFeedbacks || [], localState?.workoutFeedbacks || [], { collection: "workoutFeedbacks", tombstoneSet }),
+    resolvedAlerts: mergeListsById(onlineState?.resolvedAlerts || [], localState?.resolvedAlerts || [], { collection: "resolvedAlerts", tombstoneSet }),
+    financialHistory: mergeListsById(onlineState?.financialHistory || [], localState?.financialHistory || [], { collection: "financialHistory", tombstoneSet }),
     billingSettings: {
       ...(onlineState?.billingSettings || {}),
       ...(localState?.billingSettings || {}),
@@ -1087,19 +1204,21 @@ function writeAppStateToLocalStorage(state) {
 
   isApplyingRemoteState = true;
   try {
-    memoryStudents = normalizeStudentsData(state.students || defaultStudents);
-    memoryWorkouts = normalizeWorkoutsData(state.workouts || {});
-    memoryLoadProgress = normalizeListData(state.loadProgress || []).map(normalizeStudentLinkedRecord);
-    memoryAssessments = normalizeListData(state.assessments || []).map(normalizeStudentLinkedRecord);
-    memoryCheckins = normalizeListData(state.checkins || []).map(normalizeStudentLinkedRecord);
-    memoryPackages = normalizeClassPackages(state.classPackages || []);
+    const tombstoneSet = createTombstoneSet(state.deletionTombstones || []);
+    memoryStudents = normalizeStudentsData(filterListByTombstones(state.students || defaultStudents, "students", tombstoneSet));
+    memoryWorkouts = normalizeWorkoutsData(filterWorkoutsByTombstones(state.workouts || {}, tombstoneSet));
+    memoryLoadProgress = filterListByTombstones(state.loadProgress || [], "loadProgress", tombstoneSet).map(normalizeStudentLinkedRecord);
+    memoryAssessments = filterListByTombstones(state.assessments || [], "assessments", tombstoneSet).map(normalizeStudentLinkedRecord);
+    memoryCheckins = filterListByTombstones(state.checkins || [], "checkins", tombstoneSet).map(normalizeStudentLinkedRecord);
+    memoryPackages = normalizeClassPackages(filterListByTombstones(state.classPackages || [], "classPackages", tombstoneSet));
     memoryPackageModels = normalizePackageModels(state.packageModels || []);
-    memoryDropIns = normalizeDropInClasses(state.dropInClasses || []);
-    memoryAgendaEvents = normalizeAgendaEvents(state.agendaEvents || []);
-    memoryMakeups = normalizeMakeupCredits(state.makeupCredits || []);
-    memoryFeedbacks = normalizeWorkoutFeedbacks(state.workoutFeedbacks || []);
-    memoryFinancialHistory = normalizeFinancialHistory(state.financialHistory || []);
+    memoryDropIns = normalizeDropInClasses(filterListByTombstones(state.dropInClasses || [], "dropInClasses", tombstoneSet));
+    memoryAgendaEvents = normalizeAgendaEvents(filterListByTombstones(state.agendaEvents || [], "agendaEvents", tombstoneSet));
+    memoryMakeups = normalizeMakeupCredits(filterListByTombstones(state.makeupCredits || [], "makeupCredits", tombstoneSet));
+    memoryFeedbacks = normalizeWorkoutFeedbacks(filterListByTombstones(state.workoutFeedbacks || [], "workoutFeedbacks", tombstoneSet));
+    memoryFinancialHistory = normalizeFinancialHistory(filterListByTombstones(state.financialHistory || [], "financialHistory", tombstoneSet));
 
+    localStorage.setItem(deletionTombstoneStorageKey, JSON.stringify(normalizeDeletionTombstones(state.deletionTombstones || [])));
     localStorage.setItem(studentStorageKey, JSON.stringify(memoryStudents));
     localStorage.setItem(workoutStorageKey, JSON.stringify(memoryWorkouts));
     localStorage.setItem(loadProgressStorageKey, JSON.stringify(memoryLoadProgress));
@@ -3133,26 +3252,71 @@ function confirmStudentDeletion(student) {
   });
 }
 
+function createTombstoneEntry(collection, item, extra = {}) {
+  const itemId = String(extra.itemId || item?.id || getMergeItemKey(item, "") || "").trim();
+  if (!collection || !itemId) return null;
+  return {
+    collection,
+    itemId,
+    name: extra.name || item?.name || item?.title || item?.workoutTitle || item?.packageName || "",
+    studentId: extra.studentId || item?.studentId || "",
+    studentName: extra.studentName || item?.studentName || "",
+    reason: extra.reason || "exclusao_intencional",
+  };
+}
+
+function getStudentDeletionTombstones(student) {
+  const studentName = student?.name || "";
+  const studentId = student?.id || "";
+  const belongsToStudent = (item) => item?.studentId === studentId || item?.studentName === studentName;
+  const entries = [
+    createTombstoneEntry("students", student, { itemId: studentId, name: studentName, studentId, studentName }),
+    createTombstoneEntry("workoutStudents", null, { itemId: studentName, name: studentName, studentId, studentName }),
+  ];
+
+  (loadWorkouts()[studentName] || []).forEach((workout) => {
+    entries.push(createTombstoneEntry("workouts", workout, { studentId, studentName }));
+  });
+  loadAssessments().filter(belongsToStudent).forEach((item) => entries.push(createTombstoneEntry("assessments", item, { studentId, studentName })));
+  loadProgressRecords().filter(belongsToStudent).forEach((item) => entries.push(createTombstoneEntry("loadProgress", item, { studentId, studentName })));
+  loadWorkoutFeedbacks().filter(belongsToStudent).forEach((item) => entries.push(createTombstoneEntry("workoutFeedbacks", item, { studentId, studentName })));
+  loadCheckins().filter(belongsToStudent).forEach((item) => entries.push(createTombstoneEntry("checkins", item, { studentId, studentName })));
+  loadClassPackages().filter(belongsToStudent).forEach((item) => entries.push(createTombstoneEntry("classPackages", item, { studentId, studentName })));
+  loadDropInClasses().filter(belongsToStudent).forEach((item) => entries.push(createTombstoneEntry("dropInClasses", item, { studentId, studentName })));
+  loadAgendaEvents().filter(belongsToStudent).forEach((item) => entries.push(createTombstoneEntry("agendaEvents", item, { studentId, studentName })));
+  loadMakeupCredits().filter(belongsToStudent).forEach((item) => entries.push(createTombstoneEntry("makeupCredits", item, { studentId, studentName })));
+  loadFinancialHistory().filter(belongsToStudent).forEach((item) => entries.push(createTombstoneEntry("financialHistory", item, { studentId, studentName })));
+
+  return entries.filter(Boolean);
+}
+
 async function deleteStudentWithLinkedData(student) {
   if (!student?.name) return null;
   const studentName = student.name;
   const studentId = student.id;
 
-  saveStudents(loadStudents().filter((item) => item.id !== studentId && item.name !== studentName));
+  addDeletionTombstones(getStudentDeletionTombstones(student));
+  const previousApplyingState = isApplyingRemoteState;
+  isApplyingRemoteState = true;
+  try {
+    saveStudents(loadStudents().filter((item) => item.id !== studentId && item.name !== studentName));
 
-  const workouts = loadWorkouts();
-  delete workouts[studentName];
-  saveWorkouts(workouts);
+    const workouts = loadWorkouts();
+    delete workouts[studentName];
+    saveWorkouts(workouts);
 
-  saveAssessments(loadAssessments().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
-  saveProgressRecords(loadProgressRecords().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
-  saveWorkoutFeedbacks(loadWorkoutFeedbacks().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
-  saveCheckins(loadCheckins().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
-  saveClassPackages(loadClassPackages().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
-  saveDropInClasses(loadDropInClasses().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
-  saveAgendaEvents(loadAgendaEvents().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
-  saveMakeupCredits(loadMakeupCredits().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
-  saveFinancialHistory(loadFinancialHistory().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+    saveAssessments(loadAssessments().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+    saveProgressRecords(loadProgressRecords().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+    saveWorkoutFeedbacks(loadWorkoutFeedbacks().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+    saveCheckins(loadCheckins().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+    saveClassPackages(loadClassPackages().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+    saveDropInClasses(loadDropInClasses().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+    saveAgendaEvents(loadAgendaEvents().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+    saveMakeupCredits(loadMakeupCredits().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+    saveFinancialHistory(loadFinancialHistory().filter((item) => item.studentId !== studentId && item.studentName !== studentName));
+  } finally {
+    isApplyingRemoteState = previousApplyingState;
+  }
 
   if (selectedStudentProfile === studentName) {
     selectedStudentProfile = "";
@@ -3161,7 +3325,13 @@ async function deleteStudentWithLinkedData(student) {
   if (selectedAdminProfileStudent === studentName) selectedAdminProfileStudent = "";
   if (selectedAdminWorkoutStudent === studentName) selectedAdminWorkoutStudent = "";
   delete activeWorkoutByStudent[studentName];
-  return supabaseSyncPromise;
+  const result = await flushAppStateSyncNow("exclusao de aluno");
+  if (result?.ok) {
+    showMessage("Aluno excluído e salvo no Supabase.");
+  } else {
+    showMessage("Exclusão pendente de sincronização. O aluno foi removido deste navegador e será reenviado ao Supabase.", "error");
+  }
+  return result;
 }
 
 function renderBillingSettings() {
@@ -11462,6 +11632,7 @@ packageAdminList?.addEventListener("click", async (event) => {
 
     if (action === "delete") {
       if (!window.confirm("Excluir este pacote? O histórico antigo será mantido.")) return;
+      addDeletionTombstones([createTombstoneEntry("classPackages", classPackage)]);
       saveClassPackages(loadClassPackages().filter((item) => item.id !== classPackage.id));
       await supabaseSyncPromise;
       renderPackageAdminList();
@@ -11663,6 +11834,10 @@ workoutList?.addEventListener("click", async (event) => {
 
   const workouts = loadWorkouts();
   const studentName = removeButton.dataset.removeWorkoutStudent;
+  const removedWorkout = (workouts[studentName] || []).find((workout) => workout.id === removeButton.dataset.removeWorkoutId);
+  if (removedWorkout) {
+    addDeletionTombstones([createTombstoneEntry("workouts", removedWorkout, { studentName, studentId: getStudentIdByName(studentName) })]);
+  }
   workouts[studentName] = (workouts[studentName] || []).filter((workout) => workout.id !== removeButton.dataset.removeWorkoutId);
   if (!workouts[studentName].length) delete workouts[studentName];
   saveWorkouts(workouts);
@@ -11767,6 +11942,7 @@ studentAdminProfile?.addEventListener("click", async (event) => {
 
     if (action === "delete" && classPackage) {
       if (!window.confirm("Excluir este pacote? O histórico antigo será mantido.")) return;
+      addDeletionTombstones([createTombstoneEntry("classPackages", classPackage)]);
       const packages = loadClassPackages().filter((item) => item.id !== classPackage.id);
       saveClassPackages(packages);
       await supabaseSyncPromise;
