@@ -9587,11 +9587,11 @@ function renderStudentPackagePanel() {
   const makeupAvailable = studentMakeups.filter((item) => item.status === "available").length;
   const makeupRequested = studentMakeups.filter((item) => item.status === "requested").length;
   cards.append(
-    createStudentAgendaNavCard("AUL", "Minhas aulas", "Veja suas próximas aulas agendadas.", "lessons"),
-    createStudentAgendaNavCard("CAN", "Cancelar aula", "Cancele uma aula futura com regra de 2 horas.", "cancel"),
-    createStudentAgendaNavCard("REP", "Reposições disponíveis", `${makeupAvailable} disponíveis para reagendar.`, "makeups"),
-    createStudentAgendaNavCard("MSG", "Solicitar reagendamento", `${makeupRequested} solicitadas em andamento.`, "reschedule"),
-    createStudentAgendaNavCard("HIS", "Histórico", "Aulas, cancelamentos e reposições.", "history"),
+    createStudentAgendaNavCard("calendar", "Minhas aulas", "Veja suas próximas aulas agendadas.", "lessons"),
+    createStudentAgendaNavCard("calendar-x", "Cancelar aula", "Cancele uma aula futura com regra de 2 horas.", "cancel"),
+    createStudentAgendaNavCard("refresh", "Reposições disponíveis", `${makeupAvailable} disponíveis para reagendar.`, "makeups"),
+    createStudentAgendaNavCard("message", "Solicitar reagendamento", `${makeupRequested} solicitadas em andamento.`, "reschedule"),
+    createStudentAgendaNavCard("history", "Histórico", "Aulas, cancelamentos e reposições.", "history"),
   );
 
   const detail = document.createElement("div");
@@ -9625,6 +9625,17 @@ function createStudentPackageCompactCard(title, main, detail, status, buttonLabe
   return card;
 }
 
+function getStudentAgendaIconSvg(icon) {
+  const icons = {
+    calendar: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3M17 3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/></svg>',
+    "calendar-x": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3M17 3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="m9.5 14.5 5 5M14.5 14.5l-5 5"/></svg>',
+    refresh: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 0 1-13.7 5.6"/><path d="M4 12A8 8 0 0 1 17.7 6.4"/><path d="M7 18H4v-3M17 6h3v3"/></svg>',
+    message: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 4v-4H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M8 10h8M8 13h5"/></svg>',
+    history: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5M12 7v5l3 2"/></svg>',
+  };
+  return icons[icon] || icons.calendar;
+}
+
 function createStudentAgendaNavCard(icon, title, description, action) {
   const button = document.createElement("button");
   button.type = "button";
@@ -9633,7 +9644,7 @@ function createStudentAgendaNavCard(icon, title, description, action) {
 
   const iconNode = document.createElement("span");
   iconNode.className = "nav-card-icon";
-  iconNode.textContent = icon;
+  iconNode.innerHTML = getStudentAgendaIconSvg(icon);
   const titleNode = document.createElement("strong");
   titleNode.textContent = title;
   const descNode = document.createElement("small");
