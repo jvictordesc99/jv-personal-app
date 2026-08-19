@@ -399,6 +399,8 @@ let isApplyingRemoteState = false;
 let supabaseSyncTimer = null;
 let supabaseSyncPromise = Promise.resolve();
 let lastSupabaseSyncWarning = 0;
+let lastRecoverableGlobalWarning = 0;
+let appInitializationPromise = null;
 const missingTrainingDaysMessage = "Este aluno ainda não possui dias de treino cadastrados. Sem isso, o sistema não consegue calcular aulas previstas, cobranças e treinos do mês.";
 
 function showMessage(text, type = "success") {
@@ -426,6 +428,53 @@ function showAppErrorRecovery(message = "O aplicativo encontrou um erro ao carre
   safeSetText(recovery.querySelector("[data-app-error-text]"), `${message} Seus dados salvos nao serao apagados.`);
 }
 
+function hideAppErrorRecovery() {
+  document.querySelector("#app-error-recovery")?.remove();
+}
+
+function getOriginalErrorMessage(error) {
+  if (!error) return "";
+  if (typeof error === "string") return error;
+  return String(error.message || error.reason?.message || error.name || error.code || "");
+}
+
+function isRecoverableAsyncError(error) {
+  const message = getOriginalErrorMessage(error).toLowerCase();
+  return [
+    "tempo esgotado",
+    "timeout",
+    "failed to fetch",
+    "networkerror",
+    "load failed",
+    "cliente supabase indisponivel",
+    "supabase app_state",
+    "carregar app_state",
+    "profiles",
+    "auth",
+  ].some((token) => message.includes(token));
+}
+
+function showOfflineNotice(message = "Modo offline: usando dados salvos neste dispositivo.") {
+  const now = Date.now();
+  if (now - lastRecoverableGlobalWarning < 15000) return;
+  lastRecoverableGlobalWarning = now;
+  console.warn(message);
+  showSupabaseSyncWarning(message);
+  let notice = document.querySelector("#app-connectivity-notice");
+  if (!notice) {
+    notice = document.createElement("div");
+    notice.id = "app-connectivity-notice";
+    notice.setAttribute("role", "status");
+    notice.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:9998;max-width:360px;padding:10px 14px;border-radius:12px;background:#334155;color:#fff;box-shadow:0 8px 24px rgba(15,23,42,.18);font:600 13px Manrope,Arial,sans-serif;";
+    document.body?.appendChild(notice);
+  }
+  safeSetText(notice, message);
+}
+
+function hideConnectivityNotice() {
+  document.querySelector("#app-connectivity-notice")?.remove();
+}
+
 function bindGlobalErrorHandlers() {
   if (globalErrorHandlersBound) return;
   globalErrorHandlersBound = true;
@@ -440,8 +489,32 @@ function bindGlobalErrorHandlers() {
     showAppErrorRecovery("O aplicativo encontrou um erro inesperado.");
   });
   window.addEventListener("unhandledrejection", (event) => {
-    console.error("Promessa rejeitada sem tratamento capturada pelo app.", event.reason);
-    showAppErrorRecovery("Uma operacao demorou ou falhou durante o carregamento.");
+    console.error("Promessa rejeitada sem tratamento capturada pelo app.", {
+      operacao: "unhandledrejection",
+      erroOriginal: event.reason,
+      mensagem: getOriginalErrorMessage(event.reason),
+    });
+    if (!navigator.onLine) {
+      event.preventDefault();
+      showOfflineNotice();
+      return;
+    }
+    if (isRecoverableAsyncError(event.reason)) {
+      event.preventDefault();
+      showOfflineNotice("Sincronizacao demorou ou falhou momentaneamente. O app continua usando o cache local e tentara novamente.");
+      return;
+    }
+    showAppErrorRecovery("O aplicativo encontrou um erro inesperado.");
+  });
+  window.addEventListener("offline", () => showOfflineNotice());
+  window.addEventListener("online", () => {
+    hideConnectivityNotice();
+    retryPendingAppStateSync("conexao restaurada").catch((error) => {
+      console.error("Falha ao sincronizar pendencias apos a conexao voltar.", {
+        operacao: "retryPendingAppStateSync:online",
+        erroOriginal: error,
+      });
+    });
   });
 }
 
@@ -1217,6 +1290,12 @@ async function persistAppStateSafely(options = {}) {
 
   window.clearTimeout(supabaseSyncTimer);
   console.info("Persistencia segura solicitada.", { context });
+  if (!navigator.onLine) {
+    const offlineMessage = "Modo offline. Dados mantidos no localStorage e aguardando sincronizacao.";
+    setPendingSupabaseSync(context, offlineMessage);
+    showOfflineNotice();
+    return { ok: false, skipped: true, reason: "offline", error: { message: offlineMessage } };
+  }
   const result = await syncAppStateToSupabase();
 
   if (result?.ok) {
@@ -1253,6 +1332,10 @@ function queueSupabaseAppStateSync(context = "alteracao", options = {}) {
 }
 
 async function retryPendingAppStateSync(context = "retry pendente") {
+  if (!navigator.onLine) {
+    showOfflineNotice();
+    return { ok: false, skipped: true, reason: "offline" };
+  }
   const pending = getPendingSupabaseSync();
   const pendingStudentIds = getPendingStudentIdsFromLocalCache();
   if (!pending?.pending && !pendingStudentIds.length) return { ok: true, skipped: true, reason: "no-pending-sync" };
@@ -1313,11 +1396,18 @@ function writeAppStateToLocalStorage(state) {
   }
 }
 
-async function loadSupabaseAppState() {
+async function loadSupabaseAppState(options = {}) {
   const client = getSupabaseAppStateClient();
   if (!client) return "unconfigured";
 
-  const result = await fetchSupabaseAppStateData(client);
+  const loadOnce = async () => {
+    const attemptResult = await fetchSupabaseAppStateData(client);
+    if (!attemptResult.ok) throw attemptResult.error || new Error("Falha ao carregar app_state.");
+    return attemptResult;
+  };
+  const result = options.retry === false
+    ? await withTimeout(loadOnce(), supabaseQueryTimeoutMs, "carregar app_state")
+    : await retryAsyncOperation("carregar app_state do Supabase", loadOnce, { recoverableOnly: false });
   if (!result.ok) return "failed";
   if (result.missing) return "missing";
 
@@ -1397,7 +1487,11 @@ async function syncAppStateToSupabase() {
   }
 
   const localState = getAppStateSnapshot();
-  const remoteResult = await fetchSupabaseAppStateData(client);
+  const remoteResult = await retryAsyncOperation("carregar app_state para sincronizacao", async () => {
+    const attemptResult = await fetchSupabaseAppStateData(client);
+    if (!attemptResult.ok) throw attemptResult.error || new Error("Falha ao carregar app_state para sincronizacao.");
+    return attemptResult;
+  }, { recoverableOnly: false }).catch((error) => ({ ok: false, error }));
   if (!remoteResult.ok) {
     console.error("Sincronizacao interrompida: nao foi possivel carregar app_state online para mesclagem segura.", remoteResult.error);
     showSupabaseSyncWarning("Dados salvos localmente. Supabase indisponivel no momento.");
@@ -1438,11 +1532,15 @@ async function syncAppStateToSupabase() {
   })}`);
 
   try {
-    const { data, error } = await client
-      .from(supabaseTables.appState)
-      .upsert(payload, { onConflict: "id" })
-      .select("id,updated_at")
-      .single();
+    const { data, error } = await retryAsyncOperation("upsert app_state Supabase", async () => {
+      const result = await client
+        .from(supabaseTables.appState)
+        .upsert(payload, { onConflict: "id" })
+        .select("id,updated_at")
+        .single();
+      if (result.error) throw result.error;
+      return result;
+    }, { recoverableOnly: false });
 
     if (error) {
       console.error(`Erro retornado pelo upsert app_state: ${JSON.stringify(error)}`);
@@ -1960,9 +2058,55 @@ function showSupabaseLoginMessage(text, type = "success") {
 function withTimeout(promise, timeoutMs = supabaseOperationTimeoutMs, label = "operacao") {
   let timer = null;
   const timeout = new Promise((_, reject) => {
-    timer = window.setTimeout(() => reject(new Error(`Tempo esgotado em ${label}.`)), timeoutMs);
+    timer = window.setTimeout(() => {
+      const error = new Error(`Tempo esgotado em ${label}.`);
+      error.name = "OperationTimeoutError";
+      error.operation = label;
+      error.timeoutMs = timeoutMs;
+      reject(error);
+    }, timeoutMs);
   });
   return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
+}
+
+function waitForRetry(delayMs) {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+}
+
+async function retryAsyncOperation(operationName, operation, options = {}) {
+  const {
+    attempts = 3,
+    delays = [800, 1800, 3600],
+    recoverableOnly = true,
+    timeoutMs = supabaseQueryTimeoutMs,
+  } = options;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      console.info("Executando operacao com retry.", { operationName, attempt, attempts });
+      return await withTimeout(Promise.resolve().then(() => operation(attempt)), timeoutMs, `${operationName} (tentativa ${attempt})`);
+    } catch (error) {
+      lastError = error;
+      console.warn("Operacao falhou durante tentativa.", {
+        operationName,
+        attempt,
+        attempts,
+        erroOriginal: error,
+        mensagem: getOriginalErrorMessage(error),
+      });
+      if (recoverableOnly && !isRecoverableAsyncError(error)) break;
+      if (attempt < attempts) await waitForRetry(delays[Math.min(attempt - 1, delays.length - 1)] || 1000);
+    }
+  }
+
+  console.error("Operacao falhou apos tentativas automaticas.", {
+    operationName,
+    attempts,
+    erroOriginal: lastError,
+    mensagem: getOriginalErrorMessage(lastError),
+  });
+  throw lastError || new Error(`Falha em ${operationName}.`);
 }
 
 function setSupabaseLoginButtonLoading(isLoading) {
@@ -2019,8 +2163,8 @@ async function applySupabaseUser(user) {
   const userEmail = String(user.email || "").trim().toLowerCase();
   const localStudentBeforeRemote = findStudentFromSupabaseUser(user);
   const [profileResult, appStateResult] = await Promise.allSettled([
-    withTimeout(getSupabaseProfileByUser(user), supabaseQueryTimeoutMs, "profiles"),
-    withTimeout(loadSupabaseAppState(), supabaseQueryTimeoutMs, "app_state"),
+    retryAsyncOperation("carregar profile do Supabase", () => getSupabaseProfileByUser(user), { recoverableOnly: false }),
+    loadSupabaseAppState({ retry: false }),
   ]);
 
   const profile = profileResult.status === "fulfilled" ? profileResult.value : null;
@@ -2176,9 +2320,18 @@ async function restoreSupabaseSession() {
     });
   }
 
-  const { data } = await withTimeout(client.auth.getSession(), supabaseOperationTimeoutMs, "restaurar sessao Supabase");
-  if (!data?.session?.user) return false;
-  return applySupabaseUserOnce(data.session.user, "restore-session");
+  try {
+    const { data } = await retryAsyncOperation("restaurar sessao Supabase", () => client.auth.getSession(), { recoverableOnly: false });
+    if (!data?.session?.user) return false;
+    return await applySupabaseUserOnce(data.session.user, "restore-session");
+  } catch (error) {
+    console.warn("Nao foi possivel restaurar sessao Supabase apos tentativas. Login ficara disponivel.", {
+      operacao: "restoreSupabaseSession",
+      erroOriginal: error,
+      mensagem: getOriginalErrorMessage(error),
+    });
+    return false;
+  }
 }
 
 function normalizeStudentsData(students) {
@@ -12858,10 +13011,14 @@ supabaseLoginForm?.addEventListener("submit", async (event) => {
   setSupabaseLoginButtonLoading(true);
   activeLoginSource = "login-submit";
   try {
-    const { data, error } = await withTimeout(
-      client.auth.signInWithPassword({ email, password }),
-      supabaseOperationTimeoutMs,
+    const { data, error } = await retryAsyncOperation(
       "login Supabase",
+      async () => {
+        const result = await client.auth.signInWithPassword({ email, password });
+        if (result.error && !/invalid login credentials/i.test(result.error.message || "")) throw result.error;
+        return result;
+      },
+      { attempts: 2, recoverableOnly: false, timeoutMs: supabaseOperationTimeoutMs },
     );
     if (error) {
       console.error("Erro no login Supabase Auth.", {
@@ -12979,11 +13136,13 @@ function refreshAppAfterRemoteState() {
   }
 }
 
-function initializeApp() {
+async function initializeApp() {
+  if (appInitializationPromise) return appInitializationPromise;
   if (appEventsBound) return;
   appEventsBound = true;
 
   bindGlobalErrorHandlers();
+  hideAppErrorRecovery();
   currentUserType = null;
   console.info(`Supabase URL utilizada: ${getSupabaseConfig().url}`);
   updateTodayLabel();
@@ -13006,13 +13165,24 @@ function initializeApp() {
   logLocalPersistenceAudit("início");
   fillStudentSelects();
   refreshAgendaGroupSelects();
-  retryPendingAppStateSync("abertura do app")
-    .catch((error) => {
-      console.warn("Nao foi possivel reenviar pendencias antes do carregamento online.", error);
+  // Pendencias sao reenviadas em segundo plano e nunca bloqueiam login/carregamento.
+  retryPendingAppStateSync("abertura do app").catch((error) => {
+    console.error("Nao foi possivel reenviar pendencias na abertura.", {
+      operacao: "retryPendingAppStateSync:inicializacao",
+      erroOriginal: error,
+    });
+  });
+  appInitializationPromise = Promise.resolve()
+    .then(() => {
+      if (!navigator.onLine) {
+        showOfflineNotice();
+        return "offline";
+      }
+      return loadSupabaseAppState({ retry: true });
     })
-    .then(() => withTimeout(loadSupabaseAppState(), supabaseOperationTimeoutMs, "carregar app_state inicial"))
     .then((status) => {
       if (status === "loaded") {
+        hideAppErrorRecovery();
         logLocalPersistenceAudit("supabase carregado");
         refreshAppAfterRemoteState();
         return;
@@ -13022,12 +13192,16 @@ function initializeApp() {
         queueSupabaseAppStateSync("estado inicial app_state", { showSuccess: false });
         return;
       }
+      if (status === "offline") {
+        console.warn("App iniciado em modo offline. Cache local mantido.");
+        return;
+      }
       console.warn(`Supabase app_state nao carregado (${status}). LocalStorage segue como cache/fallback.`);
     })
     .catch((error) => {
       console.warn("Supabase app_state nao carregou. App local continua funcionando.", error);
     })
-    .finally(async () => {
+    .then(async () => {
       const supabaseRestored = await restoreSupabaseSession().catch((error) => {
         console.warn("Sessao Supabase nao restaurada dentro do esperado.", error);
         showSupabaseLoginMessage("Nao foi possivel restaurar a sessao. Entre novamente.", "error");
@@ -13037,7 +13211,12 @@ function initializeApp() {
         if (loginScreen) loginScreen.hidden = false;
         if (appShell) appShell.hidden = true;
       }
+    })
+    .finally(() => {
+      if (!currentSupabaseUser && loginScreen) loginScreen.hidden = false;
+      appInitializationPromise = null;
     });
+  return appInitializationPromise;
 }
 
 if (document.readyState === "loading") {
