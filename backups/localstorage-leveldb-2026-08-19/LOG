@@ -1,0 +1,116 @@
+2026/08/18-22:08:33.816 50fc Reusing MANIFEST C:\Users\JOÃO\AppData\Local\Google\Chrome\User Data\Default\Local Storage\leveldb/MANIFEST-000001
+2026/08/18-22:08:33.820 50fc Recovering log #5434
+2026/08/18-22:08:33.827 50fc Reusing old log C:\Users\JOÃO\AppData\Local\Google\Chrome\User Data\Default\Local Storage\leveldb/005434.log 
+2026/08/18-22:09:59.133 17a4 Level-0 table #5440: started
+2026/08/18-22:09:59.146 17a4 Level-0 table #5440: 40195 bytes OK
+2026/08/18-22:09:59.151 17a4 Delete type=0 #5434
+2026/08/18-22:14:23.800 17a4 Level-0 table #5442: started
+2026/08/18-22:14:23.820 17a4 Level-0 table #5442: 36293 bytes OK
+2026/08/18-22:14:23.826 17a4 Delete type=0 #5439
+2026/08/18-22:14:40.647 17a4 Level-0 table #5444: started
+2026/08/18-22:14:40.656 17a4 Level-0 table #5444: 24589 bytes OK
+2026/08/18-22:14:40.659 17a4 Delete type=0 #5441
+2026/08/18-22:17:32.536 17a4 Level-0 table #5446: started
+2026/08/18-22:17:32.562 17a4 Level-0 table #5446: 31685 bytes OK
+2026/08/18-22:17:32.628 17a4 Delete type=0 #5443
+2026/08/18-22:17:32.629 17a4 Compacting 4@0 + 2@1 files
+2026/08/18-22:17:32.702 17a4 Generated table #5447@0: 5164 keys, 2269617 bytes
+2026/08/18-22:17:32.769 17a4 Generated table #5448@0: 311 keys, 155536 bytes
+2026/08/18-22:17:32.769 17a4 Compacted 4@0 + 2@1 files => 2425153 bytes
+2026/08/18-22:17:32.845 17a4 compacted to: files[ 0 2 1 0 0 0 0 ]
+2026/08/18-22:17:32.847 17a4 Delete type=2 #5436
+2026/08/18-22:17:32.847 17a4 Delete type=2 #5437
+2026/08/18-22:17:32.847 17a4 Delete type=2 #5440
+2026/08/18-22:17:32.847 17a4 Delete type=2 #5442
+2026/08/18-22:17:32.847 17a4 Delete type=2 #5444
+2026/08/18-22:17:32.847 17a4 Delete type=2 #5446
+2026/08/18-22:27:45.550 17a4 Level-0 table #5450: started
+2026/08/18-22:27:45.567 17a4 Level-0 table #5450: 34197 bytes OK
+2026/08/18-22:27:45.572 17a4 Delete type=0 #5445
+2026/08/18-22:30:34.489 17a4 Level-0 table #5452: started
+2026/08/18-22:30:34.499 17a4 Level-0 table #5452: 33528 bytes OK
+2026/08/18-22:30:34.502 17a4 Delete type=0 #5449
+2026/08/18-22:34:32.550 17a4 Level-0 table #5454: started
+2026/08/18-22:34:32.583 17a4 Level-0 table #5454: 35316 bytes OK
+2026/08/18-22:34:32.590 17a4 Delete type=0 #5451
+2026/08/18-22:39:32.661 17a4 Level-0 table #5456: started
+2026/08/18-22:39:32.911 17a4 Level-0 table #5456: 38181 bytes OK
+2026/08/18-22:39:32.915 17a4 Delete type=0 #5453
+2026/08/18-22:39:32.916 17a4 Compacting 4@0 + 1@1 files
+2026/08/18-22:39:33.163 17a4 Generated table #5457@0: 5164 keys, 2271543 bytes
+2026/08/18-22:39:33.163 17a4 Compacted 4@0 + 1@1 files => 2271543 bytes
+2026/08/18-22:39:33.168 17a4 compacted to: files[ 0 2 1 0 0 0 0 ]
+2026/08/18-22:39:33.169 17a4 Delete type=2 #5447
+2026/08/18-22:39:33.169 17a4 Delete type=2 #5450
+2026/08/18-22:39:33.170 17a4 Delete type=2 #5452
+2026/08/18-22:39:33.170 17a4 Delete type=2 #5454
+2026/08/18-22:39:33.170 17a4 Delete type=2 #5456
+2026/08/18-22:43:32.543 17a4 Level-0 table #5459: started
+2026/08/18-22:43:32.567 17a4 Level-0 table #5459: 39256 bytes OK
+2026/08/18-22:43:32.573 17a4 Delete type=0 #5455
+2026/08/18-22:51:32.531 17a4 Level-0 table #5461: started
+2026/08/18-22:51:32.548 17a4 Level-0 table #5461: 38259 bytes OK
+2026/08/18-22:51:32.552 17a4 Delete type=0 #5458
+2026/08/18-23:23:44.663 17a4 Level-0 table #5463: started
+2026/08/18-23:23:44.685 17a4 Level-0 table #5463: 35746 bytes OK
+2026/08/18-23:23:44.691 17a4 Delete type=0 #5460
+2026/08/18-23:30:18.827 17a4 Level-0 table #5465: started
+2026/08/18-23:30:18.860 17a4 Level-0 table #5465: 24989 bytes OK
+2026/08/18-23:30:18.866 17a4 Delete type=0 #5462
+2026/08/18-23:30:18.868 17a4 Compacting 4@0 + 1@1 files
+2026/08/18-23:30:18.934 17a4 Generated table #5466@0: 5167 keys, 2272072 bytes
+2026/08/18-23:30:18.934 17a4 Compacted 4@0 + 1@1 files => 2272072 bytes
+2026/08/18-23:30:18.936 17a4 compacted to: files[ 0 2 1 0 0 0 0 ]
+2026/08/18-23:30:18.938 17a4 Delete type=2 #5457
+2026/08/18-23:30:18.938 17a4 Delete type=2 #5459
+2026/08/18-23:30:18.938 17a4 Delete type=2 #5461
+2026/08/18-23:30:18.938 17a4 Delete type=2 #5463
+2026/08/18-23:30:18.938 17a4 Delete type=2 #5465
+2026/08/18-23:31:20.746 17a4 Level-0 table #5468: started
+2026/08/18-23:31:20.779 17a4 Level-0 table #5468: 40682 bytes OK
+2026/08/18-23:31:20.782 17a4 Delete type=0 #5464
+2026/08/18-23:33:05.899 17a4 Level-0 table #5470: started
+2026/08/18-23:33:05.936 17a4 Level-0 table #5470: 55284 bytes OK
+2026/08/18-23:33:05.942 17a4 Delete type=0 #5467
+2026/08/18-23:36:50.914 17a4 Level-0 table #5472: started
+2026/08/18-23:36:50.939 17a4 Level-0 table #5472: 35068 bytes OK
+2026/08/18-23:36:50.943 17a4 Delete type=0 #5469
+2026/08/18-23:43:49.704 17a4 Level-0 table #5474: started
+2026/08/18-23:43:49.731 17a4 Level-0 table #5474: 42036 bytes OK
+2026/08/18-23:43:49.738 17a4 Delete type=0 #5471
+2026/08/18-23:43:49.739 17a4 Compacting 4@0 + 1@1 files
+2026/08/18-23:43:49.832 17a4 Generated table #5475@0: 5169 keys, 2273280 bytes
+2026/08/18-23:43:49.832 17a4 Compacted 4@0 + 1@1 files => 2273280 bytes
+2026/08/18-23:43:49.835 17a4 compacted to: files[ 0 2 1 0 0 0 0 ]
+2026/08/18-23:43:49.837 17a4 Delete type=2 #5466
+2026/08/18-23:43:49.837 17a4 Delete type=2 #5468
+2026/08/18-23:43:49.837 17a4 Delete type=2 #5470
+2026/08/18-23:43:49.837 17a4 Delete type=2 #5472
+2026/08/18-23:43:49.838 17a4 Delete type=2 #5474
+2026/08/18-23:53:02.564 17a4 Level-0 table #5477: started
+2026/08/18-23:53:02.580 17a4 Level-0 table #5477: 27974 bytes OK
+2026/08/18-23:53:02.584 17a4 Delete type=0 #5473
+2026/08/18-23:57:31.369 17a4 Level-0 table #5479: started
+2026/08/18-23:57:31.389 17a4 Level-0 table #5479: 22619 bytes OK
+2026/08/18-23:57:31.395 17a4 Delete type=0 #5476
+2026/08/19-00:06:13.100 17a4 Level-0 table #5481: started
+2026/08/19-00:06:13.108 17a4 Level-0 table #5481: 36225 bytes OK
+2026/08/19-00:06:13.112 17a4 Delete type=0 #5478
+2026/08/19-00:13:10.985 17a4 Level-0 table #5483: started
+2026/08/19-00:13:11.025 17a4 Level-0 table #5483: 26028 bytes OK
+2026/08/19-00:13:11.032 17a4 Delete type=0 #5480
+2026/08/19-00:13:11.033 17a4 Compacting 4@0 + 1@1 files
+2026/08/19-00:13:11.172 17a4 Generated table #5484@0: 5176 keys, 2275028 bytes
+2026/08/19-00:13:11.174 17a4 Compacted 4@0 + 1@1 files => 2275028 bytes
+2026/08/19-00:13:11.177 17a4 compacted to: files[ 0 2 1 0 0 0 0 ]
+2026/08/19-00:13:11.181 17a4 Delete type=2 #5475
+2026/08/19-00:13:11.182 17a4 Delete type=2 #5477
+2026/08/19-00:13:11.182 17a4 Delete type=2 #5479
+2026/08/19-00:13:11.182 17a4 Delete type=2 #5481
+2026/08/19-00:13:11.182 17a4 Delete type=2 #5483
+2026/08/19-00:22:11.537 17a4 Level-0 table #5486: started
+2026/08/19-00:22:11.553 17a4 Level-0 table #5486: 37944 bytes OK
+2026/08/19-00:22:11.556 17a4 Delete type=0 #5482
+2026/08/19-00:31:50.865 17a4 Level-0 table #5488: started
+2026/08/19-00:31:50.888 17a4 Level-0 table #5488: 36314 bytes OK
+2026/08/19-00:31:50.894 17a4 Delete type=0 #5485

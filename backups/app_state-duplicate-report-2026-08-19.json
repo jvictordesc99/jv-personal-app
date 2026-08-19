@@ -1,0 +1,50 @@
+{
+    "generatedAt":  "2026-08-19",
+    "source":  "backups/supabase-app_state-main-2026-08-19.json",
+    "table":  "public.app_state",
+    "rowId":  "main",
+    "duplicateStableIds":  [
+
+                           ],
+    "duplicateStrongIdentities":  [
+
+                                  ],
+    "repeatedDisplayNamesForManualReview":  [
+                                                {
+                                                    "displayName":  "Ana Lima",
+                                                    "count":  5,
+                                                    "ids":  [
+                                                                "1782071737757-39c38133f95d6",
+                                                                "1784724973851-5e3fedca2335f",
+                                                                "1787104615854-d5a273357fdb38",
+                                                                "1787104818103-e32e7b674cf5f8",
+                                                                "1787106930762-514ad5892f16b"
+                                                            ],
+                                                    "automaticCleanupAllowed":  false
+                                                },
+                                                {
+                                                    "displayName":  "Marina Costa",
+                                                    "count":  5,
+                                                    "ids":  [
+                                                                "1782071737753-d9b163ad2247f8",
+                                                                "1784724973850-965ab9eff2479",
+                                                                "1787104615853-e8f55bb37c2a78",
+                                                                "1787104818102-28d260994aa9e",
+                                                                "1787106930762-d6ade99d1ca2b8"
+                                                            ],
+                                                    "automaticCleanupAllowed":  false
+                                                },
+                                                {
+                                                    "displayName":  "Pedro Alves",
+                                                    "count":  5,
+                                                    "ids":  [
+                                                                "1782071737756-b979c6f6e55a18",
+                                                                "1784724973851-fc8bd4420bd5a",
+                                                                "1787104615854-9c5a39f1fce31",
+                                                                "1787104818103-98675f8f63339",
+                                                                "1787106930762-4a364f28d91b88"
+                                                            ],
+                                                    "automaticCleanupAllowed":  false
+                                                }
+                                            ]
+}

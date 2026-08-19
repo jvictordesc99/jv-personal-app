@@ -1,0 +1,48 @@
+<!doctype html><meta charset="utf-8"><title>Sync logic tests</title>
+<div id="save-message"></div><script>window.JV_SKIP_AUTO_INIT = true;</script>
+<script src="../script.js"></script><pre id="results"></pre><script>
+(async () => {
+const results = [];
+const test = async (name, fn) => { try { await fn(); results.push({ name, ok: true }); } catch (error) { results.push({ name, ok: false, error: error.message }); } };
+const assert = (condition, message) => { if (!condition) throw new Error(message); };
+await test("salvar/mesclar duas vezes nao duplica ID", () => {
+  const student = { id: "student-1", name: "Pessoa A" };
+  const first = mergeAppStateForSupabase({ students: [student] }, { students: [student] });
+  const second = mergeAppStateForSupabase(first, { students: [student] });
+  assert(second.students.filter(item => item.id === student.id).length === 1, "ID foi duplicado");
+});
+await test("tombstone impede aluno remoto de voltar", () => {
+  const student = { id: "student-deleted", name: "Pessoa B" };
+  const tombstone = { collection: "students", itemId: student.id, deletedAt: new Date().toISOString() };
+  const merged = mergeAppStateForSupabase({ students: [student] }, { students: [], deletionTombstones: [tombstone] });
+  assert(!merged.students.some(item => item.id === student.id), "Aluno apagado ressuscitou");
+});
+await test("recarregar sem pendencia usa remoto como autoridade", () => {
+  const remote = { id: "remote-1", name: "Remoto" };
+  const stale = { id: "stale-local", name: "Cache antigo" };
+  const merged = mergeAppStateForSupabase({ students: [remote] }, { students: [stale] }, { includeLocalChanges: false });
+  assert(merged.students.length === 1 && merged.students[0].id === remote.id, "Cache antigo foi reintroduzido");
+});
+await test("lista remota vazia continua vazia", () => {
+  const merged = mergeAppStateForSupabase({ students: [] }, { students: [] }, { includeLocalChanges: false });
+  assert(merged.students.length === 0, "Alunos padrao foram recriados");
+});
+await test("dois cliques geram uma unica sincronizacao", async () => {
+  const originalPersist = persistAppStateSafely;
+  let calls = 0;
+  persistAppStateSafely = async () => { calls += 1; return { ok: true }; };
+  try {
+    await Promise.all([queueSupabaseAppStateSync("teste 1"), queueSupabaseAppStateSync("teste 2")]);
+    assert(calls === 1, `Foram feitas ${calls} sincronizacoes`);
+  } finally {
+    persistAppStateSafely = originalPersist;
+  }
+});
+await test("aviso inclui status, codigo e mensagem reais", () => {
+  const text = formatSupabaseError({ status: 403, code: "42501", message: "RLS bloqueou" });
+  assert(text.includes("HTTP 403") && text.includes("42501") && text.includes("RLS bloqueou"), text);
+});
+document.querySelector("#results").textContent = JSON.stringify(results, null, 2);
+document.title = results.every(item => item.ok) ? "PASS" : "FAIL";
+})();
+</script>

@@ -1,0 +1,17 @@
+2026/08/13-22:19:53.692 32b8 Reusing MANIFEST C:\Users\JOÃO\AppData\Local\Google\Chrome\User Data\Default\Local Storage\leveldb/MANIFEST-000001
+2026/08/13-22:19:53.698 32b8 Recovering log #5431
+2026/08/13-22:19:53.709 32b8 Reusing old log C:\Users\JOÃO\AppData\Local\Google\Chrome\User Data\Default\Local Storage\leveldb/005431.log 
+2026/08/13-22:20:29.481 205c Level-0 table #5435: started
+2026/08/13-22:20:29.499 205c Level-0 table #5435: 17184 bytes OK
+2026/08/13-22:20:29.505 205c Delete type=0 #5431
+2026/08/13-22:20:29.505 32b8 Compacting 4@0 + 2@1 files
+2026/08/13-22:20:29.596 32b8 Generated table #5436@0: 5105 keys, 2264911 bytes
+2026/08/13-22:20:29.616 32b8 Generated table #5437@0: 311 keys, 156002 bytes
+2026/08/13-22:20:29.616 32b8 Compacted 4@0 + 2@1 files => 2420913 bytes
+2026/08/13-22:20:29.619 32b8 compacted to: files[ 0 2 1 0 0 0 0 ]
+2026/08/13-22:20:29.620 32b8 Delete type=2 #4291
+2026/08/13-22:20:29.620 32b8 Delete type=2 #5425
+2026/08/13-22:20:29.621 32b8 Delete type=2 #5428
+2026/08/13-22:20:29.621 32b8 Delete type=2 #5430
+2026/08/13-22:20:29.621 32b8 Delete type=2 #5432
+2026/08/13-22:20:29.621 32b8 Delete type=2 #5435
