@@ -1687,7 +1687,10 @@ function hasStudentAppAccess(student = {}) {
 
 function isSupabaseRlsError(error) {
   const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.toLowerCase();
-  return text.includes("row-level security") || text.includes("rls") || text.includes("42501");
+  return Number(error?.status || 0) === 403
+    || text.includes("row-level security")
+    || text.includes("rls")
+    || text.includes("42501");
 }
 
 async function getSupabaseProfileByUser(user) {
@@ -1737,9 +1740,22 @@ async function upsertSupabaseProfile(profile) {
     return { data: null, error };
   }
 
+  const authenticatedUserId = currentSupabaseUser?.id || "";
+  if (!authenticatedUserId || profile.auth_user_id !== authenticatedUserId) {
+    console.warn("Upsert de profile ignorado: o cliente so pode gravar o proprio perfil.", {
+      tabela: supabaseTables.profiles,
+      operacao: "upsert",
+      auth_uid: authenticatedUserId,
+      payload_auth_user_id: profile.auth_user_id,
+      motivo: authenticatedUserId ? "auth.uid diferente do auth_user_id" : "sem usuario autenticado neste cliente",
+    });
+    return { data: null, error: null, skipped: true, reason: "not-profile-owner" };
+  }
+
   const payload = {
-    id: profile.id || profile.auth_user_id,
-    auth_user_id: profile.auth_user_id,
+    // A policy RLS exige que ambos correspondam a auth.uid().
+    id: authenticatedUserId,
+    auth_user_id: authenticatedUserId,
     email: profile.email || "",
     role: profile.role || "aluno",
     student_id: profile.student_id || null,
@@ -1764,6 +1780,10 @@ async function upsertSupabaseProfile(profile) {
     if (error) {
       if (isSupabaseRlsError(error)) {
         console.warn("Profile nao foi salvo por RLS. Auth e app_state continuam funcionando.", {
+          tabela: supabaseTables.profiles,
+          operacao: "upsert",
+          status: error.status || 403,
+          auth_uid: authenticatedUserId,
           auth_user_id: payload.auth_user_id,
           email: payload.email,
           role: payload.role,
@@ -2273,6 +2293,34 @@ async function applySupabaseUser(user) {
     email: student.email,
     profile,
     auth_user_id: student.auth_user_id || student.authUserId || student.supabaseUserId || "",
+  });
+  // Profile e opcional. O proprio aluno tenta cria-lo/atualiza-lo depois de
+  // autenticado; qualquer falha fica local e nao impede o acesso via app_state.
+  upsertSupabaseProfile({
+    ...(profile || {}),
+    auth_user_id: user.id,
+    email: user.email || student.email_login || student.email || "",
+    role: "aluno",
+    student_id: student.id || null,
+    name: student.name || "",
+    first_login: profile?.first_login !== false,
+  }).then((profileSyncResult) => {
+    if (profileSyncResult?.data) currentSupabaseProfile = profileSyncResult.data;
+    if (profileSyncResult?.error) {
+      console.warn("Profile opcional do aluno ficou pendente; login continua pelo app_state.", {
+        tabela: supabaseTables.profiles,
+        operacao: "upsert do proprio profile",
+        auth_user_id: user.id,
+        erroOriginal: profileSyncResult.error,
+      });
+    }
+  }).catch((error) => {
+    console.warn("Falha local ao sincronizar profile opcional; login continua pelo app_state.", {
+      tabela: supabaseTables.profiles,
+      operacao: "upsert do proprio profile",
+      auth_user_id: user.id,
+      erroOriginal: error,
+    });
   });
   const alreadyLinkedToAuth = getStudentAuthUserId(student) === user.id;
   saveSupabaseStudentLink(student.name, user);
