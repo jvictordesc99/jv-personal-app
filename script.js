@@ -106,6 +106,7 @@ const checkinStorageKey = "joao-victor-checkins";
 const packageStorageKey = "joao-victor-class-packages";
 const dropInStorageKey = "joao-victor-dropin-classes";
 const agendaEventStorageKey = "joao-victor-agenda-events";
+const classGroupStorageKey = "joao-victor-class-groups";
 const makeupStorageKey = "joao-victor-makeup-credits";
 const feedbackStorageKey = "joao-victor-workout-feedbacks";
 const resolvedAlertsStorageKey = "joao-victor-resolved-alerts";
@@ -190,6 +191,7 @@ const agendaDropinStatus = document.querySelector("#agenda-dropin-status");
 const agendaCancelEvent = document.querySelector("#agenda-cancel-event");
 const agendaCancelReason = document.querySelector("#agenda-cancel-reason");
 const agendaCancelMakeup = document.querySelector("#agenda-cancel-makeup");
+const scheduleAdminPanel = document.querySelector(".schedule-admin-panel");
 const newStudentButton = document.querySelector("[data-focus-student]");
 const workoutFocusButtons = document.querySelectorAll("[data-focus-workout]");
 const adminDashboard = document.querySelector("#admin-dashboard");
@@ -367,12 +369,14 @@ let memoryPackages = null;
 let memoryPackageModels = null;
 let memoryDropIns = null;
 let memoryAgendaEvents = null;
+let memoryClassGroups = null;
 let memoryMakeups = null;
 let memoryFeedbacks = null;
 let memoryFinancialHistory = null;
 let editingStudentIndex = null;
 let editingWorkout = null;
 let editingPackageId = null;
+let editingClassGroupId = "";
 let selectedAdminWorkoutStudent = "";
 let selectedAdminProfileStudent = "";
 let highlightedMakeupCreditId = "";
@@ -385,6 +389,9 @@ let activeAdminSubpage = "";
 let activePackageSubpage = "";
 let activePackageMode = "";
 let isRestoringNavigation = false;
+let classGroupEditorParticipants = [];
+let agendaMakeupParticipants = [];
+let agendaDropinParticipants = [];
 const activeWorkoutByStudent = {};
 const activeSessionByWorkout = {};
 let appEventsBound = false;
@@ -873,6 +880,7 @@ function getAppStateSnapshot() {
     packageModels: loadPackageModels(),
     dropInClasses: loadDropInClasses(),
     agendaEvents: loadAgendaEvents(),
+    classGroups: loadClassGroups(),
     makeupCredits: loadMakeupCredits(),
     workoutFeedbacks: loadWorkoutFeedbacks(),
     resolvedAlerts: loadResolvedAlerts(),
@@ -896,6 +904,7 @@ function getAppStateAuditCounts(state = getAppStateSnapshot()) {
     checkins: normalizeListData(state.checkins || []).length,
     dropInClasses: normalizeListData(state.dropInClasses || []).length,
     agendaEvents: normalizeListData(state.agendaEvents || []).length,
+    classGroups: normalizeListData(state.classGroups || []).length,
     makeupCredits: normalizeListData(state.makeupCredits || []).length,
     resolvedAlerts: normalizeListData(state.resolvedAlerts || []).length,
     financialHistory: normalizeListData(state.financialHistory || []).length,
@@ -1092,6 +1101,7 @@ function mergeAppStateForSupabase(onlineState = {}, localState = getAppStateSnap
     packageModels: mergeListsById(onlineState?.packageModels || [], localState?.packageModels || [], { collection: "packageModels", tombstoneSet }),
     dropInClasses: mergeListsById(onlineState?.dropInClasses || [], localState?.dropInClasses || [], { collection: "dropInClasses", tombstoneSet }),
     agendaEvents: mergeListsById(onlineState?.agendaEvents || [], localState?.agendaEvents || [], { collection: "agendaEvents", tombstoneSet }),
+    classGroups: mergeListsById(onlineState?.classGroups || [], localState?.classGroups || [], { collection: "classGroups", tombstoneSet }),
     makeupCredits: mergeListsById(onlineState?.makeupCredits || [], localState?.makeupCredits || [], { collection: "makeupCredits", tombstoneSet }),
     workoutFeedbacks: mergeListsById(onlineState?.workoutFeedbacks || [], localState?.workoutFeedbacks || [], { collection: "workoutFeedbacks", tombstoneSet }),
     resolvedAlerts: mergeListsById(onlineState?.resolvedAlerts || [], localState?.resolvedAlerts || [], { collection: "resolvedAlerts", tombstoneSet }),
@@ -1269,6 +1279,7 @@ function writeAppStateToLocalStorage(state) {
     memoryPackageModels = normalizePackageModels(state.packageModels || []);
     memoryDropIns = normalizeDropInClasses(filterListByTombstones(state.dropInClasses || [], "dropInClasses", tombstoneSet));
     memoryAgendaEvents = normalizeAgendaEvents(filterListByTombstones(state.agendaEvents || [], "agendaEvents", tombstoneSet));
+    memoryClassGroups = normalizeClassGroups(filterListByTombstones(state.classGroups || [], "classGroups", tombstoneSet));
     memoryMakeups = normalizeMakeupCredits(filterListByTombstones(state.makeupCredits || [], "makeupCredits", tombstoneSet));
     memoryFeedbacks = normalizeWorkoutFeedbacks(filterListByTombstones(state.workoutFeedbacks || [], "workoutFeedbacks", tombstoneSet));
     memoryFinancialHistory = normalizeFinancialHistory(filterListByTombstones(state.financialHistory || [], "financialHistory", tombstoneSet));
@@ -1283,6 +1294,7 @@ function writeAppStateToLocalStorage(state) {
     localStorage.setItem(packageModelStorageKey, JSON.stringify(memoryPackageModels));
     localStorage.setItem(dropInStorageKey, JSON.stringify(memoryDropIns));
     localStorage.setItem(agendaEventStorageKey, JSON.stringify(memoryAgendaEvents));
+    localStorage.setItem(classGroupStorageKey, JSON.stringify(memoryClassGroups));
     localStorage.setItem(makeupStorageKey, JSON.stringify(memoryMakeups));
     localStorage.setItem(feedbackStorageKey, JSON.stringify(memoryFeedbacks));
     localStorage.setItem(financialHistoryStorageKey, JSON.stringify(memoryFinancialHistory));
@@ -4177,6 +4189,397 @@ function saveAgendaEvents(events) {
   }
 }
 
+function normalizeClassGroups(groups) {
+  const students = loadStudents();
+  return normalizeListData(groups)
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const participantIds = normalizeListData(item.participantIds || item.studentIds || [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean);
+      const participantNames = normalizeListData(item.participantNames || item.students || [])
+        .map((name) => String(name || "").trim())
+        .filter(Boolean);
+      const resolvedIds = new Set(participantIds);
+      participantNames.forEach((name) => {
+        const student = students.find((candidate) => candidate.name === name);
+        if (student?.id) resolvedIds.add(student.id);
+      });
+      const resolvedParticipants = Array.from(resolvedIds)
+        .map((id) => students.find((student) => student.id === id))
+        .filter(Boolean);
+      return {
+        id: item.id || createId(),
+        name: String(item.name || "Grupo sem nome").trim(),
+        participantIds: resolvedParticipants.map((student) => student.id),
+        participantNames: resolvedParticipants.map((student) => student.name),
+        notes: String(item.notes || "").trim(),
+        createdAt: item.createdAt || Date.now(),
+        updatedAt: item.updatedAt || item.createdAt || Date.now(),
+      };
+    })
+    .filter((item) => item.name && item.participantIds.length);
+}
+
+function loadClassGroups() {
+  if (memoryClassGroups) return memoryClassGroups;
+
+  try {
+    const saved = localStorage.getItem(classGroupStorageKey);
+    memoryClassGroups = normalizeClassGroups(saved ? JSON.parse(saved) : []);
+  } catch {
+    memoryClassGroups = [];
+  }
+
+  return memoryClassGroups;
+}
+
+function saveClassGroups(groups) {
+  memoryClassGroups = normalizeClassGroups(groups);
+
+  try {
+    localStorage.setItem(classGroupStorageKey, JSON.stringify(memoryClassGroups));
+    persistAppDataMeta();
+    queueSupabaseAppStateSync("grupos de aulas");
+  } catch {
+    showMessage("Grupo atualizado na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
+  }
+}
+
+function getStudentsByIds(ids = []) {
+  const idSet = new Set(ids.filter(Boolean));
+  return loadStudents().filter((student) => idSet.has(student.id));
+}
+
+function addStudentToSelection(selection, studentId) {
+  const student = loadStudents().find((item) => item.id === studentId || item.name === studentId);
+  if (!student?.id || selection.includes(student.id)) return selection;
+  return [...selection, student.id];
+}
+
+function removeStudentFromSelection(selection, studentId) {
+  return selection.filter((id) => id !== studentId);
+}
+
+function createStudentMultiPicker({ title, description, getSelection, setSelection, onChange }) {
+  const panel = document.createElement("section");
+  panel.className = "student-multi-picker";
+  const head = document.createElement("div");
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  const text = document.createElement("small");
+  text.textContent = description;
+  head.append(heading, text);
+
+  const input = document.createElement("input");
+  input.type = "search";
+  input.placeholder = "Pesquisar aluno pelo nome...";
+  input.autocomplete = "off";
+  const results = document.createElement("div");
+  results.className = "student-search-suggestions";
+  results.hidden = true;
+  const chips = document.createElement("div");
+  chips.className = "student-selection-chips";
+
+  const renderChips = () => {
+    chips.innerHTML = "";
+    getStudentsByIds(getSelection()).forEach((student) => {
+      const chip = document.createElement("span");
+      chip.className = "student-selection-chip";
+      const name = document.createElement("strong");
+      name.textContent = student.name;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "X";
+      remove.setAttribute("aria-label", `Remover ${student.name}`);
+      remove.addEventListener("click", () => {
+        setSelection(removeStudentFromSelection(getSelection(), student.id));
+        renderChips();
+        onChange?.();
+      });
+      chip.append(name, remove);
+      chips.appendChild(chip);
+    });
+  };
+
+  const renderResults = () => {
+    results.innerHTML = "";
+    const query = normalizeSearchText(input.value);
+    const selected = new Set(getSelection());
+    const matches = loadStudents()
+      .filter((student) => !selected.has(student.id))
+      .filter((student) => !query || normalizeSearchText(student.name).includes(query))
+      .slice(0, 8);
+    if (!matches.length) {
+      const empty = document.createElement("span");
+      empty.className = "student-search-empty";
+      empty.textContent = "Nenhum aluno encontrado.";
+      results.appendChild(empty);
+    }
+    matches.forEach((student) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = student.name;
+      button.addEventListener("click", () => {
+        setSelection(addStudentToSelection(getSelection(), student.id));
+        input.value = "";
+        results.hidden = true;
+        renderChips();
+        onChange?.();
+      });
+      results.appendChild(button);
+    });
+  };
+
+  input.addEventListener("input", () => {
+    results.hidden = false;
+    renderResults();
+  });
+  input.addEventListener("focus", () => {
+    results.hidden = false;
+    renderResults();
+  });
+  document.addEventListener("click", (event) => {
+    if (!panel.contains(event.target)) results.hidden = true;
+  });
+
+  panel.append(head, input, results, chips);
+  panel.renderChips = renderChips;
+  renderChips();
+  return panel;
+}
+
+function renderClassGroupsList(container) {
+  if (!container) return;
+  container.innerHTML = "";
+  const groups = loadClassGroups();
+  if (!groups.length) {
+    const empty = document.createElement("small");
+    empty.textContent = "Nenhum grupo fixo cadastrado.";
+    container.appendChild(empty);
+    return;
+  }
+  groups.forEach((group) => {
+    const card = document.createElement("article");
+    card.className = "class-group-card";
+    const info = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = group.name;
+    const detail = document.createElement("small");
+    detail.textContent = group.participantNames.join(", ");
+    info.append(title, detail);
+
+    const actions = document.createElement("div");
+    actions.className = "student-actions";
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "secondary";
+    edit.textContent = "Editar";
+    edit.addEventListener("click", () => {
+      editingClassGroupId = group.id;
+      const form = document.querySelector("#class-group-form");
+      const name = document.querySelector("#class-group-name");
+      if (name) name.value = group.name;
+      classGroupEditorParticipants = [...group.participantIds];
+      form?.querySelector(".student-multi-picker")?.renderChips?.();
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary danger";
+    remove.textContent = "Excluir";
+    remove.addEventListener("click", () => {
+      if (!confirm(`Excluir o grupo "${group.name}"?`)) return;
+      addDeletionTombstones([createTombstoneEntry("classGroups", group)]);
+      saveClassGroups(loadClassGroups().filter((item) => item.id !== group.id));
+      if (editingClassGroupId === group.id) {
+        editingClassGroupId = "";
+        classGroupEditorParticipants = [];
+        const name = document.querySelector("#class-group-name");
+        if (name) name.value = "";
+      }
+      renderClassGroupsList(container);
+      refreshAgendaGroupSelects();
+    });
+    actions.append(edit, remove);
+    card.append(info, actions);
+    container.appendChild(card);
+  });
+}
+
+function createClassGroupManager() {
+  if (!scheduleAdminPanel || document.querySelector("#class-group-manager")) return;
+  const panel = document.createElement("section");
+  panel.className = "class-group-manager";
+  panel.id = "class-group-manager";
+  panel.innerHTML = `
+    <div>
+      <p class="eyebrow">Grupos fixos</p>
+      <h3>Aulas em grupo</h3>
+      <span>Crie grupos como Beach Tennis - Sexta 18h ou Beach Tennis - Mães.</span>
+    </div>
+    <form id="class-group-form" class="class-group-form">
+      <label>Nome do grupo<input id="class-group-name" placeholder="Ex: Beach Tennis - Sexta 18h" /></label>
+      <button type="submit" class="primary">Salvar grupo</button>
+      <button type="button" class="secondary" id="class-group-clear">Novo grupo</button>
+    </form>
+    <div class="class-group-list" id="class-group-list"></div>
+  `;
+  const toolbar = scheduleAdminPanel.querySelector(".agenda-toolbar");
+  scheduleAdminPanel.insertBefore(panel, toolbar?.nextSibling || scheduleAdminPanel.firstChild);
+  const form = panel.querySelector("#class-group-form");
+  const nameInputField = panel.querySelector("#class-group-name");
+  const list = panel.querySelector("#class-group-list");
+  const picker = createStudentMultiPicker({
+    title: "Integrantes",
+    description: "Pesquise e adicione vários alunos ao grupo.",
+    getSelection: () => classGroupEditorParticipants,
+    setSelection: (next) => { classGroupEditorParticipants = next; },
+  });
+  form.insertBefore(picker, form.querySelector("button"));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = nameInputField.value.trim();
+    if (!name || !classGroupEditorParticipants.length) {
+      showMessage("Informe nome do grupo e pelo menos um aluno.", "error");
+      return;
+    }
+    const groups = loadClassGroups();
+    const index = groups.findIndex((group) => group.id === editingClassGroupId);
+    const payload = {
+      id: editingClassGroupId || createId(),
+      name,
+      participantIds: [...classGroupEditorParticipants],
+      createdAt: index >= 0 ? groups[index].createdAt : Date.now(),
+      updatedAt: Date.now(),
+    };
+    if (index >= 0) groups[index] = { ...groups[index], ...payload };
+    else groups.push(payload);
+    saveClassGroups(groups);
+    const syncResult = await supabaseSyncPromise;
+    if (!syncResult?.ok) {
+      showMessage("Grupo salvo localmente, aguardando sincronização com Supabase.", "error");
+      return;
+    }
+    editingClassGroupId = "";
+    classGroupEditorParticipants = [];
+    nameInputField.value = "";
+    picker.renderChips();
+    renderClassGroupsList(list);
+    refreshAgendaGroupSelects();
+    showMessage("Grupo salvo no Supabase.");
+  });
+  panel.querySelector("#class-group-clear")?.addEventListener("click", () => {
+    editingClassGroupId = "";
+    classGroupEditorParticipants = [];
+    nameInputField.value = "";
+    picker.renderChips();
+  });
+  renderClassGroupsList(list);
+}
+
+function refreshAgendaGroupSelects() {
+  document.querySelectorAll("[data-agenda-group-select]").forEach((select) => {
+    const previous = select.value;
+    select.replaceChildren();
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Selecione um grupo";
+    select.appendChild(placeholder);
+    loadClassGroups().forEach((group) => {
+      const option = document.createElement("option");
+      option.value = group.id;
+      option.textContent = group.name;
+      select.appendChild(option);
+    });
+    select.value = loadClassGroups().some((group) => group.id === previous) ? previous : "";
+  });
+}
+
+function applyGroupToAgendaSelection(groupId, setSelection, renderPicker) {
+  const group = loadClassGroups().find((item) => item.id === groupId);
+  if (!group) return;
+  setSelection(Array.from(new Set(group.participantIds || [])));
+  renderPicker?.();
+}
+
+function createAgendaAudienceControls(form, select, type) {
+  if (!form || !select || form.dataset.audienceEnhanced === "true") return;
+  form.dataset.audienceEnhanced = "true";
+  const state = {
+    get selection() {
+      return type === "makeup" ? agendaMakeupParticipants : agendaDropinParticipants;
+    },
+    set selection(next) {
+      if (type === "makeup") agendaMakeupParticipants = next;
+      else agendaDropinParticipants = next;
+    },
+  };
+  const panel = document.createElement("section");
+  panel.className = "agenda-audience-panel";
+  const label = document.createElement("label");
+  label.textContent = "Tipo de aula";
+  const mode = document.createElement("select");
+  mode.dataset.agendaAudienceMode = type;
+  mode.innerHTML = '<option value="individual">Aluno individual</option><option value="group">Grupo</option>';
+  label.appendChild(mode);
+
+  const groupLabel = document.createElement("label");
+  groupLabel.textContent = "Grupo";
+  const groupSelect = document.createElement("select");
+  groupSelect.dataset.agendaGroupSelect = type;
+  groupLabel.appendChild(groupSelect);
+  groupLabel.hidden = true;
+
+  const picker = createStudentMultiPicker({
+    title: "Participantes desta aula",
+    description: "Ao selecionar um grupo, você pode retirar ou acrescentar alunos só nesta aula.",
+    getSelection: () => state.selection,
+    setSelection: (next) => { state.selection = next; },
+  });
+  picker.hidden = true;
+
+  mode.addEventListener("change", () => {
+    const isGroup = mode.value === "group";
+    groupLabel.hidden = !isGroup;
+    picker.hidden = !isGroup;
+    select.closest("label").hidden = isGroup;
+  });
+  groupSelect.addEventListener("change", () => {
+    applyGroupToAgendaSelection(groupSelect.value, (next) => { state.selection = next; }, () => picker.renderChips());
+  });
+
+  panel.append(label, groupLabel, picker);
+  form.insertBefore(panel, select.closest("label"));
+  refreshAgendaGroupSelects();
+}
+
+function setupAgendaGroupFeatures() {
+  createClassGroupManager();
+  createAgendaAudienceControls(agendaMakeupForm, agendaMakeupStudent, "makeup");
+  createAgendaAudienceControls(agendaDropinForm, agendaDropinStudent, "dropin");
+}
+
+function getAgendaFormParticipants(type, fallbackName) {
+  const ids = type === "makeup" ? agendaMakeupParticipants : agendaDropinParticipants;
+  const students = getStudentsByIds(ids);
+  if (students.length) return students;
+  const fallback = loadStudents().find((student) => student.name === fallbackName);
+  return fallback ? [fallback] : [{ id: "", name: fallbackName }];
+}
+
+function resetAgendaAudiencePanel(form, type) {
+  const mode = form?.querySelector(`[data-agenda-audience-mode='${type}']`);
+  const groupSelect = form?.querySelector(`[data-agenda-group-select='${type}']`);
+  const groupLabel = groupSelect?.closest("label");
+  const picker = form?.querySelector(".student-multi-picker");
+  const studentSelect = type === "makeup" ? agendaMakeupStudent : agendaDropinStudent;
+  mode && (mode.value = "individual");
+  if (groupSelect) groupSelect.value = "";
+  if (groupLabel) groupLabel.hidden = true;
+  if (picker) picker.hidden = true;
+  if (studentSelect?.closest("label")) studentSelect.closest("label").hidden = false;
+}
+
 function syncAutomaticPackageAgendaEvents(student, classPackage) {
   if (!student || !classPackage) {
     return { ok: false, events: [], created: 0, expected: 0, error: new Error("Aluno ou pacote ausente para gerar agenda.") };
@@ -4928,6 +5331,128 @@ function fillStudentSelects() {
   fillManualCheckinPackageSelect();
   fillMakeupPackageSelect();
   fillPersonalReschedulePackageSelect();
+  refreshSearchableStudentSelects();
+}
+
+const searchableStudentSelectIds = [
+  "assessment-student",
+  "admin-evolution-student",
+  "admin-feedback-student-filter",
+  "admin-notes-student-filter",
+  "manual-checkin-student",
+  "makeup-student",
+  "dropin-student",
+  "personal-reschedule-student",
+  "makeup-list-student",
+  "lesson-history-student",
+  "checkin-filter-student",
+  "agenda-makeup-student",
+  "agenda-dropin-student",
+];
+
+function getStudentSearchOptionLabel(select, value) {
+  const option = Array.from(select?.options || []).find((item) => item.value === value);
+  return option?.textContent || value || "";
+}
+
+function normalizeSearchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function renderStudentSearchSuggestions(wrapper, select, query = "") {
+  const list = wrapper.querySelector("[data-student-search-suggestions]");
+  if (!list || !select) return;
+  list.innerHTML = "";
+  const normalizedQuery = normalizeSearchText(query);
+  const options = Array.from(select.options || [])
+    .filter((option) => option.value || option.textContent)
+    .filter((option) => !normalizedQuery || normalizeSearchText(option.textContent).includes(normalizedQuery))
+    .slice(0, 8);
+
+  if (!options.length) {
+    const empty = document.createElement("span");
+    empty.className = "student-search-empty";
+    empty.textContent = "Nenhum aluno encontrado.";
+    list.appendChild(empty);
+    return;
+  }
+
+  options.forEach((option) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = option.textContent;
+    button.dataset.studentSearchValue = option.value;
+    button.addEventListener("click", () => {
+      select.value = option.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      const input = wrapper.querySelector("[data-student-search-input]");
+      if (input) input.value = option.textContent;
+      list.hidden = true;
+    });
+    list.appendChild(button);
+  });
+}
+
+function enhanceStudentSelect(select) {
+  if (!select || select.dataset.searchEnhanced === "true") return;
+  const parent = select.parentElement;
+  if (!parent) return;
+
+  select.dataset.searchEnhanced = "true";
+  select.classList.add("student-select-native-hidden");
+  const wrapper = document.createElement("div");
+  wrapper.className = "student-search-select";
+  wrapper.dataset.studentSearchFor = select.id || "";
+
+  const input = document.createElement("input");
+  input.type = "search";
+  input.placeholder = "Buscar aluno...";
+  input.autocomplete = "off";
+  input.dataset.studentSearchInput = "true";
+  input.value = getStudentSearchOptionLabel(select, select.value);
+
+  const suggestions = document.createElement("div");
+  suggestions.className = "student-search-suggestions";
+  suggestions.dataset.studentSearchSuggestions = "true";
+  suggestions.hidden = true;
+
+  input.addEventListener("input", () => {
+    suggestions.hidden = false;
+    renderStudentSearchSuggestions(wrapper, select, input.value);
+  });
+  input.addEventListener("focus", () => {
+    suggestions.hidden = false;
+    renderStudentSearchSuggestions(wrapper, select, input.value);
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") suggestions.hidden = true;
+  });
+  select.addEventListener("change", () => {
+    input.value = getStudentSearchOptionLabel(select, select.value);
+  });
+  document.addEventListener("click", (event) => {
+    if (!wrapper.contains(event.target)) suggestions.hidden = true;
+  });
+
+  wrapper.append(input, suggestions);
+  parent.insertBefore(wrapper, select.nextSibling);
+  renderStudentSearchSuggestions(wrapper, select, input.value);
+}
+
+function refreshSearchableStudentSelects() {
+  searchableStudentSelectIds.forEach((id) => {
+    const select = document.querySelector(`#${id}`);
+    if (!select) return;
+    enhanceStudentSelect(select);
+    const wrapper = document.querySelector(`[data-student-search-for="${id}"]`);
+    const input = wrapper?.querySelector("[data-student-search-input]");
+    if (input) input.value = getStudentSearchOptionLabel(select, select.value);
+    if (wrapper) renderStudentSearchSuggestions(wrapper, select, input?.value || "");
+  });
 }
 
 function updateStudentHeader() {
@@ -6434,6 +6959,7 @@ function fillAgendaStudentSelects() {
     });
     select.value = students.some((student) => student.name === previous) ? previous : students[0]?.name || "";
   });
+  refreshSearchableStudentSelects();
 }
 
 function fillAgendaCancelSelect() {
@@ -11109,20 +11635,25 @@ document.querySelectorAll("[data-agenda-action]").forEach((button) => {
 
 agendaMakeupForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const studentName = agendaMakeupStudent?.value || "";
+  const isGroup = agendaMakeupForm.querySelector("[data-agenda-audience-mode='makeup']")?.value === "group";
+  const participants = getAgendaFormParticipants(isGroup ? "makeup" : "individual", agendaMakeupStudent?.value || "");
   const date = agendaMakeupDate?.value.trim() || "";
   const time = agendaMakeupTime?.value.trim() || "";
   const duration = Number(agendaMakeupDuration?.value) || 60;
+  if (!participants.length || !participants.some((student) => student.name)) {
+    showMessage("Selecione pelo menos um aluno.", "error");
+    return;
+  }
   if (hasAgendaConflict(date, time, duration)) {
     showMessage("Esse horario ja esta ocupado.", "error");
     return;
   }
   const parsedDate = parseBrazilianDate(date);
   const events = loadAgendaEvents();
-  events.push({
+  participants.forEach((student) => events.push({
     id: createId(),
-    studentName,
-    studentId: getStudentIdByName(studentName),
+    studentName: student.name,
+    studentId: student.id || getStudentIdByName(student.name),
     date,
     dateKey: parsedDate ? getDateKey(parsedDate) : "",
     time,
@@ -11131,43 +11662,58 @@ agendaMakeupForm?.addEventListener("submit", async (event) => {
     modality: "Reposicao",
     status: "reposicao",
     note: agendaMakeupNote?.value.trim() || "",
+    groupMode: isGroup,
     source: "manual",
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  });
+  }));
   saveAgendaEvents(events);
   agendaMakeupForm.reset();
+  agendaMakeupParticipants = [];
+  agendaMakeupForm.querySelector(".student-multi-picker")?.renderChips?.();
+  resetAgendaAudiencePanel(agendaMakeupForm, "makeup");
   renderAdminAgenda();
   await supabaseSyncPromise;
 });
 
 agendaDropinForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const studentName = agendaDropinName?.value.trim() || agendaDropinStudent?.value || "";
+  const isGroup = agendaDropinForm.querySelector("[data-agenda-audience-mode='dropin']")?.value === "group";
+  const manualName = agendaDropinName?.value.trim() || "";
+  const participants = isGroup ? getAgendaFormParticipants("dropin", "") : getAgendaFormParticipants("individual", manualName || agendaDropinStudent?.value || "");
   const date = agendaDropinDate?.value.trim() || "";
   const time = agendaDropinTime?.value.trim() || "";
   const duration = Number(agendaDropinDuration?.value) || 60;
+  if (!participants.length || !participants.some((student) => student.name)) {
+    showMessage("Selecione pelo menos um aluno.", "error");
+    return;
+  }
   if (hasAgendaConflict(date, time, duration)) {
     showMessage("Esse horario ja esta ocupado.", "error");
     return;
   }
   const parsedDate = parseBrazilianDate(date);
-  const dropIn = {
+  const nextDropIns = [...loadDropInClasses()];
+  const nextEvents = [...loadAgendaEvents()];
+  participants.forEach((student) => {
+    const studentName = student.name;
+    const studentId = student.id || getStudentIdByName(studentName);
+    nextDropIns.push({
     id: createId(),
     studentName,
-    studentId: getStudentIdByName(studentName),
+    studentId,
     date,
     modality: "Aula avulsa",
     value: agendaDropinValue?.value.trim() || "",
     status: agendaDropinStatus?.value || "pendente",
     note: `Agenda ${time}`,
+    groupMode: isGroup,
     createdAt: Date.now(),
-  };
-  saveDropInClasses([...loadDropInClasses(), dropIn]);
-  saveAgendaEvents([...loadAgendaEvents(), {
+    });
+    nextEvents.push({
     id: createId(),
     studentName,
-    studentId: getStudentIdByName(studentName),
+    studentId,
     date,
     dateKey: parsedDate ? getDateKey(parsedDate) : "",
     time,
@@ -11176,11 +11722,18 @@ agendaDropinForm?.addEventListener("submit", async (event) => {
     modality: "Aula avulsa",
     status: agendaDropinStatus?.value || "pendente",
     value: agendaDropinValue?.value.trim() || "",
+    groupMode: isGroup,
     source: "manual",
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  }]);
+    });
+  });
+  saveDropInClasses(nextDropIns);
+  saveAgendaEvents(nextEvents);
   agendaDropinForm.reset();
+  agendaDropinParticipants = [];
+  agendaDropinForm.querySelector(".student-multi-picker")?.renderChips?.();
+  resetAgendaAudiencePanel(agendaDropinForm, "dropin");
   renderAdminAgenda();
   renderPackageAdminList();
   await supabaseSyncPromise;
@@ -12407,6 +12960,8 @@ function refreshAppAfterRemoteState() {
   renderAdminAlerts();
   renderBillingSettings();
   fillStudentSelects();
+  setupAgendaGroupFeatures();
+  refreshAgendaGroupSelects();
   updateStudentHeader();
   if (currentUserType === "student") {
     renderCurrentWorkout();
@@ -12438,6 +12993,7 @@ function initializeApp() {
   fillPackageModelList();
   applyInputMasks();
   normalizeStoredAppData();
+  setupAgendaGroupFeatures();
 
   if (loginScreen) loginScreen.hidden = true;
   if (appShell) appShell.hidden = true;
@@ -12449,6 +13005,7 @@ function initializeApp() {
   renderBillingSettings();
   logLocalPersistenceAudit("início");
   fillStudentSelects();
+  refreshAgendaGroupSelects();
   retryPendingAppStateSync("abertura do app")
     .catch((error) => {
       console.warn("Nao foi possivel reenviar pendencias antes do carregamento online.", error);
