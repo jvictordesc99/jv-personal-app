@@ -536,6 +536,29 @@
                 <h2>Agenda do Personal</h2>
                 <span>Aulas fixas, reposições, avulsas, cancelamentos e horários livres.</span>
               </div>
+              <section class="google-calendar-panel" aria-labelledby="google-calendar-title">
+                <div class="google-calendar-heading">
+                  <div>
+                    <p class="eyebrow">Integração</p>
+                    <h3 id="google-calendar-title">Google Calendar</h3>
+                    <span id="google-calendar-account">Conta não conectada</span>
+                  </div>
+                  <span class="google-calendar-status" id="google-calendar-status">Desconectado</span>
+                </div>
+                <div class="google-calendar-actions">
+                  <button type="button" id="google-calendar-connect">Conectar Google</button>
+                  <button type="button" class="secondary" id="google-calendar-sync" hidden>Sincronizar agora</button>
+                  <button type="button" class="secondary" id="google-calendar-disconnect" hidden>Desconectar</button>
+                </div>
+                <p class="save-message" id="google-calendar-message" role="status"></p>
+                <div class="google-calendar-notifications" id="google-calendar-notifications" hidden>
+                  <div class="google-calendar-notifications-head">
+                    <strong>Alterações recebidas</strong>
+                    <button type="button" class="secondary" id="google-calendar-mark-read">Marcar como lidas</button>
+                  </div>
+                  <div id="google-calendar-notification-list"></div>
+                </div>
+              </section>
               <div class="agenda-toolbar">
                 <label>Visualização
                   <select id="admin-agenda-view">
@@ -1010,6 +1033,7 @@
       </main>
     </div>
 
-    <script src="script.js?v=20260819-2"></script>
+    <script src="script.js?v=20260901-1"></script>
+    <script src="google-calendar.js?v=20260901-1"></script>
   </body>
 </html>

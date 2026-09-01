@@ -4431,6 +4431,12 @@ function normalizeAgendaEvents(events) {
       note: item.note || "",
       source: item.source || "manual",
       packageId: item.packageId || "",
+      google_event_id: item.google_event_id || item.googleEventId || "",
+      google_recurring_event_id: item.google_recurring_event_id || "",
+      cancelado_por: item.cancelado_por || "",
+      cancelado_em: item.cancelado_em || "",
+      origem_da_alteracao: item.origem_da_alteracao || item.source || "aplicativo",
+      syncHistory: Array.isArray(item.syncHistory) ? item.syncHistory.slice(-20) : [],
       personalId: item.personalId || item.ownerId || personalAdminEmail,
       createdAt: item.createdAt || Date.now(),
       updatedAt: item.updatedAt || item.createdAt || Date.now(),
@@ -4458,6 +4464,7 @@ function saveAgendaEvents(events) {
     localStorage.setItem(agendaEventStorageKey, JSON.stringify(memoryAgendaEvents));
     persistAppDataMeta();
     queueSupabaseAppStateSync("agenda");
+    window.GoogleCalendarIntegration?.queuePush(memoryAgendaEvents);
   } catch {
     showMessage("Agenda atualizada na tela, mas o navegador bloqueou salvar ao recarregar.", "error");
   }
@@ -7143,6 +7150,10 @@ function getAgendaEventsForRange(view = "week", referenceDate = new Date()) {
       const date = lesson.dateKey ? new Date(`${lesson.dateKey}T00:00:00`) : parseBrazilianDate(lesson.date);
       if (!date || date < start || date > end) return;
       const record = getLessonRecord(classPackage.id, lesson.dateKey);
+      const materialized = storedAgendaEvents.some((event) => event.id === `${classPackage.id}-${lesson.dateKey}` || (
+        event.packageId === classPackage.id && event.dateKey === lesson.dateKey && event.time === lesson.time
+      ));
+      if (materialized) return;
       items.push({
         id: `${classPackage.id}-${lesson.dateKey}`,
         source: "package",
@@ -7591,6 +7602,37 @@ function registerLessonCancellation(studentName, classPackage, lesson) {
     credits.push(credit);
     saveMakeupCredits(credits);
   }
+
+  const agendaId = `${classPackage.id}-${lesson.dateKey}`;
+  const agendaEvents = loadAgendaEvents();
+  const existingIndex = agendaEvents.findIndex((event) => event.id === agendaId || (
+    event.packageId === classPackage.id && event.dateKey === lesson.dateKey && event.time === lesson.time
+  ));
+  const existing = existingIndex >= 0 ? agendaEvents[existingIndex] : {};
+  const cancellationEvent = {
+    ...existing,
+    id: existing.id || agendaId,
+    studentName,
+    studentId: getStudentIdByName(studentName),
+    packageId: classPackage.id,
+    date: lesson.date,
+    dateKey: lesson.dateKey,
+    time: lesson.time,
+    duration: Number(lesson.duration) || 60,
+    type: "package",
+    modality: classPackage.name || "Aula",
+    status: cancellation.label,
+    source: existing.source || "package",
+    cancelado_por: studentName,
+    cancelado_em: new Date().toISOString(),
+    origem_da_alteracao: "aplicativo_aluno",
+    syncHistory: [...(existing.syncHistory || []), { action: "cancelled", origin: "app", at: new Date().toISOString(), by: studentName }].slice(-20),
+    createdAt: existing.createdAt || Date.now(),
+    updatedAt: Date.now(),
+  };
+  if (existingIndex >= 0) agendaEvents[existingIndex] = cancellationEvent;
+  else agendaEvents.push(cancellationEvent);
+  saveAgendaEvents(agendaEvents);
 
   return {
     ok: true,
@@ -12030,16 +12072,24 @@ agendaCancelForm?.addEventListener("submit", async (event) => {
       });
     }
   }
-  saveAgendaEvents([...loadAgendaEvents(), {
+  const agendaEvents = loadAgendaEvents();
+  const storedIndex = agendaEvents.findIndex((item) => item.id === currentEvent.id);
+  const cancellationEvent = {
     ...currentEvent,
-    id: createId(),
     type: "cancellation",
     status: agendaCancelMakeup?.value === "yes" ? "cancelada - gera reposicao" : "cancelada",
     note: agendaCancelReason?.value.trim() || "",
     source: "manual-cancel",
-    createdAt: Date.now(),
+    cancelado_por: currentSupabaseProfile?.name || currentSupabaseUser?.email || "personal",
+    cancelado_em: new Date().toISOString(),
+    origem_da_alteracao: "aplicativo_personal",
+    syncHistory: [...(currentEvent.syncHistory || []), { action: "cancelled", origin: "app", at: new Date().toISOString(), by: "personal" }].slice(-20),
+    createdAt: currentEvent.createdAt || Date.now(),
     updatedAt: Date.now(),
-  }]);
+  };
+  if (storedIndex >= 0) agendaEvents[storedIndex] = cancellationEvent;
+  else agendaEvents.push(cancellationEvent);
+  saveAgendaEvents(agendaEvents);
   agendaCancelForm.reset();
   renderAdminAgenda();
   await supabaseSyncPromise;
@@ -13068,6 +13118,7 @@ function applyUserPermissions() {
     });
 
     openView("admin");
+    window.GoogleCalendarIntegration?.initialize();
   }
 }
 
@@ -13306,6 +13357,7 @@ async function initializeApp() {
         hideAppErrorRecovery();
         logLocalPersistenceAudit("supabase carregado");
         refreshAppAfterRemoteState();
+        window.GoogleCalendarIntegration?.initialize();
         return;
       }
       if (status === "missing") {
