@@ -4,6 +4,7 @@ const titles = {
   avaliacao: "Avaliação física",
   evolucao: "Evolução corporal",
   perfil: "Perfil",
+  "personal-profile": "Meu perfil",
   videos: "Vídeos dos exercícios",
   agenda: "Agendamento",
   beach: "Área beach tennis",
@@ -77,6 +78,9 @@ function openView(id, options = {}) {
     renderStudentProfile();
     renderStudentCheckinStatus();
   }
+  if (id === "personal-profile" && typeof renderPersonalProfile === "function") {
+    renderPersonalProfile();
+  }
   if (id === "home" && typeof renderHomeDashboard === "function") {
     renderHomeDashboard();
   }
@@ -113,6 +117,7 @@ const resolvedAlertsStorageKey = "joao-victor-resolved-alerts";
 const appDataStorageKey = "joao-victor-app-data";
 const appSessionStorageKey = "joao-victor-login-session";
 const billingSettingsStorageKey = "joao-victor-billing-settings";
+const personalProfileStorageKey = "joao-victor-personal-profile";
 const financialHistoryStorageKey = "joao-victor-financial-history";
 const packageModelStorageKey = "joao-victor-package-models";
 const navigationStateStorageKey = "joao-victor-navigation-state";
@@ -350,6 +355,13 @@ const billingPixKey = document.querySelector("#billing-pix-key");
 const billingSenderName = document.querySelector("#billing-sender-name");
 const billingDefaultMessage = document.querySelector("#billing-default-message");
 const billingSettingsMessage = document.querySelector("#billing-settings-message");
+const personalProfileForm = document.querySelector("#personal-profile-form");
+const personalProfileMessage = document.querySelector("#personal-profile-message");
+const personalProfilePhotoFile = document.querySelector("#personal-profile-photo-file");
+const personalProfilePhotoPreview = document.querySelector("#personal-profile-photo-preview");
+const personalProfilePhotoPlaceholder = document.querySelector("#personal-profile-photo-placeholder");
+const personalProfileGalleryFiles = document.querySelector("#personal-profile-gallery-files");
+const personalProfileGallery = document.querySelector("#personal-profile-gallery");
 const billingFilterMonth = document.querySelector("#billing-filter-month");
 const billingFilterStatus = document.querySelector("#billing-filter-status");
 const billingFilterName = document.querySelector("#billing-filter-name");
@@ -983,6 +995,7 @@ function getAppStateSnapshot() {
     resolvedAlerts: loadResolvedAlerts(),
     personalRecords: getPersonalRecordsSnapshot(),
     billingSettings: loadBillingSettings(),
+    personalProfile: loadPersonalProfile(),
     financialHistory: loadFinancialHistory(),
   };
 }
@@ -1209,6 +1222,10 @@ function mergeAppStateForSupabase(onlineState = {}, localState = getAppStateSnap
       ...(onlineState?.billingSettings || {}),
       ...(includeLocalChanges ? localState?.billingSettings || {} : {}),
     },
+    personalProfile: {
+      ...(onlineState?.personalProfile || {}),
+      ...(includeLocalChanges ? localState?.personalProfile || {} : {}),
+    },
   };
 }
 
@@ -1428,6 +1445,9 @@ function writeAppStateToLocalStorage(state) {
     localStorage.setItem(resolvedAlertsStorageKey, JSON.stringify(normalizeResolvedAlerts(state.resolvedAlerts || [])));
     if (state.billingSettings) {
       localStorage.setItem(billingSettingsStorageKey, JSON.stringify(state.billingSettings));
+    }
+    if (state.personalProfile) {
+      localStorage.setItem(personalProfileStorageKey, JSON.stringify(state.personalProfile));
     }
     persistAppDataMeta();
     console.info(`Auditoria app_state carregado do Supabase/cache: ${JSON.stringify(getAppStateAuditCounts(state))}`);
@@ -2535,6 +2555,111 @@ function loadBillingSettings() {
   }
 }
 
+function loadPersonalProfile() {
+  const defaults = {
+    name: "Joao Victor",
+    title: "Personal Trainer",
+    cref: "",
+    email: "",
+    phone: "",
+    instagram: "",
+    specialties: "",
+    bio: "",
+    photo: "",
+    gallery: [],
+    settings: { compactInterface: false, reducedMotion: false },
+  };
+  try {
+    const saved = JSON.parse(localStorage.getItem(personalProfileStorageKey) || "{}");
+    return {
+      ...defaults,
+      ...saved,
+      gallery: Array.isArray(saved.gallery) ? saved.gallery.filter((photo) => typeof photo === "string" && photo.startsWith("data:image/jpeg;base64," )).slice(0, 5) : [],
+      photo: typeof saved.photo === "string" && saved.photo.startsWith("data:image/jpeg;base64,") ? saved.photo : "",
+      settings: { ...defaults.settings, ...(saved.settings || {}) },
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function applyPersonalProfilePreferences(settings = {}) {
+  document.documentElement.classList.toggle("interface-compact", settings.compactInterface === true);
+  document.documentElement.classList.toggle("interface-reduced-motion", settings.reducedMotion === true);
+}
+
+applyPersonalProfilePreferences(loadPersonalProfile().settings);
+
+function renderPersonalProfile() {
+  if (!personalProfileForm) return;
+  const profile = loadPersonalProfile();
+  ["name", "title", "cref", "email", "phone", "instagram", "specialties", "bio"].forEach((field) => {
+    const input = personalProfileForm.elements.namedItem(field);
+    if (input) input.value = profile[field] || "";
+  });
+  personalProfileForm.elements.namedItem("compactInterface").checked = profile.settings.compactInterface;
+  personalProfileForm.elements.namedItem("reducedMotion").checked = profile.settings.reducedMotion;
+  personalProfilePhotoData = profile.photo;
+  personalProfilePhotoPreview.src = profile.photo;
+  personalProfilePhotoPreview.hidden = !profile.photo;
+  personalProfilePhotoPlaceholder.hidden = Boolean(profile.photo);
+  personalProfileGalleryData = profile.gallery;
+  renderPersonalProfileGallery();
+  applyPersonalProfilePreferences(profile.settings);
+}
+
+let personalProfilePhotoData = "";
+let personalProfileGalleryData = [];
+
+function renderPersonalProfileGallery() {
+  if (!personalProfileGallery) return;
+  personalProfileGallery.replaceChildren();
+  personalProfileGalleryData.forEach((photo, index) => {
+    const item = document.createElement("figure");
+    item.className = "personal-gallery-item";
+    const image = document.createElement("img");
+    image.src = photo;
+    image.alt = `Foto profissional ${index + 1}`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary personal-gallery-remove";
+    remove.textContent = "Remover";
+    remove.setAttribute("aria-label", `Remover foto ${index + 1}`);
+    remove.addEventListener("click", () => {
+      personalProfileGalleryData = personalProfileGalleryData.filter((_, photoIndex) => photoIndex !== index);
+      renderPersonalProfileGallery();
+    });
+    item.append(image, remove);
+    personalProfileGallery.append(item);
+  });
+}
+
+function compressPersonalProfilePhoto(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/") || file.size > 8 * 1024 * 1024) {
+      reject(new Error("Escolha uma imagem de até 8 MB."));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("O arquivo selecionado não é uma imagem válida."));
+      image.onload = () => {
+        const maxEdge = 1440;
+        const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      image.src = String(reader.result || "");
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function saveBillingSettings(settings) {
   try {
     localStorage.setItem(billingSettingsStorageKey, JSON.stringify(settings));
@@ -2909,10 +3034,10 @@ function getStudentStartDate(student) {
   return parseBrazilianDate(student?.startDate || "") || new Date();
 }
 
-function getStudentInitialPackagePreview(student, settings = loadBillingSettings()) {
-  const startDate = getStudentStartDate(student);
+function getStudentInitialPackagePreview(student, settings = loadBillingSettings(), monthKeyOverride = "") {
+  const startDate = monthKeyOverride ? getMonthBounds(monthKeyOverride).start : getStudentStartDate(student);
   startDate.setHours(0, 0, 0, 0);
-  const monthKey = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}`;
+  const monthKey = monthKeyOverride || `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}`;
   const { start, end } = getMonthBounds(monthKey);
   const remainingLessons = countBillingLessonsBetweenDates(startDate, end, student.billingDays, settings);
   const fullMonthLessons = countBillingLessonsBetweenDates(start, end, student.billingDays, settings);
@@ -3001,7 +3126,7 @@ function getStudentBillingProjection(student, monthKey, settings = loadBillingSe
   };
 }
 
-function markStudentBillingAsPaid(studentId) {
+function markStudentBillingAsPaid(studentId, monthKey = getDefaultBillingMonthKey()) {
   const students = loadStudents();
   const index = students.findIndex((student) => student.id === studentId || student.name === studentId);
   if (index < 0) return false;
@@ -3011,10 +3136,17 @@ function markStudentBillingAsPaid(studentId) {
     lastPaymentDate: formatToday(),
   };
   saveStudents(students);
+  let renewedPackage = null;
+  if (isPresentialStudent(students[index])) {
+    renewedPackage = upsertAutomaticMonthlyPackageForStudent(students[index], monthKey);
+    if (renewedPackage) syncAutomaticPackageAgendaEvents(students[index], renewedPackage);
+  }
   renderStudents();
   renderBillingList();
   renderHomeDashboard();
-  showMessage(`Sincronizando pagamento de ${students[index].name} com Supabase...`);
+  showMessage(renewedPackage
+    ? `Pagamento de ${students[index].name} confirmado. Pacote e agenda do mes foram restabelecidos.`
+    : `Sincronizando pagamento de ${students[index].name} com Supabase...`);
   return true;
 }
 
@@ -3858,6 +3990,7 @@ function renderBillingList() {
     paidButton.type = "button";
     paidButton.className = "secondary billing-paid-button";
     paidButton.dataset.markBillingPaid = student.id || student.name;
+    paidButton.dataset.billingMonth = monthKey;
     paidButton.textContent = "Marcar como pago";
 
     const link = document.createElement("a");
@@ -5079,17 +5212,25 @@ function saveClassPackages(packages) {
   }
 }
 
-function upsertAutomaticMonthlyPackageForStudent(student) {
+function upsertAutomaticMonthlyPackageForStudent(student, monthKeyOverride = "") {
   if (!student || !isPresentialStudent(student)) return null;
-  const preview = getStudentInitialPackagePreview(student);
+  const preview = getStudentInitialPackagePreview(student, loadBillingSettings(), monthKeyOverride);
   if (!preview.remainingLessons || !normalizeBillingDays(student.billingDays).length) return null;
 
   const packages = loadClassPackages();
-  const existingIndex = packages.findIndex((item) =>
+  const matchingIndex = packages.findIndex((item) =>
     item.autoGenerated === true
     && item.monthKey === preview.monthKey
     && ((student.id && item.studentId === student.id) || item.studentName === student.name)
   );
+  const matchingPackage = matchingIndex >= 0 ? packages[matchingIndex] : null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const matchingEnd = matchingPackage ? parseBrazilianDate(matchingPackage.endDate) : null;
+  const matchingIsActive = matchingPackage
+    && getCompletedLessons(matchingPackage) < Number(matchingPackage.total || 0)
+    && (!matchingEnd || matchingEnd >= today);
+  const existingIndex = matchingIsActive ? matchingIndex : -1;
   const existing = existingIndex >= 0 ? packages[existingIndex] : null;
   const packageData = {
     id: existing?.id || createId(),
@@ -12214,6 +12355,75 @@ billingSettingsForm?.addEventListener("submit", async (event) => {
   await supabaseSyncPromise;
 });
 
+personalProfilePhotoFile?.addEventListener("change", async () => {
+  const file = personalProfilePhotoFile.files?.[0];
+  if (!file) return;
+  try {
+    personalProfilePhotoData = await compressPersonalProfilePhoto(file);
+    personalProfilePhotoPreview.src = personalProfilePhotoData;
+    personalProfilePhotoPreview.hidden = false;
+    personalProfilePhotoPlaceholder.hidden = true;
+  } catch (error) {
+    personalProfileMessage.textContent = error.message;
+    personalProfileMessage.classList.add("error");
+  }
+  personalProfilePhotoFile.value = "";
+});
+
+personalProfileGalleryFiles?.addEventListener("change", async () => {
+  const files = Array.from(personalProfileGalleryFiles.files || []);
+  personalProfileGalleryFiles.value = "";
+  if (!files.length) return;
+  if (personalProfileGalleryData.length + files.length > 5) {
+    personalProfileMessage.textContent = "A galeria aceita até 5 fotos.";
+    personalProfileMessage.classList.add("error");
+    return;
+  }
+  try {
+    for (const file of files) personalProfileGalleryData.push(await compressPersonalProfilePhoto(file));
+    renderPersonalProfileGallery();
+    personalProfileMessage.textContent = "Fotos adicionadas. Salve o perfil para sincronizar as alterações.";
+    personalProfileMessage.classList.remove("error");
+  } catch (error) {
+    personalProfileMessage.textContent = error.message;
+    personalProfileMessage.classList.add("error");
+  }
+});
+
+personalProfileForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const profile = {
+    name: personalProfileForm.elements.namedItem("name").value.trim(),
+    title: personalProfileForm.elements.namedItem("title").value.trim(),
+    cref: personalProfileForm.elements.namedItem("cref").value.trim(),
+    email: personalProfileForm.elements.namedItem("email").value.trim(),
+    phone: personalProfileForm.elements.namedItem("phone").value.trim(),
+    instagram: personalProfileForm.elements.namedItem("instagram").value.trim(),
+    specialties: personalProfileForm.elements.namedItem("specialties").value.trim(),
+    bio: personalProfileForm.elements.namedItem("bio").value.trim(),
+    photo: personalProfilePhotoData,
+    gallery: personalProfileGalleryData.slice(0, 5),
+    settings: {
+      compactInterface: personalProfileForm.elements.namedItem("compactInterface").checked,
+      reducedMotion: personalProfileForm.elements.namedItem("reducedMotion").checked,
+    },
+  };
+  try {
+    localStorage.setItem(personalProfileStorageKey, JSON.stringify(profile));
+    persistAppDataMeta();
+    applyPersonalProfilePreferences(profile.settings);
+    personalProfileMessage.textContent = "Salvando perfil e configurações...";
+    personalProfileMessage.classList.remove("error");
+    const result = await queueSupabaseAppStateSync("perfil do personal");
+    personalProfileMessage.textContent = result?.ok
+      ? "Perfil e configurações sincronizados com sucesso."
+      : "Perfil salvo neste dispositivo. A sincronização será retomada quando possível.";
+  } catch {
+    personalProfileMessage.textContent = "Não foi possível salvar. Remova algumas fotos e tente novamente.";
+    personalProfileMessage.classList.add("error");
+  }
+});
+
 [billingFilterMonth, billingFilterStatus, billingFilterName, billingCountHolidays, billingHolidays].forEach((input) => {
   input?.addEventListener("input", renderBillingList);
   input?.addEventListener("change", renderBillingList);
@@ -12222,7 +12432,7 @@ billingSettingsForm?.addEventListener("submit", async (event) => {
 billingList?.addEventListener("click", async (event) => {
   const paidButton = event.target.closest("[data-mark-billing-paid]");
   if (!paidButton) return;
-  markStudentBillingAsPaid(paidButton.dataset.markBillingPaid);
+  markStudentBillingAsPaid(paidButton.dataset.markBillingPaid, paidButton.dataset.billingMonth);
   await supabaseSyncPromise;
 });
 

@@ -53,6 +53,7 @@
           <button class="nav-item" data-view="avaliacao" data-student-only>Avaliação</button>
           <button class="nav-item" data-view="evolucao" data-student-only>Evolução</button>
           <button class="nav-item" data-view="perfil" data-student-only>Perfil</button>
+          <button class="nav-item" data-view="personal-profile" data-admin-only>Meu perfil</button>
           <button class="nav-item" data-view="admin" data-admin-only>Administrativo</button>
           <button class="nav-item" data-view="admin" data-admin-only data-admin-shortcut="schedule">Agenda</button>
         </nav>
@@ -283,6 +284,71 @@
               </div>
             </section>
           </div>
+        </section>
+
+        <section class="view" id="personal-profile">
+          <div class="section-title">
+            <p class="eyebrow">Perfil profissional</p>
+            <h2>Meu perfil</h2>
+          </div>
+          <form class="personal-settings-form" id="personal-profile-form">
+            <section class="personal-settings-section">
+              <div class="personal-settings-heading">
+                <div>
+                  <p class="eyebrow">Apresentação</p>
+                  <h3>Dados profissionais</h3>
+                </div>
+                <div class="personal-profile-avatar-wrap">
+                  <img id="personal-profile-photo-preview" alt="Foto do personal" hidden />
+                  <span id="personal-profile-photo-placeholder">Foto</span>
+                </div>
+              </div>
+              <div class="personal-profile-fields">
+                <label>Nome profissional<input name="name" id="personal-profile-name" maxlength="100" placeholder="Seu nome" /></label>
+                <label>Título profissional<input name="title" id="personal-profile-title" maxlength="100" placeholder="Personal trainer" /></label>
+                <label>CREF<input name="cref" id="personal-profile-cref" maxlength="40" placeholder="Número de registro" /></label>
+                <label>E-mail profissional<input name="email" id="personal-profile-email" type="email" maxlength="160" placeholder="voce@email.com" /></label>
+                <label>WhatsApp<input name="phone" id="personal-profile-phone" type="tel" maxlength="30" placeholder="(00) 00000-0000" /></label>
+                <label>Instagram<input name="instagram" id="personal-profile-instagram" maxlength="100" placeholder="@seuperfil" /></label>
+                <label class="personal-profile-bio">Especialidades<input name="specialties" id="personal-profile-specialties" maxlength="180" placeholder="Ex.: musculação, condicionamento" /></label>
+                <label class="personal-profile-bio">Sobre mim<textarea name="bio" id="personal-profile-bio" maxlength="1000" rows="4" placeholder="Conte um pouco sobre sua experiência e seu trabalho"></textarea></label>
+                <label class="personal-profile-bio">Foto de perfil<input id="personal-profile-photo-file" type="file" accept="image/*" /></label>
+              </div>
+            </section>
+
+            <section class="personal-settings-section">
+              <div class="personal-settings-heading">
+                <div>
+                  <p class="eyebrow">Fotos</p>
+                  <h3>Galeria profissional</h3>
+                </div>
+                <label class="personal-gallery-picker">Adicionar fotos<input id="personal-profile-gallery-files" type="file" accept="image/*" multiple /></label>
+              </div>
+              <div class="personal-profile-gallery" id="personal-profile-gallery"></div>
+            </section>
+
+            <section class="personal-settings-section">
+              <div class="personal-settings-heading">
+                <div>
+                  <p class="eyebrow">Preferências</p>
+                  <h3>Configurações do sistema</h3>
+                </div>
+              </div>
+              <label class="personal-setting-toggle">
+                <span><strong>Interface compacta</strong><small>Reduz espaçamentos para exibir mais conteúdo.</small></span>
+                <input type="checkbox" id="personal-setting-compact" name="compactInterface" />
+              </label>
+              <label class="personal-setting-toggle">
+                <span><strong>Reduzir animações</strong><small>Desativa movimentos e transições da interface.</small></span>
+                <input type="checkbox" id="personal-setting-reduced-motion" name="reducedMotion" />
+              </label>
+            </section>
+
+            <div class="personal-profile-actions">
+              <button type="submit" class="primary">Salvar perfil e configurações</button>
+              <p class="save-message" id="personal-profile-message" role="status"></p>
+            </div>
+          </form>
         </section>
 
         <section class="view" id="admin">
