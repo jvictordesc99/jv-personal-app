@@ -1251,6 +1251,7 @@ async function fetchSupabaseAppStateData(client = getSupabaseAppStateClient()) {
       data: data?.data || null,
       updatedAt: data?.updated_at || "",
       missing: !data?.data,
+      exists: data != null,
     };
   } catch (error) {
     logSupabaseAppStateError("carregar para mesclagem por rede/CDN", error);
@@ -1487,7 +1488,7 @@ async function loadSupabaseAppState(options = {}) {
   return writeAppStateToLocalStorage(mergedState) ? "loaded" : "failed";
 }
 
-async function upsertAppStateWithRest(payload) {
+async function compareAndSwapAppStateWithRest(payload) {
   const config = getSupabaseConfig();
   if (!config.url || !config.anonKey) {
     return {
@@ -1499,7 +1500,7 @@ async function upsertAppStateWithRest(payload) {
     };
   }
 
-  const endpoint = `${config.url.replace(/\/$/, "")}/rest/v1/${supabaseTables.appState}?on_conflict=id`;
+  const endpoint = `${config.url.replace(/\/$/, "")}/rest/v1/rpc/compare_and_swap_app_state`;
   try {
     console.info(`Tentando fallback REST app_state: ${endpoint}`);
     const response = await fetch(endpoint, {
@@ -1508,7 +1509,6 @@ async function upsertAppStateWithRest(payload) {
         apikey: config.anonKey,
         Authorization: `Bearer ${config.anonKey}`,
         "Content-Type": "application/json",
-        Prefer: "resolution=merge-duplicates,return=representation",
       },
       body: JSON.stringify(payload),
     });
@@ -1542,109 +1542,85 @@ async function upsertAppStateWithRest(payload) {
   }
 }
 
+// Three-way merge used ONLY when replaying an in-flight write after a conflict.
+// Unlike the ordinary cache merge, unchanged local fields never replace remote edits.
+function rebaseAppStateChanges(base, desired, current, path = "") {
+  const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  if (equal(base, desired)) return structuredClone(current);
+  if (equal(base, current) || equal(desired, current)) return structuredClone(desired);
+  const object = (value) => value != null && typeof value === "object" && !Array.isArray(value);
+  if (object(base) && object(desired) && object(current)) {
+    const result = {};
+    for (const key of new Set([...Object.keys(base), ...Object.keys(desired), ...Object.keys(current)])) {
+      // savedAt is document metadata, not an independently editable field.
+      const value = !path && key === "savedAt" ? new Date().toISOString()
+        : rebaseAppStateChanges(base[key], desired[key], current[key], `${path}/${key}`);
+      if (value !== undefined) result[key] = value;
+    }
+    return result;
+  }
+  const keyed = (items) => Array.isArray(items) && items.every((item) => object(item) && item.id != null)
+    && new Set(items.map((item) => item.id)).size === items.length;
+  if (keyed(base) && keyed(desired) && keyed(current)) {
+    const before = new Map(base.map((item) => [item.id, item]));
+    const after = new Map(desired.map((item) => [item.id, item]));
+    const latest = new Map(current.map((item) => [item.id, item]));
+    return [...new Set([...latest.keys(), ...after.keys()])].map((id) =>
+      rebaseAppStateChanges(before.get(id), after.get(id), latest.get(id), `${path}/${id}`)
+    ).filter((item) => item !== undefined);
+  }
+  throw new Error(`Conflito simultaneo em app_state${path}. Dados locais preservados; revise antes de sincronizar novamente.`);
+}
+
 async function syncAppStateToSupabase() {
-  console.info("syncAppStateToSupabase chamado.");
   if (isApplyingRemoteState) return { ok: true, skipped: true, reason: "applying-remote-state" };
-
   const client = getSupabaseAppStateClient();
-  if (!client) {
-    console.error("syncAppStateToSupabase interrompido: cliente Supabase indisponivel.");
-    return { ok: false, error: { message: "Cliente Supabase indisponivel." } };
-  }
-
-  const localState = getAppStateSnapshot();
-  const remoteResult = await retryAsyncOperation("carregar app_state para sincronizacao", async () => {
-    const attemptResult = await fetchSupabaseAppStateData(client);
-    if (!attemptResult.ok) throw attemptResult.error || new Error("Falha ao carregar app_state para sincronizacao.");
-    return attemptResult;
-  }).catch((error) => ({ ok: false, error }));
-  if (!remoteResult.ok) {
-    console.error("Sincronizacao interrompida: nao foi possivel carregar app_state online para mesclagem segura.", remoteResult.error);
-    showSupabaseSyncWarning(`Dados locais preservados. Falha ao carregar Supabase: ${formatSupabaseError(remoteResult.error)}`, remoteResult.error);
-    return { ok: false, error: remoteResult.error };
-  }
-
-  const appState = mergeAppStateForSupabase(remoteResult.data || {}, localState);
-  appState.students = normalizeStudentsData(appState.students || []).map((student) => ({
-    ...student,
-    syncStatus: "synced",
-    syncError: "",
-    syncUpdatedAt: new Date().toISOString(),
-  }));
-  memoryStudents = normalizeStudentsData(appState.students || []);
-  try {
-    localStorage.setItem(studentStorageKey, JSON.stringify(memoryStudents));
-    persistAppDataMeta();
-  } catch (storageError) {
-    console.warn("Nao foi possivel atualizar o cache local apos mesclagem segura de alunos.", storageError);
-  }
-  const payload = {
-    id: "main",
-    data: appState,
-    updated_at: new Date().toISOString(),
-  };
-  const auditCounts = getAppStateAuditCounts(appState);
-  console.info("Mesclagem segura app_state antes do envio.", {
-    online: getAppStateAuditCounts(remoteResult.data || {}),
-    local: getAppStateAuditCounts(localState),
-    merged: auditCounts,
-    remoteUpdatedAt: remoteResult.updatedAt || "",
-  });
-  console.info(`Enviando app_state para Supabase: ${JSON.stringify({
-    table: supabaseTables.appState,
-    id: payload.id,
-    updated_at: payload.updated_at,
-    collections: auditCounts,
-  })}`);
+  if (!client) return { ok: false, error: { message: "Cliente Supabase indisponivel." } };
 
   try {
-    const { data, error } = await retryAsyncOperation("upsert app_state Supabase", async () => {
-      const result = await client
-        .from(supabaseTables.appState)
-        .upsert(payload, { onConflict: "id" })
-        .select("id,updated_at")
-        .single();
-      if (result.error) throw result.error;
-      return result;
-    });
-
-    if (error) {
-      console.error(`Erro retornado pelo upsert app_state: ${JSON.stringify(error)}`);
-      logSupabaseAppStateError("salvar", error);
-      const restResult = await upsertAppStateWithRest(payload);
-      if (restResult.ok) {
-        console.info(`Upsert app_state via REST concluido com sucesso: ${JSON.stringify(restResult.data)}`);
-        console.info(`Auditoria app_state sincronizado via REST: ${JSON.stringify(auditCounts)}`);
-        writeAppStateToLocalStorage(appState);
-        return { ok: true, data: restResult.data, via: "rest" };
+    let previous;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const remote = await fetchSupabaseAppStateData(client);
+      if (!remote.ok) throw remote.error;
+      const local = structuredClone(getAppStateSnapshot());
+      // Replay only the intended changes, not the entire stale local cache.
+      const appState = previous
+        ? rebaseAppStateChanges(previous.remote, rebaseAppStateChanges(previous.local, local, previous.candidate), remote.data || {})
+        : mergeAppStateForSupabase(remote.data || {}, local);
+      appState.students = normalizeStudentsData(appState.students || []).map((student) => ({
+        ...student, syncStatus: "synced", syncError: "", syncUpdatedAt: new Date().toISOString(),
+      }));
+      const args = {
+        expected_data: remote.data,
+        expected_updated_at: remote.updatedAt || null,
+        next_data: appState,
+        expected_exists: remote.exists,
+      };
+      previous = { remote: remote.data || {}, local, candidate: appState };
+      let result;
+      try {
+        result = await client.rpc("compare_and_swap_app_state", args);
+      } catch (error) {
+        result = { error };
       }
-      showSupabaseSyncWarning(`Dados locais preservados. Falha no Supabase: ${formatSupabaseError(restResult.error || error)}`, restResult.error || error);
-      console.error(`Erro retornado pelo fallback REST app_state: ${JSON.stringify(restResult.error)}`);
-      logSupabaseAppStateError("salvar via REST", restResult.error);
-      return { ok: false, error: restResult.error || error };
+      if (result.error) {
+        if (isNonRetryableSupabaseError(result.error)) throw result.error;
+        // Network/CDN fallback uses the SAME atomic RPC, never a blind upsert.
+        const fallback = await compareAndSwapAppStateWithRest(args);
+        if (!fallback.ok) throw fallback.error;
+        result = { data: fallback.data, error: null };
+      }
+      if (result.data === false) continue;
+      if (result.data !== true) throw new Error("Resposta invalida ao gravar app_state/main.");
+      // Preserve local edits made during the request; they remain queued for sync.
+      writeAppStateToLocalStorage(rebaseAppStateChanges(local, getAppStateSnapshot(), appState));
+      return { ok: true, data: true, via: "compare-and-swap" };
     }
-
-    console.info(`Upsert app_state concluido com sucesso: ${JSON.stringify(data)}`);
-    console.info(`Auditoria app_state sincronizado: ${JSON.stringify(auditCounts)}`);
-    writeAppStateToLocalStorage(appState);
-    return { ok: true, data, via: "supabase" };
+    throw new Error("Conflito ao gravar app_state/main apos 3 tentativas. Dados locais preservados; tente novamente.");
   } catch (error) {
-    logSupabaseAppStateError("salvar por rede/CDN", error);
-    if (isNonRetryableSupabaseError(error)) {
-      showSupabaseSyncWarning(`Supabase recusou a sincronizacao: ${formatSupabaseError(error)}`, error);
-      return { ok: false, error };
-    }
-    const restResult = await upsertAppStateWithRest(payload);
-    if (restResult.ok) {
-      console.info(`Upsert app_state via REST concluido com sucesso: ${JSON.stringify(restResult.data)}`);
-      console.info(`Auditoria app_state sincronizado via REST: ${JSON.stringify(auditCounts)}`);
-      writeAppStateToLocalStorage(appState);
-      return { ok: true, data: restResult.data, via: "rest" };
-    }
-    showSupabaseSyncWarning(`Dados locais preservados. Falha no Supabase: ${formatSupabaseError(restResult.error || error)}`, restResult.error || error);
-    console.error(`Erro retornado pelo fallback REST app_state: ${JSON.stringify(restResult.error)}`);
-    logSupabaseAppStateError("salvar via REST", restResult.error);
-    return { ok: false, error: restResult.error || error };
+    logSupabaseAppStateError("salvar com controle de concorrencia", error);
+    showSupabaseSyncWarning(`Dados locais preservados. Falha no Supabase: ${formatSupabaseError(error)}`, error);
+    return { ok: false, error };
   }
 }
 

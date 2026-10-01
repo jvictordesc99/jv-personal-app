@@ -76,7 +76,7 @@
     });
   }
 
-  function persistGoogleIds(results, sourceEvents = []) {
+  async function persistGoogleIds(results, sourceEvents = []) {
     if (!Array.isArray(results) || !results.length) return;
     const links = new Map(results.filter((item) => item.google_event_id).map((item) => [item.app_event_id, item.google_event_id]));
     if (!links.size) return;
@@ -98,10 +98,14 @@
       events.push({ ...source, google_event_id: googleId, origem_da_alteracao: source.origem_da_alteracao || "aplicativo", updatedAt: source.updatedAt || Date.now() });
       changed = true;
     });
-    if (!changed) return;
     applyingLinks = true;
-    saveAgendaEvents(events);
-    applyingLinks = false;
+    try {
+      if (changed) saveAgendaEvents(events);
+      const saved = await flushAppStateSyncNow("vinculos Google Calendar");
+      if (!saved?.ok || saved.skipped) throw new Error(saved?.error?.message || "Nao foi possivel salvar os vinculos do Google no Supabase.");
+    } finally {
+      applyingLinks = false;
+    }
   }
 
   async function push(events = collectEvents()) {
@@ -112,10 +116,11 @@
         const result = await invoke("push", { events: events.slice(index, index + 200) });
         results.push(...(result.results || []));
       }
-      persistGoogleIds(results, events);
+      await persistGoogleIds(results, events);
       setMessage("Agenda sincronizada com o Google Calendar.");
     } catch (error) {
       setMessage(`Não foi possível enviar ao Google. ${error.message}`, true);
+      throw error;
     }
   }
 
@@ -126,7 +131,7 @@
     pushTimer = window.setTimeout(() => {
       const eventsToPush = queuedEvents;
       queuedEvents = [];
-      push(eventsToPush);
+      push(eventsToPush).catch(() => { /* push already displayed the failure. */ });
     }, pushDelayMs);
   }
 

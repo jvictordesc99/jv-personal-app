@@ -1,4 +1,5 @@
 import { accessTokenFor, admin, googleFetch, sha256 } from "./google.ts";
+import { updateAppState } from "./app-state.ts";
 
 const iso = (value: any) => value?.dateTime || (value?.date ? `${value.date}T00:00:00Z` : null);
 
@@ -111,58 +112,56 @@ export async function applyGoogleEvent(userId: string, event: any) {
   const { data: prior } = await db.from("google_calendar_sync_history").select("id").eq("user_id", userId).eq("idempotency_key", idempotencyKey).maybeSingle();
   if (prior) return { status: "ignored", reason: "duplicate" };
 
-  const { data: stateRow, error: stateError } = await db.from("app_state").select("data").eq("id", "main").single();
-  if (stateError) throw stateError;
-  const state = structuredClone(stateRow.data || {});
-  state.agendaEvents = Array.isArray(state.agendaEvents) ? state.agendaEvents : [];
-  let appEvent = state.agendaEvents.find((item: any) => item.id === appEventId);
-  if (!appEvent) {
-    appEvent = { id: appEventId, studentId: privateData.student_id || "", studentName: privateData.student_name || "", packageId: privateData.package_id || "", source: "google", createdAt: Date.now() };
-    state.agendaEvents.push(appEvent);
-  }
-  const start = startIso ? new Date(startIso) : null;
-  const end = endIso ? new Date(endIso) : null;
-  Object.assign(appEvent, {
-    google_event_id: event.id, google_recurring_event_id: event.recurringEventId || "",
-    date: start ? brazilDate(start) : appEvent.date, dateKey: start ? new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(start) : appEvent.dateKey,
-    time: start ? brazilTime(start) : appEvent.time,
-    duration: start && end ? Math.max(1, Math.round((end.getTime() - start.getTime()) / 60000)) : appEvent.duration,
-    status: cancelled ? "cancelada pelo Google" : declined ? "recusada no Google" : "confirmada",
-    cancelado_por: cancelled || declined ? (privateData.student_name || "Google Calendar") : appEvent.cancelado_por || "",
-    cancelado_em: cancelled || declined ? new Date().toISOString() : appEvent.cancelado_em || "",
-    origem_da_alteracao: "google_calendar", updatedAt: Date.now(),
-  });
-  if ((cancelled || declined) && appEvent.packageId) {
-    state.checkins = Array.isArray(state.checkins) ? state.checkins : [];
-    state.makeupCredits = Array.isArray(state.makeupCredits) ? state.makeupCredits : [];
-    const alreadyRegistered = state.checkins.some((item: any) => item.packageId === appEvent.packageId && item.dateKey === appEvent.dateKey && (item.lessonType || "package") === "package");
-    if (!alreadyRegistered) {
-      const lessonStart = start || (appEvent.dateKey && appEvent.time ? new Date(`${appEvent.dateKey}T${appEvent.time}:00-03:00`) : null);
-      const inTime = lessonStart ? (lessonStart.getTime() - Date.now()) > 2 * 3600000 : false;
-      const checkinId = crypto.randomUUID();
-      const validUntilDate = lessonStart ? new Date(lessonStart.getTime() + 10 * 86400000) : null;
-      const validUntil = validUntilDate ? brazilDate(validUntilDate) : "";
-      state.checkins.push({
-        id: checkinId, studentName: appEvent.studentName || privateData.student_name || "", studentId: appEvent.studentId || privateData.student_id || "",
-        packageId: appEvent.packageId, packageName: appEvent.modality || "Pacote", date: appEvent.date, dateKey: appEvent.dateKey, time: appEvent.time,
-        type: "cancelamento de aula", lessonType: "package", status: inTime ? "cancelada-no-prazo" : "cancelada-fora-prazo",
-        statusLabel: inTime ? "Cancelada no prazo" : "Cancelada fora do prazo - aula contabilizada", consumed: !inTime,
-        generatedMakeup: inTime, makeupValidUntil: validUntil, reason: inTime ? "Cancelamento no Google dentro do prazo. Reposicao gerada." : "Cancelamento no Google fora do prazo minimo de 2 horas.",
-        markedBy: appEvent.studentName || "aluno", cancellationDate: brazilDate(new Date()), cancellationTime: brazilTime(new Date()),
-        cancelado_por: appEvent.studentName || privateData.student_name || "Google Calendar", cancelado_em: new Date().toISOString(), origem_da_alteracao: "google_calendar",
-        month: appEvent.dateKey?.slice(0, 7) || "", timestamp: Date.now(),
-      });
-      if (inTime) state.makeupCredits.push({
-        id: crypto.randomUUID(), studentName: appEvent.studentName || privateData.student_name || "", studentId: appEvent.studentId || privateData.student_id || "",
-        packageId: appEvent.packageId, packageName: appEvent.modality || "Pacote", sourceLessonDate: appEvent.date, lessonTime: appEvent.time,
-        noticeDate: brazilDate(new Date()), noticeTime: brazilTime(new Date()), validUntil, status: "available", generated: true,
-        reason: "Cancelamento do aluno no Google dentro do prazo.", sourceCheckinId: checkinId, note: "", timestamp: Date.now(), createdAt: Date.now(),
-        origem_da_alteracao: "google_calendar",
-      });
+  const appEvent = await updateAppState(db, (state) => {
+    state.agendaEvents = Array.isArray(state.agendaEvents) ? state.agendaEvents : [];
+    let appEvent = state.agendaEvents.find((item: any) => item.id === appEventId);
+    if (!appEvent) {
+      appEvent = { id: appEventId, studentId: privateData.student_id || "", studentName: privateData.student_name || "", packageId: privateData.package_id || "", source: "google", createdAt: Date.now() };
+      state.agendaEvents.push(appEvent);
     }
-  }
-  state.savedAt = new Date().toISOString();
-  await db.from("app_state").update({ data: state, updated_at: new Date().toISOString() }).eq("id", "main");
+    const start = startIso ? new Date(startIso) : null;
+    const end = endIso ? new Date(endIso) : null;
+    Object.assign(appEvent, {
+      google_event_id: event.id, google_recurring_event_id: event.recurringEventId || "",
+      date: start ? brazilDate(start) : appEvent.date, dateKey: start ? new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(start) : appEvent.dateKey,
+      time: start ? brazilTime(start) : appEvent.time,
+      duration: start && end ? Math.max(1, Math.round((end.getTime() - start.getTime()) / 60000)) : appEvent.duration,
+      status: cancelled ? "cancelada pelo Google" : declined ? "recusada no Google" : "confirmada",
+      cancelado_por: cancelled || declined ? (privateData.student_name || "Google Calendar") : appEvent.cancelado_por || "",
+      cancelado_em: cancelled || declined ? new Date().toISOString() : appEvent.cancelado_em || "",
+      origem_da_alteracao: "google_calendar", updatedAt: Date.now(),
+    });
+    if ((cancelled || declined) && appEvent.packageId) {
+      state.checkins = Array.isArray(state.checkins) ? state.checkins : [];
+      state.makeupCredits = Array.isArray(state.makeupCredits) ? state.makeupCredits : [];
+      const alreadyRegistered = state.checkins.some((item: any) => item.packageId === appEvent.packageId && item.dateKey === appEvent.dateKey && (item.lessonType || "package") === "package");
+      if (!alreadyRegistered) {
+        const lessonStart = start || (appEvent.dateKey && appEvent.time ? new Date(`${appEvent.dateKey}T${appEvent.time}:00-03:00`) : null);
+        const inTime = lessonStart ? (lessonStart.getTime() - Date.now()) > 2 * 3600000 : false;
+        const checkinId = crypto.randomUUID();
+        const validUntilDate = lessonStart ? new Date(lessonStart.getTime() + 10 * 86400000) : null;
+        const validUntil = validUntilDate ? brazilDate(validUntilDate) : "";
+        state.checkins.push({
+          id: checkinId, studentName: appEvent.studentName || privateData.student_name || "", studentId: appEvent.studentId || privateData.student_id || "",
+          packageId: appEvent.packageId, packageName: appEvent.modality || "Pacote", date: appEvent.date, dateKey: appEvent.dateKey, time: appEvent.time,
+          type: "cancelamento de aula", lessonType: "package", status: inTime ? "cancelada-no-prazo" : "cancelada-fora-prazo",
+          statusLabel: inTime ? "Cancelada no prazo" : "Cancelada fora do prazo - aula contabilizada", consumed: !inTime,
+          generatedMakeup: inTime, makeupValidUntil: validUntil, reason: inTime ? "Cancelamento no Google dentro do prazo. Reposicao gerada." : "Cancelamento no Google fora do prazo minimo de 2 horas.",
+          markedBy: appEvent.studentName || "aluno", cancellationDate: brazilDate(new Date()), cancellationTime: brazilTime(new Date()),
+          cancelado_por: appEvent.studentName || privateData.student_name || "Google Calendar", cancelado_em: new Date().toISOString(), origem_da_alteracao: "google_calendar",
+          month: appEvent.dateKey?.slice(0, 7) || "", timestamp: Date.now(),
+        });
+        if (inTime) state.makeupCredits.push({
+          id: crypto.randomUUID(), studentName: appEvent.studentName || privateData.student_name || "", studentId: appEvent.studentId || privateData.student_id || "",
+          packageId: appEvent.packageId, packageName: appEvent.modality || "Pacote", sourceLessonDate: appEvent.date, lessonTime: appEvent.time,
+          noticeDate: brazilDate(new Date()), noticeTime: brazilTime(new Date()), validUntil, status: "available", generated: true,
+          reason: "Cancelamento do aluno no Google dentro do prazo.", sourceCheckinId: checkinId, note: "", timestamp: Date.now(), createdAt: Date.now(),
+          origem_da_alteracao: "google_calendar",
+        });
+      }
+    }
+    return appEvent;
+  });
 
   if (cancelled || declined || rescheduled) {
     const studentName = privateData.student_name || appEvent.studentName || "Aluno";

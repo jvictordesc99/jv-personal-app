@@ -30,7 +30,7 @@ Configure com `supabase secrets set` em um projeto de homologacao:
 ## Supabase
 
 1. Crie um projeto separado de homologacao ou um branch de banco.
-2. Aplique `supabase/migrations/202609010001_google_calendar_integration.sql`.
+2. Aplique, nesta ordem, `supabase/migrations/202609010001_google_calendar_integration.sql` e `supabase/migrations/202609300001_app_state_compare_and_swap.sql`. A segunda migration deve estar disponivel antes de atualizar o JavaScript do app ou as Edge Functions.
 3. Configure os segredos listados acima.
 4. Publique as funcoes `google-calendar`, `google-calendar-oauth-callback`, `google-calendar-webhook` e `google-calendar-renew` no projeto de homologacao.
 5. Confirme que `verify_jwt=false` esta aplicado somente ao callback, webhook e renovacao, conforme `supabase/config.toml`. Esses endpoints fazem sua propria validacao de state, token do canal ou segredo de cron.
@@ -52,10 +52,19 @@ Configure com `supabase secrets set` em um projeto de homologacao:
 
 ## Riscos e limites conhecidos
 
-- O `app_state/main` e um documento JSON compartilhado. A Edge Function atualiza esse documento para refletir o Google; alteracoes simultaneas em outros modulos podem competir com a gravacao. Homologue concorrencia antes de producao.
+- O `app_state/main` e um documento JSON compartilhado. A Edge Function e o sincronizador geral do navegador usam `compare_and_swap_app_state`: o UPDATE so ocorre quando o JSON e `updated_at` ainda correspondem ao snapshot lido. Em conflito, ambos releem e refazem a alteracao/mesclagem, com limite de tres tentativas. Nao existe fallback para UPDATE ou UPSERT sem protecao.
+- No navegador, a repeticao reaplica somente as diferencas pretendidas sobre o estado mais recente, comparando itens por ID. Se o mesmo campo tiver mudancas divergentes, retorna conflito em vez de escolher silenciosamente um valor. O cache tambem preserva edicoes locais feitas durante a requisicao.
+- A nova RPC usa `SECURITY INVOKER`, preserva os grants/RLS existentes e nao altera `profiles`. EXECUTE para `anon` mantem compatibilidade com o cliente anonimo de app_state ja usado pelo app, sem conceder novos direitos sobre a tabela. A criacao inicial de `main` usa INSERT com ON CONFLICT DO NOTHING; a Edge Function exige que `main` ja exista.
+- Erros de leitura/gravação ou conflitos persistentes interrompem a aplicacao do evento antes de notificacoes, historico de sucesso, atualizacao do vinculo e avanco do sync token. O webhook retorna erro para permitir nova tentativa; o navegador preserva os dados locais e informa a falha. Os IDs retornados pelo Google so geram mensagem de sucesso depois de sua persistencia no Supabase.
+- Atualize/recarregue tambem as abas antigas do app: clientes antigos ou gravadores externos que continuem usando UPSERT sem comparacao podem sobrescrever dados. A RPC protege seus chamadores; nao bloqueia por si so gravacoes diretas de outros clientes. Homologue concorrencia antes de producao.
 - A primeira sincronizacao cobre eventos locais e os proximos seis meses de aulas derivadas. Periodos posteriores entram quando se aproximam ou quando uma alteracao da agenda dispara novo envio.
 - Eventos recorrentes sao processados como ocorrencias expandidas (`singleEvents=true`), preservando `recurringEventId` e `originalStartTime`. Alterar a serie inteira no Google pode gerar muitas ocorrencias e deve ser testado com um conjunto pequeno.
 - Excluir a conexao preserva eventos ja criados no Google. Isso evita perda inesperada de agenda.
 - Convites sao enviados ao e-mail do aluno para permitir detectar recusas. Valide consentimento e qualidade dos e-mails antes de habilitar em producao.
 - A API do Google Calendar nao informa de forma confiavel quem editou o horario. Para eventos vinculados, a notificacao atribui a mudanca ao aluno associado; valide esse comportamento se outras pessoas tiverem permissao de edicao no calendario.
 - O Google exige renovacao dos canais; a rotina deve rodar diariamente e os canais sao renovados antes das ultimas 36 horas.
+
+## Validacao local das correcoes de concorrencia
+
+- `npm test` (Node 24): testa conflitos simultaneos, preservacao de dados/cache, falhas de leitura/gravação, fallback REST protegido e ausencia de sucesso/notificacoes/sync token quando app_state falha.
+- `node tests/app-state-migration.mjs CAMINHO_LOCAL_PGLITE/dist/index.js`: teste opcional em PostgreSQL/WASM em memoria, com PGlite instalado separadamente. Valida a migration real com colunas json/jsonb, criacao inicial, comparacao de snapshots, timestamps nulos, grants e RLS. Nao usa conexao com Supabase. Por usar uma unica conexao, nao substitui um teste com transacoes concorrentes em homologacao.
