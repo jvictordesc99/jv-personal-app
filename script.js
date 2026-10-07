@@ -185,6 +185,7 @@ const agendaMakeupForm = document.querySelector("#agenda-makeup-form");
 const agendaDropinForm = document.querySelector("#agenda-dropin-form");
 const agendaCancelForm = document.querySelector("#agenda-cancel-form");
 const agendaMakeupStudent = document.querySelector("#agenda-makeup-student");
+const agendaMakeupPackage = document.querySelector("#agenda-makeup-package");
 const agendaMakeupDate = document.querySelector("#agenda-makeup-date");
 const agendaMakeupTime = document.querySelector("#agenda-makeup-time");
 const agendaMakeupDuration = document.querySelector("#agenda-makeup-duration");
@@ -315,6 +316,9 @@ const packageStudentResults = document.querySelector("#package-student-results")
 const packageEmptyState = document.querySelector("#package-empty-state");
 const packageStudent = document.querySelector("#package-student");
 const packageName = document.querySelector("#package-name");
+const packageModality = document.querySelector("#package-modality");
+const packageBillingType = document.querySelector("#package-billing-type");
+const packageClassValue = document.querySelector("#package-class-value");
 const packageModelList = document.querySelector("#package-model-list");
 const packageTotal = document.querySelector("#package-total");
 const packageFrequency = document.querySelector("#package-frequency");
@@ -395,6 +399,8 @@ let memoryFinancialHistory = null;
 let editingStudentIndex = null;
 let editingWorkout = null;
 let editingPackageId = null;
+let packageFormTemplate = null;
+const selectedPackageByStudent = new Map();
 let editingClassGroupId = "";
 let selectedAdminWorkoutStudent = "";
 let selectedAdminProfileStudent = "";
@@ -801,7 +807,7 @@ function formatRestSeconds(value) {
 }
 
 function applyInputMasks(root = document) {
-  root.querySelectorAll("#student-value, #student-class-value, #package-value, #dropin-value, #manual-checkin-value, #agenda-dropin-value").forEach((input) => {
+  root.querySelectorAll("#student-value, #student-class-value, #package-value, #package-class-value, #dropin-value, #manual-checkin-value, #agenda-dropin-value").forEach((input) => {
     input.inputMode = "numeric";
     input.addEventListener("input", () => {
       input.value = formatCurrencyBR(input.value);
@@ -1167,7 +1173,9 @@ function mergeListsById(onlineItems = [], localItems = [], options = {}) {
     const key = getMergeItemKey(item, `local-${index}`);
     if (collection && isItemDeletedByTombstone(item, collection, tombstoneSet)) return;
     if (key) {
-      merged.set(key, { ...(merged.get(key) || {}), ...item });
+      merged.set(key, collection === "financialHistory"
+        ? PackageBilling.mergeFinancialRecords(merged.get(key), item)
+        : { ...(merged.get(key) || {}), ...item });
     } else {
       merged.set(`local-${merged.size}-${Date.now()}`, { ...item });
     }
@@ -1596,6 +1604,9 @@ function rebaseAppStateChanges(base, desired, current, path = "") {
   if (equal(base, desired)) return structuredClone(current);
   if (equal(base, current) || equal(desired, current)) return structuredClone(desired);
   const object = (value) => value != null && typeof value === "object" && !Array.isArray(value);
+  if (/^\/financialHistory\/[^/]+$/.test(path) && object(desired) && object(current)) {
+    return PackageBilling.mergeFinancialRecords(current, desired);
+  }
   if (object(base) && object(desired) && object(current)) {
     const result = {};
     for (const key of new Set([...Object.keys(base), ...Object.keys(desired), ...Object.keys(current)])) {
@@ -2761,6 +2772,10 @@ function normalizeFinancialHistory(records) {
       studentId: record.studentId || "",
       studentName: String(record.studentName || "").trim(),
       monthKey: record.monthKey || currentMonthKey(),
+      paymentAllocations: Array.isArray(record.paymentAllocations) ? record.paymentAllocations.map((entry) => ({ id: entry.id, paidValue: Number(entry.paidValue) || 0, paidAt: entry.paidAt || "" })) : [],
+      chargeLines: Array.isArray(record.chargeLines) ? record.chargeLines : [],
+      unallocatedPaidValue: Number(record.unallocatedPaidValue) || 0,
+      outstandingValue: Number(record.outstandingValue) || 0,
       predictedLessons: Number(record.predictedLessons) || 0,
       completedLessons: Number(record.completedLessons) || 0,
       chargedValue: Number(record.chargedValue) || 0,
@@ -2806,10 +2821,14 @@ function updateFinancialHistoryFromProjections(projections, monthKey) {
       predictedLessons: projection.predictedLessons,
       completedLessons: projection.completedLessons,
       chargedValue: projection.totalValue,
-      paidValue: projection.status === "Pago" ? projection.totalValue : 0,
+      paidValue: projection.paidValue,
+      paymentAllocations: projection.paymentAllocations,
+      chargeLines: projection.lines,
+      outstandingValue: projection.outstandingValue,
+      unallocatedPaidValue: projection.unallocatedPaidValue,
       status: projection.status,
     };
-    const changed = !previous || ["predictedLessons", "completedLessons", "chargedValue", "paidValue", "status"].some((key) => previous[key] !== nextRecord[key]);
+    const changed = !previous || ["predictedLessons", "completedLessons", "chargedValue", "paidValue", "status", "outstandingValue", "paymentAllocations", "chargeLines"].some((key) => JSON.stringify(previous[key]) !== JSON.stringify(nextRecord[key]));
     byId.set(id, { ...nextRecord, updatedAt: changed ? new Date().toISOString() : previous.updatedAt });
   });
   const next = [...byId.values()];
@@ -3317,10 +3336,11 @@ function getStudentCompletedLessonsForMonth(student, monthKey) {
   }).length;
 }
 
-function getStudentBillingProjection(student, monthKey, settings = loadBillingSettings()) {
+function getLegacyStudentBillingProjection(student, monthKey, settings = loadBillingSettings()) {
   const billingType = normalizeBillingType(student.billingType);
   const automaticPackage = loadClassPackages().find((item) =>
     item.autoGenerated === true
+    && !item.billingType
     && item.monthKey === monthKey
     && ((student.id && item.studentId === student.id) || item.studentName === student.name)
   );
@@ -3357,37 +3377,102 @@ function getStudentBillingProjection(student, monthKey, settings = loadBillingSe
   };
 }
 
-function markStudentBillingAsPaid(studentId, monthKey = getDefaultBillingMonthKey()) {
+function getStudentBillingProjection(student, monthKey, settings = loadBillingSettings()) {
+  const packages = loadClassPackages().filter((pack) => PackageBilling.belongs(pack, student));
+  const explicit = packages.filter((pack) => ["fixed", "per_class"].includes(pack.billingType));
+  const legacyPackages = packages.filter((pack) => !["fixed", "per_class"].includes(pack.billingType));
+  const legacyInPeriod = legacyPackages.filter((pack) => (!pack.monthKey || pack.monthKey === monthKey)
+    && (!CalendarRules.dateKey(pack.startDate) || !CalendarRules.dateKey(pack.endDate) || PackageBilling.period(pack, monthKey).overlaps));
+  const legacy = getLegacyStudentBillingProjection(student, monthKey, settings);
+  const lines = [];
+  if (!explicit.length || legacyInPeriod.length) {
+    const oldPackage = legacyInPeriod.find((pack) => pack.autoGenerated && pack.monthKey === monthKey) || legacyInPeriod.slice().sort((a,b) => b.createdAt-a.createdAt)[0];
+    const additionalValue = normalizeBillingItems(student.billingItems).reduce((sum, item) => sum + (item.billingType === "per_class" ? countBillingLessonsForMonth(monthKey, item.billingDays, settings) * parseCurrencyValue(item.classValue) : parseCurrencyValue(item.value)), 0);
+    lines.push({ id: "legacy-base", packageId: oldPackage?.id || "", name: oldPackage?.name || student.plan || "Plano cadastrado", modality: student.modality || "", legacy: true,
+      billingType: legacy.billingType, unitValue: legacy.individualValue, totalValue: Math.max(legacy.totalValue-additionalValue,0), predictedLessons: legacy.predictedLessons,
+      completedLessons: loadCheckins().filter((record) => PackageBilling.belongs(record, student) && !explicit.some((pack) => pack.id === record.packageId)
+        && (record.dateKey || CalendarRules.dateKey(record.date)).slice(0,7) === monthKey && isConsumedLesson(record)).length });
+  }
+  // Existing additional charges remain separate; they are never duplicated as packages.
+  normalizeBillingItems(student.billingItems).forEach((item, index) => {
+    const lessons = item.billingType === "per_class" ? countBillingLessonsForMonth(monthKey, item.billingDays, settings) : 0;
+    lines.push({ id: "legacy-item-" + (item.id || index), packageId: "", name: item.modality || item.name || "Cobrança adicional", legacy: true,
+      billingType: item.billingType, unitValue: parseCurrencyValue(item.classValue), predictedLessons: lessons, completedLessons: 0,
+      totalValue: item.billingType === "per_class" ? lessons * parseCurrencyValue(item.classValue) : parseCurrencyValue(item.value) });
+  });
+  const holidays = new Set([...getGlobalHolidayKeys(), ...(settings.countHolidays === false ? settings.holidayKeys || [] : [])]);
+  lines.push(...PackageBilling.packageLines(student, monthKey, explicit.map((pack) => ({ ...pack, scheduledLessons: generatePackageSchedule(pack) })), loadAgendaEvents(), loadCheckins(), holidays));
+  const history = loadFinancialHistory().find((record) => record.monthKey === monthKey && (record.studentId ? record.studentId === student.id : record.studentName === student.name));
+  const payment = PackageBilling.applyPayments(lines, history, !history && legacy.status === "Pago");
+  const totalValue = PackageBilling.round(lines.reduce((sum, line) => sum + line.totalValue, 0));
+  const predictedLessons = lines.reduce((sum, line) => sum + line.predictedLessons, 0);
+  const completedLessons = lines.reduce((sum, line) => sum + line.completedLessons, 0);
+  const dueDate = getBillingDueDate(student, monthKey);
+  const pastDue = dueDate && getDateKey(dueDate) < CalendarRules.today();
+  const warnings = lines.filter((line) => line.warning);
+  const status = warnings.length ? "Não informado" : payment.outstandingValue <= 0 ? "Pago" : pastDue ? "Vencido" : "Pendente";
+  return { ...legacy, ...payment, student, monthKey, totalValue, predictedLessons, completedLessons, dueDate, status,
+    billingType: explicit.length ? "packages" : legacy.billingType, attendance: predictedLessons ? Math.round(completedLessons/predictedLessons*1000)/10 : 0 };
+}
+
+
+function markStudentBillingAsPaid(studentId, monthKey = getDefaultBillingMonthKey(), lineId = "") {
   const students = loadStudents();
   const index = students.findIndex((student) => student.id === studentId || student.name === studentId);
-  if (index < 0) return false;
-  students[index] = {
-    ...students[index],
-    payment: "Em dia",
-    lastPaymentDate: formatToday(),
-  };
+  if (index < 0 || currentUserType !== "admin") return false;
+  const projection = getStudentBillingProjection(students[index], monthKey);
+  const payable = projection.lines.filter((line) => (!lineId || line.id === lineId) && !line.warning && line.outstandingValue > 0);
+  if (!payable.length) return false;
+  const allocations = projection.paymentAllocations.map((entry) => ({ ...entry }));
+  payable.forEach((line) => {
+    const entry = allocations.find((item) => item.id === line.id);
+    entry.paidValue = Math.max(entry.paidValue, line.totalValue);
+    entry.paidAt = new Date().toISOString();
+  });
+  const history = [...loadFinancialHistory()];
+  const id = `${students[index].id || students[index].name}-${monthKey}`;
+  const existing = history.findIndex((record) => record.id === id);
+  const record = { ...(existing >= 0 ? history[existing] : {}), id, studentId: students[index].id, studentName: students[index].name, monthKey,
+    predictedLessons: projection.predictedLessons, completedLessons: projection.completedLessons, chargedValue: projection.totalValue,
+    paidValue: PackageBilling.round(allocations.reduce((sum, entry) => sum + entry.paidValue, 0) + projection.unallocatedPaidValue),
+    paymentAllocations: allocations, unallocatedPaidValue: projection.unallocatedPaidValue, updatedAt: new Date().toISOString() };
+  if (existing >= 0) history[existing] = record; else history.push(record);
+  saveFinancialHistory(history);
+  const settled = getStudentBillingProjection(students[index], monthKey);
+  // The month receipt is authoritative; the legacy student indicator stays compatible.
+  students[index] = { ...students[index], lastPaymentDate: formatToday() };
+  if (settled.outstandingValue <= 0) students[index].payment = "Em dia";
   saveStudents(students);
-  let renewedPackage = null;
-  if (isPresentialStudent(students[index])) {
-    renewedPackage = upsertAutomaticMonthlyPackageForStudent(students[index], monthKey);
-    if (renewedPackage) syncAutomaticPackageAgendaEvents(students[index], renewedPackage);
+  // Only the former single-plan workflow may create an automatic package on payment.
+  if (!loadClassPackages().some((pack) => PackageBilling.belongs(pack, students[index]) && ["fixed", "per_class"].includes(pack.billingType)) && isPresentialStudent(students[index])) {
+    const renewed = upsertAutomaticMonthlyPackageForStudent(students[index], monthKey);
+    if (renewed) syncAutomaticPackageAgendaEvents(students[index], renewed);
   }
-  renderStudents();
-  renderBillingList();
-  renderHomeDashboard();
-  showMessage(renewedPackage
-    ? `Pagamento de ${students[index].name} confirmado. Pacote e agenda do mes foram restabelecidos.`
-    : `Sincronizando pagamento de ${students[index].name} com Supabase...`);
+  renderStudents(); renderBillingList(); renderHomeDashboard(); renderStudentPackagePanel();
+  showMessage(`Pagamento de ${students[index].name} registrado para ${getMonthLabel(monthKey)}.`);
   return true;
 }
 
 function createAutomaticBillingMessage(projection) {
-  const { student, predictedLessons, billingType, individualValue, totalValue, dueDate } = projection;
-  const dueText = dueDate?.toLocaleDateString("pt-BR") || "não informado";
-  if (billingType === "per_class") {
-    return `Ola, ${student.name}.\n\nSua programacao para o proximo mes sera de ${predictedLessons} aulas, realizadas nos dias cadastrados em seu plano.\n\nQuantidade de aulas previstas: ${predictedLessons}\nValor por aula: ${formatCurrencyNumber(individualValue)}\nValor total do mes: ${formatCurrencyNumber(totalValue)}\nVencimento: ${dueText}\n\nQualquer duvida estou a disposicao.`;
-  }
-  return `Ola, ${student.name}.\n\nSeu plano mensal esta programado para o proximo mes conforme os dias cadastrados.\n\nValor da mensalidade: ${formatCurrencyNumber(totalValue)}\nVencimento: ${dueText}\n\nQualquer duvida estou a disposicao.`;
+  const lines = projection.lines || [];
+  const details = lines.map((line) => {
+    const label = formatPackageBillingLine(line);
+    if (line.warning) return label;
+    if (line.outstandingValue <= 0) return label + " — pago";
+    if (line.paidValue > 0) return label + ` — pago: ${formatCurrencyNumber(line.paidValue)}; restante: ${formatCurrencyNumber(line.outstandingValue)}`;
+    return label;
+  });
+  let message = `Olá, ${projection.student.name}! Segue sua cobrança referente a ${getMonthLabel(projection.monthKey)}:
+
+${details.join("\n")}
+
+Total: ${formatCurrencyNumber(projection.totalValue)}`;
+  if (projection.paidValue > 0) message += `
+Pago: ${formatCurrencyNumber(projection.paidValue)}
+Total a pagar: ${formatCurrencyNumber(projection.outstandingValue)}`;
+  if (lines.some((line) => line.warning)) message += "\nHá pacotes com informações pendentes; os valores desses pacotes ainda não foram incluídos.";
+  if (projection.outstandingValue <= 0 && !lines.some((line) => line.warning)) message += "\nNenhum valor pendente neste período.";
+  return message;
 }
 
 function getStudentBillingStatus(student) {
@@ -3400,12 +3485,20 @@ function getStudentBillingStatus(student) {
   };
 }
 
-function createBillingMessage(student, settings) {
-  const activePackage = getActivePackage(student.name);
+function createBillingMessage(student, settings, monthKey = getDateKey().slice(0, 7)) {
+  const projection = getStudentBillingProjection(student, monthKey, settings);
   const pendingDropIns = getPendingDropInValue(student.name);
-  const planName = activePackage?.name || student.plan || "plano";
-  const value = pendingDropIns > 0 ? formatCurrencyNumber(pendingDropIns) : activePackage?.value || student.value || "valor nao informado";
-  return `Ola, ${student.name}! Tudo bem?\n\nPassando para lembrar que seu plano ${planName} vence em ${student.due}.\nValor: ${value}\n\n${settings.defaultMessage}\n\nChave Pix: ${settings.pixKey || "nao configurada"}\n\nApos o pagamento, me envie o comprovante por aqui.\n\n${settings.senderName}`;
+  let message = createAutomaticBillingMessage(projection);
+  if (pendingDropIns > 0) message += `
+
+Aulas avulsas pendentes (controle separado): ${formatCurrencyNumber(pendingDropIns)}`;
+  if (projection.outstandingValue > 0) message += `
+
+${settings.defaultMessage || ""}
+Chave Pix: ${settings.pixKey || "não configurada"}`;
+  return message + `
+
+${settings.senderName || "Personal João Victor"}`;
 }
 
 function parseDateLike(value) {
@@ -4189,6 +4282,7 @@ function renderBillingList() {
     attendance.textContent = `Realizadas: ${projection.completedLessons}/${projection.predictedLessons} | Frequencia: ${projection.attendance}%`;
     info.append(title, details, statusText);
     info.appendChild(attendance);
+    appendBillingLines(info, projection, true);
 
     if (student.paymentMethod || student.billingNotes || student.lastPaymentDate) {
       const notes = document.createElement("small");
@@ -4223,6 +4317,7 @@ function renderBillingList() {
     paidButton.dataset.markBillingPaid = student.id || student.name;
     paidButton.dataset.billingMonth = monthKey;
     paidButton.textContent = "Marcar como pago";
+    paidButton.disabled = projection.outstandingValue <= 0 || projection.lines.some((line) => line.warning);
 
     const link = document.createElement("a");
     link.className = phone ? "primary" : "secondary";
@@ -4248,8 +4343,8 @@ function renderBillingForecastSummary(projections, monthKey, settings = loadBill
   const activeStudents = allProjections.length;
   const totalLessons = allProjections.reduce((sum, item) => sum + item.predictedLessons, 0);
   const expectedRevenue = allProjections.reduce((sum, item) => sum + item.totalValue, 0);
-  const received = allProjections.filter((item) => item.status === "Pago").reduce((sum, item) => sum + item.totalValue, 0);
-  const pending = allProjections.filter((item) => item.status === "Pendente").reduce((sum, item) => sum + item.totalValue, 0);
+  const received = allProjections.reduce((sum, item) => sum + item.paidValue, 0);
+  const pending = allProjections.reduce((sum, item) => sum + item.outstandingValue, 0);
   const overdueCount = allProjections.filter((item) => item.status === "Vencido").length;
   const paidCount = allProjections.filter((item) => item.status === "Pago").length;
 
@@ -5274,6 +5369,7 @@ function syncAutomaticPackageAgendaEvents(student, classPackage) {
   lessons.forEach((lesson) => {
     const duplicateIndex = nextEvents.findIndex((event) =>
       ((student.id && event.studentId === student.id) || event.studentName === student.name)
+      && event.packageId === classPackage.id
       && event.dateKey === lesson.dateKey
       && event.time === lesson.time
       && !String(event.status || "").toLowerCase().includes("cancel")
@@ -5300,7 +5396,7 @@ function syncAutomaticPackageAgendaEvents(student, classPackage) {
       time: lesson.time || "",
       duration: Number(lesson.duration) || 60,
       type: "package",
-      modality: student.modality || classPackage.name || "Aula presencial",
+      modality: classPackage.modality || student.modality || classPackage.name || "Aula presencial",
       location: lesson.location || "Studio Joao Victor",
       status: "confirmada",
       source: "pacote automático",
@@ -5427,6 +5523,10 @@ function normalizeClassPackages(packages) {
       studentName: item.studentName || "",
       studentId: item.studentId || getStudentIdByName(item.studentName || ""),
       name: item.name || "Pacote de aulas",
+      modality: item.modality || "",
+      billingType: ["fixed", "per_class"].includes(item.billingType) ? item.billingType : "",
+      classValue: item.classValue || "",
+      renewedFrom: item.renewedFrom || "",
       total: Number(item.total) || 0,
       frequency: item.frequency || "",
       value: item.value || "",
@@ -5481,8 +5581,11 @@ function upsertAutomaticMonthlyPackageForStudent(student, monthKeyOverride = "")
   if (!preview.remainingLessons || !normalizeBillingDays(student.billingDays).length) return null;
 
   const packages = loadClassPackages();
+  const ownPackages = packages.filter((pack) => PackageBilling.belongs(pack, student));
+  if (ownPackages.some((pack) => pack.billingType)) return null;
   const matchingIndex = packages.findIndex((item) =>
     item.autoGenerated === true
+    && !item.billingType
     && item.monthKey === preview.monthKey
     && ((student.id && item.studentId === student.id) || item.studentName === student.name)
   );
@@ -6017,6 +6120,7 @@ function fillStudentSelects() {
   fillMakeupPackageSelect();
   fillPersonalReschedulePackageSelect();
   refreshSearchableStudentSelects();
+  fillAgendaMakeupPackageSelect();
 }
 
 const searchableStudentSelectIds = [
@@ -7582,13 +7686,15 @@ function getAgendaEventsForRange(view = "week", referenceDate = new Date()) {
         dateKey: lesson.dateKey,
         time: lesson.time || "00:00",
         duration: Number(lesson.duration) || 60,
-        modality: classPackage.name,
+        modality: classPackage.modality || classPackage.name,
         location: lesson.location || "Studio Joao Victor",
         status: record ? getCheckinStatusLabel(record) : "confirmada",
       });
     });
   });
   loadStudents().forEach((student) => {
+    const ownPackages = loadClassPackages().filter((pack) => PackageBilling.belongs(pack, student));
+    if (ownPackages.some((pack) => pack.billingType) && !ownPackages.some((pack) => !pack.billingType)) return;
     const schedule = normalizeWeeklySchedule(student.weeklySchedule || {}, student.billingDays);
     const studentStartDate = getStudentStartDate(student);
     const cursor = new Date(start);
@@ -7664,6 +7770,7 @@ function fillAgendaStudentSelects() {
     select.value = students.some((student) => student.name === previous) ? previous : students[0]?.name || "";
   });
   refreshSearchableStudentSelects();
+  fillAgendaMakeupPackageSelect();
 }
 
 function fillAgendaCancelSelect() {
@@ -7763,19 +7870,19 @@ function getCompletedLessons(classPackage) {
   return getPackageCheckins(classPackage.id).length;
 }
 
-function getActivePackage(studentName) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+function getActivePackages(studentName) {
+  return loadClassPackages().filter((pack) => pack.studentName === studentName)
+    .sort((a,b) => b.createdAt-a.createdAt)
+    .filter((pack) => CalendarRules.packageState(pack, getCompletedLessons(pack)) === "Ativo");
+}
 
-  return loadClassPackages()
-    .filter((classPackage) => classPackage.studentName === studentName)
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .find((classPackage) => {
-      const end = parseBrazilianDate(classPackage.endDate);
-      const completed = getCompletedLessons(classPackage);
-      const start = CalendarRules.dateKey(classPackage.startDate);
-      return completed < classPackage.total && classPackage.status !== "encerrado" && (!start || start <= CalendarRules.today()) && (!end || CalendarRules.dateKey(classPackage.endDate) >= CalendarRules.today());
-    }) || null;
+function getActivePackage(studentName) {
+  return getActivePackages(studentName)[0] || null;
+}
+
+function getSelectedStudentPackage(studentName) {
+  const packages = getActivePackages(studentName);
+  return packages.find((pack) => pack.id === selectedPackageByStudent.get(studentName)) || packages[0] || null;
 }
 
 function getPackageStatus(classPackage) {
@@ -7919,7 +8026,8 @@ function registerFlexibleLessonCheckin(studentName, lessonType = "package", clas
 
   if (lessonType === "makeup") {
     const credits = loadMakeupCredits();
-    const creditIndex = credits.findIndex((credit) => credit.studentName === studentName && credit.status === "approved");
+    const creditIndex = credits.findIndex((credit) => credit.studentName === studentName && credit.status === "approved"
+      && (!classPackage || credit.packageId === classPackage.id) && !isGlobalHoliday(CalendarRules.dateKey(credit.sourceLessonDate)));
     if (creditIndex < 0) return { ok: false, message: "Aluno sem reposição aprovada disponível." };
     credits[creditIndex] = {
       ...credits[creditIndex],
@@ -9946,7 +10054,7 @@ function renderStudentCheckinStatus() {
   if (!studentCheckinStatus || !studentCheckinButton || !workoutViewStudent) return;
 
   const studentName = workoutViewStudent.value;
-  const activePackage = getActivePackage(studentName);
+  const activePackage = getSelectedStudentPackage(studentName);
   const todayLesson = activePackage ? getTodayPackageLesson(activePackage) : null;
   const todayCheckin = getTodayStudentCheckin(studentName, activePackage?.id || "");
   if (!activePackage) {
@@ -10085,6 +10193,11 @@ function fillPackageForm(classPackage = null, studentName = "") {
   if (!packageForm) return;
 
   editingPackageId = classPackage?.id || null;
+  packageFormTemplate = classPackage ? { ...classPackage } : null;
+  if (packageModality) packageModality.value = classPackage?.modality || getStudentByName(classPackage?.studentName || studentName)?.modality || "";
+  if (packageBillingType) packageBillingType.value = classPackage ? classPackage.billingType || "" : "fixed";
+  if (packageClassValue) packageClassValue.value = classPackage?.classValue || "";
+  updatePackageBillingFields();
   if (packageStudent) packageStudent.value = classPackage?.studentName || studentName || packageStudent.value;
   if (packageViewStudent) packageViewStudent.value = classPackage?.studentName || studentName || packageViewStudent.value;
   if (packageStudentSearch) packageStudentSearch.value = classPackage?.studentName || studentName || packageStudentSearch.value;
@@ -10162,6 +10275,8 @@ function createPackageSummaryCard(classPackage) {
     ["Total", `${classPackage.total} aulas`],
     ["Realizadas", status.completed],
     ["Restantes", status.remaining],
+    ["Modalidade", classPackage.modality || "Não informada"],
+    ["Cobrança", classPackage.billingType === "per_class" ? `Por aula: ${classPackage.classValue || "Não informado"}` : classPackage.billingType === "fixed" ? "Mês fechado" : "Cobrança atual do cadastro"],
     ["Valor", classPackage.value || "-"],
     ["Período", `${classPackage.startDate || "Início não informado"} a ${classPackage.endDate || "Término não informado"}`],
   ].forEach(([label, value]) => {
@@ -10237,6 +10352,8 @@ function renderPackageAdminList() {
     progress.append(
       createAdminMetric("Usadas / total", `${status.completed}/${classPackage.total}`),
       createAdminMetric("Restantes", status.remaining),
+      createAdminMetric("Modalidade", classPackage.modality || "Não informada"),
+      createAdminMetric("Cobrança", classPackage.billingType === "per_class" ? `Por aula: ${classPackage.classValue || "-"}` : classPackage.billingType === "fixed" ? "Mês fechado" : "Cadastro"),
       createAdminMetric("Valor", classPackage.value || "-"),
       createAdminMetric("Status", status.state),
       createAdminMetric("Validade", `${classPackage.startDate || "Início não informado"} a ${classPackage.endDate || "Término não informado"}`),
@@ -10250,6 +10367,7 @@ function renderPackageAdminList() {
     [
       ["Ver detalhes", "details", "secondary"],
       ["Marcar presença", "presence", "primary"],
+      ["Renovar pacote", "renew", "secondary"],
       ["Mais ações", "more", "secondary"],
     ].forEach(([label, action, className]) => {
       const button = document.createElement("button");
@@ -10298,6 +10416,7 @@ function openPackageSubpage(pageName, mode = "") {
     if (packageEditorTitle) packageEditorTitle.textContent = mode === "create" ? "Criar novo pacote" : "Editar pacote";
     if (mode === "create") {
       editingPackageId = null;
+      packageFormTemplate = null;
       packageForm?.reset();
       if (packageViewStudent?.value && packageStudent) packageStudent.value = packageViewStudent.value;
       if (packageStudentSearch && packageViewStudent?.value) packageStudentSearch.value = packageViewStudent.value;
@@ -10775,16 +10894,30 @@ function renderStudentPackagePanel() {
   processAutomaticPastLessons();
 
   const studentName = workoutViewStudent.value;
-  const activePackage = getActivePackage(studentName);
+  const activePackage = getSelectedStudentPackage(studentName);
+  const activePackages = getActivePackages(studentName);
   const latestPackage = loadClassPackages()
     .filter((classPackage) => classPackage.studentName === studentName)
     .sort((a, b) => b.createdAt - a.createdAt)[0];
   studentPackagePanel.innerHTML = "";
-  if (activePackage || latestPackage) studentPackagePanel.appendChild(createPackageSummaryCard(activePackage || latestPackage));
+  const student = loadStudents().find((item) => item.name === studentName);
+  if (student) studentPackagePanel.appendChild(createStudentBillingPanel(student));
+  const visiblePackages = loadClassPackages().filter((pack) => pack.studentName === studentName).sort((a,b) => b.createdAt-a.createdAt);
+  visiblePackages.forEach((pack) => studentPackagePanel.appendChild(createPackageSummaryCard(pack)));
+  if (activePackages.length) {
+    const label = document.createElement("label");
+    label.textContent = "Pacote para aulas e check-in";
+    const select = document.createElement("select");
+    select.id = "student-active-package";
+    activePackages.forEach((pack) => { const option = document.createElement("option"); option.value = pack.id; option.textContent = pack.name; select.appendChild(option); });
+    select.value = activePackage.id;
+    select.addEventListener("change", () => { selectedPackageByStudent.set(studentName, select.value); renderStudentPackagePanel(); renderStudentCheckinStatus(); });
+    label.appendChild(select); studentPackagePanel.appendChild(label);
+  }
 
   if (!activePackage) {
     if (latestPackage && getPackageStatus(latestPackage).remaining <= 0) {
-      studentPackagePanel.appendChild(createPackageSummaryCard(latestPackage));
+
       const done = document.createElement("article");
       done.className = "package-card";
       done.textContent = "Pacote finalizado.";
@@ -11073,7 +11206,7 @@ function renderStudentPackageDetail(action) {
   const detail = studentPackagePanel?.querySelector("[data-student-package-detail]");
   const menu = studentPackagePanel?.querySelector("[data-student-agenda-menu]");
   const studentName = workoutViewStudent?.value;
-  const activePackage = getActivePackage(studentName);
+  const activePackage = getSelectedStudentPackage(studentName);
   if (!detail || !activePackage) return;
 
   const schedule = generatePackageSchedule(activePackage);
@@ -12357,8 +12490,12 @@ agendaMakeupForm?.addEventListener("submit", async (event) => {
     showMessage("Selecione pelo menos um aluno.", "error");
     return;
   }
+  const participantPackages = new Map();
   for (const student of participants) {
-    const pack = getActivePackage(student.name) || loadClassPackages().filter((item) => item.studentName === student.name).sort((a, b) => b.createdAt - a.createdAt)[0];
+    const own = loadClassPackages().filter((item) => item.studentName === student.name);
+    const pack = own.find((item) => item.id === agendaMakeupPackage?.value) || (own.length === 1 ? own[0] : null);
+    if (!pack && own.length > 1) { showMessage(`Selecione o pacote da reposição de ${student.name}. Para uma turma com vários pacotes, agende a reposição de cada aluno separadamente.`, "error"); return; }
+    participantPackages.set(student.name, pack);
     if (!validateLessonDate(CalendarRules.dateKey(date), pack)) return;
   }
   if (!validateLessonDate(CalendarRules.dateKey(date))) return;
@@ -12377,6 +12514,7 @@ agendaMakeupForm?.addEventListener("submit", async (event) => {
     time,
     duration,
     type: "makeup",
+    packageId: participantPackages.get(student.name)?.id || "",
     modality: "Reposicao",
     status: "reposicao",
     note: agendaMakeupNote?.value.trim() || "",
@@ -12552,6 +12690,7 @@ newPackageButton?.addEventListener("click", () => {
   }
 
   editingPackageId = null;
+  packageFormTemplate = null;
   packageForm?.reset();
   if (packageStudent) packageStudent.value = packageViewStudent.value;
   if (packageStudentSearch) packageStudentSearch.value = packageViewStudent.value;
@@ -12567,8 +12706,18 @@ packageForm?.addEventListener("submit", async (event) => {
   const endKey = CalendarRules.dateKey(packageEnd?.value.trim());
   if ((packageStart?.value && !startKey) || (packageEnd?.value && !endKey) || (startKey && endKey && endKey < startKey)) { showMessage("Informe datas válidas com ano; o término deve ser igual ou posterior ao início.", "error"); return; }
   const previous = packages.find((item) => item.id === editingPackageId);
+  const billingType = packageBillingType?.value || "";
+  if (!previous && !billingType) { showMessage("Selecione o tipo de cobrança do pacote.", "error"); return; }
+  if (billingType && (!startKey || !endKey)) { showMessage("Informe início e término deste pacote para separar as cobranças por período.", "error"); return; }
+  if (billingType === "per_class" && parseCurrencyValue(packageClassValue?.value) <= 0) { showMessage("Informe o valor por aula deste pacote.", "error"); return; }
+  if (billingType === "fixed" && !packageValue?.value.trim()) { showMessage("Informe o valor mensal combinado deste pacote.", "error"); return; }
+  if (!packageModality?.value.trim() && billingType) { showMessage("Informe a modalidade deste pacote.", "error"); return; }
   const packageData = {
-    ...previous,
+    ...(previous || packageFormTemplate || {}),
+    modality: packageModality?.value.trim() || "",
+    billingType,
+    classValue: packageClassValue?.value.trim() || "",
+    autoGenerated: billingType ? false : (previous || packageFormTemplate)?.autoGenerated === true,
     id: editingPackageId || createId(),
     studentName: packageStudent?.value || "",
     studentId: getStudentIdByName(packageStudent?.value || ""),
@@ -12581,6 +12730,8 @@ packageForm?.addEventListener("submit", async (event) => {
     makeupLimit: Number(packageMakeupLimit?.value) || 0,
     days: packageDays?.value.trim() || "",
     time: normalizeTimeText(packageTime?.value || ""),
+    schedule: previous && (previous.days !== (packageDays?.value.trim() || "") || normalizeTimeText(previous.time || "") !== normalizeTimeText(packageTime?.value || ""))
+      ? {} : (previous || packageFormTemplate)?.schedule || {},
     notes: packageNotes?.value.trim() || "",
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -12596,6 +12747,8 @@ packageForm?.addEventListener("submit", async (event) => {
 
   upsertPackageModelFromForm(packageData);
   saveClassPackages(packages);
+  reconcilePackageAgendaEvents(packageData);
+  packageFormTemplate = null;
   packageForm.reset();
   packageForm.hidden = true;
   editingPackageId = null;
@@ -12700,7 +12853,7 @@ personalProfileForm?.addEventListener("submit", async (event) => {
 billingList?.addEventListener("click", async (event) => {
   const paidButton = event.target.closest("[data-mark-billing-paid]");
   if (!paidButton) return;
-  markStudentBillingAsPaid(paidButton.dataset.markBillingPaid, paidButton.dataset.billingMonth);
+  markStudentBillingAsPaid(paidButton.dataset.markBillingPaid, paidButton.dataset.billingMonth, paidButton.dataset.billingLine || "");
   await supabaseSyncPromise;
 });
 
@@ -12759,7 +12912,7 @@ additionalBillingItemsContainer?.addEventListener("change", (event) => {
 
 studentCheckinButton?.addEventListener("click", () => {
   const studentName = workoutViewStudent?.value;
-  const activePackage = getActivePackage(studentName);
+  const activePackage = getSelectedStudentPackage(studentName);
   if (!studentName || !activePackage || !getTodayPackageLesson(activePackage)) return;
 
   registerPackageCheckin(studentName, activePackage, "aluno");
@@ -12983,6 +13136,8 @@ packageAdminList?.addEventListener("click", async (event) => {
       }
       return;
     }
+
+    if (action === "renew") { startPackageRenewal(classPackage); return; }
 
     if (action === "edit") {
       if (packageViewStudent) packageViewStudent.value = classPackage.studentName;
@@ -14385,3 +14540,88 @@ document.querySelector("#global-holiday-form")?.addEventListener("submit", async
   catch { showMessage("Feriado salvo; sincronização com Google pendente. Use Sincronizar agenda.", "error"); return; }
   showMessage(active ? "Feriado marcado." : "Feriado removido. Aulas e cálculos restaurados.");
 });
+
+
+function formatPackageBillingLine(line) {
+  if (line.warning) return `${line.name} — ${line.warning}`;
+  return line.billingType === "per_class"
+    ? `${line.name} — ${line.predictedLessons} aulas × ${formatCurrencyNumber(line.unitValue)} = ${formatCurrencyNumber(line.totalValue)}`
+    : `${line.name} — ${formatCurrencyNumber(line.totalValue)}`;
+}
+
+function appendBillingLines(container, projection, admin = false) {
+  const list = document.createElement("div");
+  list.className = "package-billing-lines";
+  projection.lines.forEach((line) => {
+    const row = document.createElement("article"); row.className = "package-billing-line";
+    const title = document.createElement("strong"); title.textContent = formatPackageBillingLine(line);
+    const detail = document.createElement("small");
+    detail.textContent = `Pago: ${formatCurrencyNumber(line.paidValue)} | Restante: ${formatCurrencyNumber(line.outstandingValue)}${line.modality ? " | " + line.modality : ""}`;
+    row.append(title, detail);
+    if (admin && !line.warning && line.outstandingValue > 0) {
+      const paid = document.createElement("button"); paid.type = "button"; paid.className = "secondary";
+      paid.textContent = "Marcar este pacote como pago";
+      paid.dataset.markBillingPaid = projection.student.id || projection.student.name;
+      paid.dataset.billingMonth = projection.monthKey; paid.dataset.billingLine = line.id;
+      row.appendChild(paid);
+    }
+    list.appendChild(row);
+  });
+  const total = document.createElement("strong");
+  total.textContent = `Total: ${formatCurrencyNumber(projection.totalValue)} | Pago: ${formatCurrencyNumber(projection.paidValue)} | Total a pagar: ${formatCurrencyNumber(projection.outstandingValue)}`;
+  list.appendChild(total);
+  if (projection.creditValue > 0) { const credit = document.createElement("small"); credit.textContent = `Valor pago acima da cobrança: ${formatCurrencyNumber(projection.creditValue)}`; list.appendChild(credit); }
+  container.appendChild(list);
+}
+
+function createStudentBillingPanel(student) {
+  const card = document.createElement("article"); card.className = "package-card";
+  const title = document.createElement("strong"); title.textContent = "Financeiro dos meus pacotes";
+  const label = document.createElement("label"); label.textContent = "Mês da cobrança";
+  const month = document.createElement("input"); month.type = "month"; month.value = getDateKey().slice(0, 7);
+  const detail = document.createElement("div");
+  const render = () => { detail.innerHTML = ""; appendBillingLines(detail, getStudentBillingProjection(student, month.value)); };
+  month.addEventListener("change", () => { if (/^\d{4}-\d{2}$/.test(month.value)) render(); });
+  label.appendChild(month); card.append(title, label, detail); render(); return card;
+}
+
+function updatePackageBillingFields() {
+  const perClass = packageBillingType?.value === "per_class";
+  if (packageClassValue) { packageClassValue.closest("label").hidden = !perClass; packageClassValue.required = perClass; }
+  if (packageValue) packageValue.required = packageBillingType?.value === "fixed";
+}
+packageBillingType?.addEventListener("change", updatePackageBillingFields);
+packageForm?.addEventListener("reset", () => { packageFormTemplate = null; setTimeout(updatePackageBillingFields, 0); });
+
+function startPackageRenewal(pack) {
+  if (!pack || currentUserType !== "admin") return;
+  fillPackageForm({ ...pack, id: "", startDate: "", endDate: "", autoGenerated: false, monthKey: "", renewedFrom: pack.id, status: "ativo", createdAt: Date.now() }, pack.studentName);
+  if (packageForm) packageForm.hidden = false;
+  packageStart?.focus();
+}
+
+function fillAgendaMakeupPackageSelect() {
+  if (!agendaMakeupPackage) return;
+  const previous = agendaMakeupPackage.value;
+  const packages = loadClassPackages().filter((pack) => pack.studentName === agendaMakeupStudent?.value);
+  agendaMakeupPackage.replaceChildren();
+  const empty = document.createElement("option"); empty.value = ""; empty.textContent = "Selecione o pacote";
+  agendaMakeupPackage.appendChild(empty);
+  packages.forEach((pack) => { const option = document.createElement("option"); option.value = pack.id; option.textContent = pack.name; agendaMakeupPackage.appendChild(option); });
+  agendaMakeupPackage.value = packages.some((pack) => pack.id === previous) ? previous : packages.length === 1 ? packages[0].id : "";
+}
+agendaMakeupStudent?.addEventListener("change", fillAgendaMakeupPackageSelect);
+
+function reconcilePackageAgendaEvents(pack) {
+  const lessons = new Map(generatePackageSchedule(pack).map((lesson) => [lesson.dateKey, lesson]));
+  const events = loadAgendaEvents().map((event) => {
+    if (event.packageId !== pack.id || event.dateKey < getDateKey() || !["package", "pacote automático"].includes(event.source)
+      || event.officialCancellationId || (String(event.status).includes("cancel") && event.type !== "schedule-removed")) return event;
+    const lesson = lessons.get(event.dateKey);
+    if (!lesson) return { ...event, type: "schedule-removed", status: "cancelada", updatedAt: Date.now() };
+    return { ...event, ...lesson, type: "package", status: event.type === "schedule-removed" ? "confirmada" : event.status,
+      modality: pack.modality || pack.name, updatedAt: Date.now() };
+  });
+  // Also queues the generated package schedule for the existing Google integration.
+  saveAgendaEvents(events);
+}

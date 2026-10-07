@@ -6569,3 +6569,21 @@ label,
   text-align: center;
   font-weight: 600;
 }
+
+.package-billing-lines {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.package-billing-line {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+}
+
+.package-billing-line button {
+  justify-self: start;
+}

@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { stripTypeScriptTypes } from 'node:module';
 import { PGlite } from '@electric-sql/pglite';
 import '../calendar-rules.js';
+import '../package-billing.js';
 const rules = globalThis.CalendarRules;
 const source = fs.readFileSync(new URL('../script.js',import.meta.url),'utf8');
 const read = (p) => fs.readFileSync(new URL(p,import.meta.url),'utf8');
@@ -17,14 +18,14 @@ const marker = (active = true) => ({id:'holiday-2026-02-03',dateKey:'2026-02-03'
 function logic(extra = {}) {
   const events = [marker()];
   const packages = [];
-  const context = vm.createContext({CalendarRules:rules,Intl,Date,console,
+  const context = vm.createContext({CalendarRules:rules,PackageBilling:globalThis.PackageBilling,Intl,Date,console,
     loadAgendaEvents:() => events, loadClassPackages:() => packages,
-    loadCheckins:() => [],loadBillingSettings:() => ({countHolidays:true}),
+    loadCheckins:() => [],loadBillingSettings:() => ({countHolidays:true}),loadFinancialHistory:()=>[],
     normalizeBillingDays:(d)=>d||[],normalizeBillingType:(v)=>v==='per_class'?'per_class':'fixed',
     normalizeBillingItems:(items)=>items||[],onlyDigits:(v)=>String(v).replace(/\D/g,''),
     getBillingStatusForStudent:()=> 'Pendente',getBillingDueDate:()=>null,
     getStudentCompletedLessonsForMonth:()=>0,...extra});
-  for(const name of ['getGlobalHolidayKeys','isGlobalHoliday','getDateKey','parseBrazilianDate','getDefaultBillingMonthKey','getMonthBounds','getWeekdayName','countBillingLessonsForMonth','countBillingLessonsBetweenDates','parseCurrencyValue','getStudentBillingProjection','parsePackageDays','generatePackageSchedule','isConsumedLesson','getLessonRecord','getPackageCheckins','getCompletedLessons','getPackageStatus']) vm.runInContext(fn(name),context);
+  for(const name of ['getGlobalHolidayKeys','isGlobalHoliday','getDateKey','parseBrazilianDate','getDefaultBillingMonthKey','getMonthBounds','getWeekdayName','countBillingLessonsForMonth','countBillingLessonsBetweenDates','parseCurrencyValue','getLegacyStudentBillingProjection','getStudentBillingProjection','parsePackageDays','generatePackageSchedule','isConsumedLesson','getLessonRecord','getPackageCheckins','getCompletedLessons','getPackageStatus']) vm.runInContext(fn(name),context);
   return {context,events,packages};
 }
 test('validade: início, término, encerramento e legado sem datas',()=>{

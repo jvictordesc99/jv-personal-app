@@ -674,6 +674,7 @@
               <form class="agenda-form" id="agenda-makeup-form" hidden>
                 <h3>Adicionar reposição</h3>
                 <label>Aluno<select id="agenda-makeup-student"></select></label>
+                <label>Pacote da reposição<select id="agenda-makeup-package"></select></label>
                 <label>Data<input id="agenda-makeup-date" placeholder="Ex: 10/06/2026" /></label>
                 <label>Horário<input id="agenda-makeup-time" placeholder="Ex: 07:00" /></label>
                 <label>Duração<input id="agenda-makeup-duration" type="number" min="30" step="30" value="60" /></label>
@@ -881,6 +882,9 @@
                   <input id="package-name" required list="package-model-list" placeholder="Ex: Musculação 3x" />
                   <datalist id="package-model-list"></datalist>
                 </label>
+                <label>Modalidade<input id="package-modality" placeholder="Ex: Beach Tênis, Musculação" /></label>
+                <label>Tipo de cobrança<select id="package-billing-type"><option value="fixed">Mês fechado / mensalidade fixa</option><option value="per_class">Por aula</option><option value="">Cobrança atual do cadastro (pacote antigo)</option></select></label>
+                <label hidden>Valor por aula<input id="package-class-value" placeholder="R$ 40,00" /></label>
                 <label>Total de aulas
                   <input id="package-total" required inputmode="numeric" placeholder="Ex: 12" />
                 </label>
@@ -900,10 +904,10 @@
                   <input id="package-makeup-limit" inputmode="numeric" placeholder="Ex: 3" />
                 </label>
                 <label>Dias da semana
-                  <input id="package-days" required placeholder="Ex: segunda, quarta e sexta" />
+                  <input id="package-days" placeholder="Ex: segunda, quarta e sexta" />
                 </label>
                 <label>Horário
-                  <input id="package-time" required placeholder="Ex: 9h" />
+                  <input id="package-time" placeholder="Ex: 9h" />
                 </label>
                 <label class="package-notes">Observações
                   <textarea id="package-notes" placeholder="Orientações ou combinados do pacote"></textarea>
@@ -1131,7 +1135,8 @@
     </div>
 
     <script src="calendar-rules.js?v=20261007"></script>
-    <script src="script.js?v=20261007"></script>
+    <script src="package-billing.js?v=20261007-2"></script>
+    <script src="script.js?v=20261007-2"></script>
     <script src="google-calendar.js?v=20260901-1"></script>
     <script src="server-cancellations.js?v=20261001-1"></script>
   </body>
