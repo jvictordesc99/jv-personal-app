@@ -7,12 +7,12 @@ export function googlePayload(event: any) {
   const start = new Date(`${event.dateKey}T${event.time || "00:00"}:00-03:00`);
   const end = new Date(start.getTime() + (Number(event.duration) || 60) * 60000);
   const payload: any = {
-    summary: `${event.modality || "Aula"} - ${event.studentName || "Aluno"}`,
-    description: event.note || "Sincronizado pelo aplicativo Joao Victor Personal.",
+    summary: event.holiday ? "Feriado" : `${event.modality || "Aula"} - ${event.studentName || "Aluno"}`,
+    description: event.holiday ? "Feriado" : event.note || "Sincronizado pelo aplicativo Joao Victor Personal.",
     location: event.location || "",
     start: { dateTime: start.toISOString(), timeZone: "America/Sao_Paulo" },
     end: { dateTime: end.toISOString(), timeZone: "America/Sao_Paulo" },
-    status: String(event.status || "").toLowerCase().includes("cancel") ? "cancelled" : "confirmed",
+    status: !event.holiday && String(event.status || "").toLowerCase().includes("cancel") ? "cancelled" : "confirmed",
     extendedProperties: { private: {
       app_event_id: String(event.id),
       student_id: String(event.studentId || ""),
@@ -28,13 +28,26 @@ export function googlePayload(event: any) {
 export async function pushEvents(userId: string, events: any[]) {
   const db = admin();
   const { accessToken, connection } = await accessTokenFor(userId);
+  const { data: snapshot, error: stateError } = await db.from("app_state").select("data").eq("id", "main").single();
+  if (stateError) throw stateError;
+  const holidays = new Set((snapshot?.data?.agendaEvents || []).filter((e: any) => e.type === "global-holiday" && e.holidayActive === true).map((e: any) => e.dateKey));
   const results = [];
-  for (const event of events.slice(0, 250)) {
+  for (const original of events.slice(0, 250)) {
+    if (original.type === "global-holiday") continue;
+    const event = { ...original, holiday: holidays.has(original.dateKey) };
+    if (event.holiday) event.status = "feriado";
     if (!event?.id || !event.dateKey || !event.time) continue;
+    const { data: official, error: officialError } = await db.from("lesson_cancellations")
+      .select("id").eq("owner_id", userId).eq("event->>id", event.id).maybeSingle();
+    if (officialError) throw officialError;
+    if (official) {
+      results.push({ app_event_id: event.id, status: "ignored", reason: "official-cancellation-queued" });
+      continue;
+    }
     const payload = googlePayload(event);
     const payloadHash = await sha256(JSON.stringify(payload));
     const { data: link } = await db.from("google_calendar_event_links").select("*").eq("user_id", userId).eq("app_event_id", event.id).maybeSingle();
-    if (link?.last_origin === "google" && event.origem_da_alteracao === "google_calendar" && Number(event.updatedAt || 0) <= Number(link.app_updated_at || 0)) {
+    if (!event.holiday && link?.last_origin === "google" && event.origem_da_alteracao === "google_calendar" && Number(event.updatedAt || 0) <= Number(link.app_updated_at || 0) && link.payload_hash === payloadHash) {
       results.push({ app_event_id: event.id, google_event_id: link.google_event_id, status: "ignored", reason: "google-origin" });
       continue;
     }
@@ -56,7 +69,7 @@ export async function pushEvents(userId: string, events: any[]) {
     const path = link?.google_event_id
       ? `/calendars/${encodeURIComponent(connection.calendar_id)}/events/${encodeURIComponent(link.google_event_id)}?sendUpdates=none`
       : `/calendars/${encodeURIComponent(connection.calendar_id)}/events?sendUpdates=all`;
-    delete payload.status;
+    // Explicitly restore confirmed status after a previously deleted event.
     const updatePath = link?.google_event_id ? path.replace("sendUpdates=none", "sendUpdates=all") : path;
     const googleEvent = await googleFetch(accessToken, updatePath, { method: link?.google_event_id ? "PATCH" : "POST", body: JSON.stringify(payload) });
     const row = {
@@ -95,6 +108,10 @@ export async function applyGoogleEvent(userId: string, event: any) {
     link = result.data;
   }
   if (!link) return { status: "ignored", reason: "unlinked" };
+  const { data: officialCancellation, error: cancellationError } = await db.from("lesson_cancellations")
+    .select("id").eq("owner_id", userId).eq("event->>id", link.app_event_id).maybeSingle();
+  if (cancellationError) throw cancellationError;
+  if (officialCancellation) return { status: "ignored", reason: "official-cancellation" };
   if (event.status === "cancelled" && link.last_origin === "app" && link.deleted_at) {
     await db.from("google_calendar_event_links").update({ google_etag: event.etag || link.google_etag, updated_at: new Date().toISOString() }).eq("id", link.id);
     return { status: "ignored", reason: "app-cancellation-echo" };
@@ -113,6 +130,10 @@ export async function applyGoogleEvent(userId: string, event: any) {
   if (prior) return { status: "ignored", reason: "duplicate" };
 
   const appEvent = await updateAppState(db, (state) => {
+    const holidays = new Set((state.agendaEvents || []).filter((e: any) => e.type === "global-holiday" && e.holidayActive === true).map((e: any) => e.dateKey));
+    const previous = (state.agendaEvents || []).find((e: any) => e.id === appEventId);
+    const incomingKey = startIso ? new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(startIso)) : "";
+    if (holidays.has(previous?.dateKey) || holidays.has(incomingKey)) return { ...previous, holiday: true };
     state.agendaEvents = Array.isArray(state.agendaEvents) ? state.agendaEvents : [];
     let appEvent = state.agendaEvents.find((item: any) => item.id === appEventId);
     if (!appEvent) {
@@ -162,6 +183,8 @@ export async function applyGoogleEvent(userId: string, event: any) {
     }
     return appEvent;
   });
+
+  if (appEvent.holiday) return { status: "ignored", reason: "global-holiday" };
 
   if (cancelled || declined || rescheduled) {
     const studentName = privateData.student_name || appEvent.studentName || "Aluno";

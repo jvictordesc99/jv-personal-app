@@ -70,7 +70,8 @@
         if (event.id && event.dateKey && event.time && !String(event.status || "").toLowerCase().includes("realiz")) byId.set(event.id, event);
       });
     }
-    return Array.from(byId.values()).map((event) => {
+    return Array.from(byId.values()).filter((event) => event.type !== "global-holiday").map((original) => {
+      const event = typeof CalendarRules !== "undefined" ? CalendarRules.overlay(original, getGlobalHolidayKeys()) : original;
       const student = students.get(event.studentId) || students.get(event.studentName);
       return { ...event, studentEmail: student?.email_login || student?.email || "" };
     });
@@ -126,7 +127,7 @@
 
   function queuePush(events) {
     if (!connected || applyingLinks) return;
-    queuedEvents = Array.isArray(events) ? events : [];
+    queuedEvents = collectEvents();
     window.clearTimeout(pushTimer);
     pushTimer = window.setTimeout(() => {
       const eventsToPush = queuedEvents;
@@ -136,6 +137,7 @@
   }
 
   async function synchronizeNow() {
+    if (!connected) return { skipped: true, reason: "not-connected" };
     setMessage("Sincronizando...");
     await push(collectEvents());
     await invoke("pull");

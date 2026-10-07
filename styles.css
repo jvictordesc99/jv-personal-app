@@ -4258,8 +4258,74 @@ input.readonly-field {
   box-shadow: var(--shadow-soft);
 }
 
+.student-additional-billing {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(219, 231, 234, 0.92);
+  border-radius: var(--radius);
+  background: #f8fbfb;
+}
+
+.student-additional-billing h4,
+.student-additional-billing p {
+  margin: 0;
+}
+
+.student-additional-billing p {
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+#student-additional-billing-items {
+  display: grid;
+  gap: 12px;
+}
+
+.student-billing-item {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(219, 231, 234, 0.92);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.student-billing-item-header,
+.student-billing-item-amounts {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: center;
+}
+
+.student-billing-item-header {
+  grid-template-columns: 1fr auto;
+}
+
+.student-billing-item-days {
+  grid-column: 1 / -1;
+}
+
+.student-billing-item [hidden] {
+  display: none;
+}
+
 .student-weekly-schedule[hidden] {
   display: none;
+}
+
+@media (max-width: 600px) {
+  .student-billing-item {
+    grid-template-columns: 1fr;
+  }
+
+  .student-billing-item-amounts {
+    grid-template-columns: 1fr;
+  }
 }
 
 .student-schedule-row {
@@ -6497,4 +6563,9 @@ label,
   .personal-profile-actions button {
     width: 100%;
   }
+}
+.status-feriado {
+  padding: 16px;
+  text-align: center;
+  font-weight: 600;
 }

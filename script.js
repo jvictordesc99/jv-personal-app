@@ -123,6 +123,7 @@ const packageModelStorageKey = "joao-victor-package-models";
 const navigationStateStorageKey = "joao-victor-navigation-state";
 const pendingSupabaseSyncStorageKey = "joao-victor-pending-supabase-sync";
 const deletionTombstoneStorageKey = "joao-victor-deletion-tombstones";
+const batchImportStorageKey = "joao-victor-batch-import";
 const tombstoneRetentionMs = 180 * 24 * 60 * 60 * 1000;
 const supabaseTables = {
   appState: "app_state",
@@ -174,6 +175,8 @@ const dueInput = document.querySelector("#student-due");
 const paymentMethodInput = document.querySelector("#student-payment-method");
 const paymentInput = document.querySelector("#student-payment");
 const studentBillingNotesInput = document.querySelector("#student-billing-notes");
+const additionalBillingItemsContainer = document.querySelector("#student-additional-billing-items");
+const addBillingItemButton = document.querySelector("#add-student-billing-item");
 const studentPackagePreview = document.querySelector("#student-package-preview");
 const adminAgendaView = document.querySelector("#admin-agenda-view");
 const adminAgendaDate = document.querySelector("#admin-agenda-date");
@@ -213,6 +216,10 @@ const saveMessage = document.querySelector("#save-message");
 const saveStudentButton = document.querySelector("#save-student-button");
 const cancelEditButton = document.querySelector("#cancel-edit-button");
 const exportDataButton = document.querySelector("#export-data-button");
+const batchImportButton = document.querySelector("#run-batch-import-button");
+const downloadBatchImportBackupButton = document.querySelector("#download-batch-import-backup-button");
+const undoBatchImportButton = document.querySelector("#undo-batch-import-button");
+const batchImportMessage = document.querySelector("#batch-import-message");
 const studentPlanSummary = document.querySelector("#student-plan-summary");
 const studentStatusSummary = document.querySelector("#student-status-summary");
 const workoutStudentSearch = document.querySelector("#workout-student-search");
@@ -865,6 +872,7 @@ function getSupabaseClient() {
 }
 
 function getSupabaseAppStateClient() {
+  if (currentSupabaseUser) return getSupabaseClient();
   if (supabaseAppStateClient) return supabaseAppStateClient;
 
   if (!isSupabaseConfigured()) {
@@ -997,6 +1005,7 @@ function getAppStateSnapshot() {
     billingSettings: loadBillingSettings(),
     personalProfile: loadPersonalProfile(),
     financialHistory: loadFinancialHistory(),
+    batchImportMetadata: getLocalJson(batchImportStorageKey, null),
   };
 }
 
@@ -1190,6 +1199,30 @@ function mergeWorkoutsByStudent(onlineWorkouts = {}, localWorkouts = {}, tombsto
   return filterWorkoutsByTombstones(merged, tombstoneSet);
 }
 
+function preserveOfficialCancellationReceipts(merged, online) {
+  const protectedIds = new Set();
+  for (const collection of ["checkins", "agendaEvents", "makeupCredits"]) {
+    for (const receipt of online[collection] || []) {
+      if (!receipt.officialCancellationId) continue;
+      protectedIds.add(receipt.id);
+      const prior = (merged[collection] || []).find((item) => item.id === receipt.id);
+      merged[collection] = (merged[collection] || []).filter((item) => item.id !== receipt.id && !(
+        collection !== "makeupCredits" && item.packageId === receipt.packageId && item.dateKey === receipt.dateKey
+        && (collection === "checkins" ? (item.lessonType || "package") === "package" : item.type === "package")
+      ));
+      const workflow = {};
+      if (collection === "makeupCredits" && prior) {
+        for (const key of ["status", "usedAt", "requestedAt", "approvedAt", "rejectedAt", "expiredAt", "replacementDate", "replacementTime", "note", "personalNote"]) {
+          if (key in prior) workflow[key] = prior[key];
+        }
+      }
+      merged[collection].push({ ...receipt, ...workflow });
+    }
+  }
+  merged.deletionTombstones = (merged.deletionTombstones || []).filter((item) => !protectedIds.has(item.itemId || item.id));
+  return merged;
+}
+
 function mergeAppStateForSupabase(onlineState = {}, localState = getAppStateSnapshot(), options = {}) {
   const includeLocalChanges = options.includeLocalChanges !== false;
   const localLists = includeLocalChanges ? localState : {};
@@ -1198,7 +1231,7 @@ function mergeAppStateForSupabase(onlineState = {}, localState = getAppStateSnap
     ...(localState?.deletionTombstones || []),
   ]);
   const tombstoneSet = createTombstoneSet(deletionTombstones);
-  return {
+  return preserveOfficialCancellationReceipts({
     ...onlineState,
     ...localState,
     schemaVersion: Math.max(Number(onlineState?.schemaVersion) || 0, Number(localState?.schemaVersion) || 0, 2),
@@ -1222,11 +1255,16 @@ function mergeAppStateForSupabase(onlineState = {}, localState = getAppStateSnap
       ...(onlineState?.billingSettings || {}),
       ...(includeLocalChanges ? localState?.billingSettings || {} : {}),
     },
+    batchImportMetadata: includeLocalChanges
+      ? Object.prototype.hasOwnProperty.call(localState || {}, "batchImportMetadata")
+        ? localState.batchImportMetadata
+        : onlineState?.batchImportMetadata || null
+      : onlineState?.batchImportMetadata || null,
     personalProfile: {
       ...(onlineState?.personalProfile || {}),
       ...(includeLocalChanges ? localState?.personalProfile || {} : {}),
     },
-  };
+  }, onlineState);
 }
 
 async function fetchSupabaseAppStateData(client = getSupabaseAppStateClient()) {
@@ -1443,6 +1481,13 @@ function writeAppStateToLocalStorage(state) {
     localStorage.setItem(makeupStorageKey, JSON.stringify(memoryMakeups));
     localStorage.setItem(feedbackStorageKey, JSON.stringify(memoryFeedbacks));
     localStorage.setItem(financialHistoryStorageKey, JSON.stringify(memoryFinancialHistory));
+    if (state.batchImportMetadata) {
+      localStorage.setItem(batchImportStorageKey, JSON.stringify(state.batchImportMetadata));
+    } else {
+      localStorage.removeItem(batchImportStorageKey);
+    }
+    if (downloadBatchImportBackupButton) downloadBatchImportBackupButton.hidden = !state.batchImportMetadata?.importId;
+    if (undoBatchImportButton) undoBatchImportButton.hidden = !state.batchImportMetadata?.importId;
     localStorage.setItem(resolvedAlertsStorageKey, JSON.stringify(normalizeResolvedAlerts(state.resolvedAlerts || [])));
     if (state.billingSettings) {
       localStorage.setItem(billingSettingsStorageKey, JSON.stringify(state.billingSettings));
@@ -1502,12 +1547,14 @@ async function compareAndSwapAppStateWithRest(payload) {
 
   const endpoint = `${config.url.replace(/\/$/, "")}/rest/v1/rpc/compare_and_swap_app_state`;
   try {
+    const session = typeof currentSupabaseUser !== "undefined" && currentSupabaseUser
+      ? await getSupabaseClient().auth.getSession() : null;
     console.info(`Tentando fallback REST app_state: ${endpoint}`);
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         apikey: config.anonKey,
-        Authorization: `Bearer ${config.anonKey}`,
+        Authorization: `Bearer ${session?.data?.session?.access_token || config.anonKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
@@ -2435,9 +2482,58 @@ async function restoreSupabaseSession() {
   }
 }
 
+function normalizeOptionalDay(value) {
+  const day = Number(value);
+  return Number.isInteger(day) && day >= 1 && day <= 31 ? day : null;
+}
+
+function normalizeRecurringSchedule(entries = []) {
+  return normalizeListData(entries)
+    .filter((entry) => entry && typeof entry === "object")
+    .map((entry) => {
+      const startTime = String(entry.startTime || entry.time || "").trim();
+      const endTime = String(entry.endTime || "").trim();
+      const duration = Number(entry.duration) || 0;
+      return {
+        id: String(entry.id || createId()),
+        activity: String(entry.activity || entry.modality || "").trim(),
+        modality: String(entry.modality || entry.activity || "").trim(),
+        day: Number(entry.day),
+        startTime,
+        endTime,
+        duration,
+        location: String(entry.location || "").trim(),
+        notes: String(entry.notes || "").trim(),
+      };
+    })
+    .filter((entry) => Number.isInteger(entry.day) && entry.day >= 0 && entry.day <= 6 && entry.startTime);
+}
+
+function normalizeBillingItems(items = []) {
+  return normalizeListData(items)
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const billingDays = normalizeBillingDays(item.billingDays || []);
+      return {
+        id: String(item.id || createId()),
+        modality: String(item.modality || item.name || "").trim(),
+        plan: String(item.plan || "").trim(),
+        monthlyLessonCount: Number(item.monthlyLessonCount) > 0 ? Number(item.monthlyLessonCount) : null,
+        billingType: normalizeBillingType(item.billingType),
+        classValue: String(item.classValue || "").trim(),
+        value: String(item.value || "").trim(),
+        billingDays,
+        weeklySchedule: normalizeWeeklySchedule(item.weeklySchedule || {}, billingDays),
+        recurringSchedule: normalizeRecurringSchedule(item.recurringSchedule || []),
+        notes: String(item.notes || "").trim(),
+      };
+    })
+    .filter((item) => item.modality);
+}
+
 function normalizeStudentsData(students) {
   if (!Array.isArray(students)) return normalizeStudentsData(defaultStudents);
-  const validPayments = ["Em dia", "Pendente", "Atrasado"];
+  const validPayments = ["Não informado", "Em dia", "Pendente", "Atrasado"];
 
   const normalized = students
     .filter((student) => student && typeof student === "object")
@@ -2464,6 +2560,10 @@ function normalizeStudentsData(students) {
         frequency,
         billingDays,
         weeklySchedule: normalizeWeeklySchedule(student.weeklySchedule || student.schedule || {}, billingDays),
+        recurringSchedule: normalizeRecurringSchedule(student.recurringSchedule || []),
+        billingItems: normalizeBillingItems(student.billingItems || []),
+        billingDayOfMonth: normalizeOptionalDay(student.billingDayOfMonth),
+        monthlyLessonCount: Number(student.monthlyLessonCount) > 0 ? Number(student.monthlyLessonCount) : null,
         billingType: normalizeBillingType(student.billingType || student.chargeType || student.billing_type),
         classValue: String(student.classValue || student.valuePerClass || student.valorAula || "").trim(),
         paymentMethod: String(student.paymentMethod || student.payment_method || "").trim(),
@@ -2472,6 +2572,7 @@ function normalizeStudentsData(students) {
         value: String(student.value || "").trim(),
         due: String(student.due || "").trim(),
         payment: validPayments.includes(student.payment) ? student.payment : "Em dia",
+        batchImportId: String(student.batchImportId || "").trim(),
         lastPaymentDate: String(student.lastPaymentDate || student.last_payment_date || "").trim(),
         syncStatus: String(student.syncStatus || student.sync_status || "synced").trim(),
         syncError: String(student.syncError || student.sync_error || "").trim(),
@@ -2694,7 +2795,7 @@ function saveFinancialHistory(records, { silent = false } = {}) {
 function updateFinancialHistoryFromProjections(projections, monthKey) {
   const history = loadFinancialHistory();
   const byId = new Map(history.map((record) => [record.id, record]));
-  projections.forEach((projection) => {
+  projections.filter((projection) => !projection.student.batchImportId).forEach((projection) => {
     const id = `${projection.student.id || projection.student.name}-${monthKey}`;
     const previous = byId.get(id);
     const nextRecord = {
@@ -2833,6 +2934,7 @@ function updateStudentMonthlyValueFromBilling() {
 }
 
 function getStudentDraftFromForm() {
+  const existingStudent = editingStudentIndex === null ? null : loadStudents()[editingStudentIndex];
   return {
     id: editingStudentIndex === null ? "" : loadStudents()[editingStudentIndex]?.id || "",
     name: nameInput?.value.trim() || "",
@@ -2842,6 +2944,11 @@ function getStudentDraftFromForm() {
     frequency: frequencyInput?.value || "3x",
     billingDays: getSelectedBillingDays(),
     weeklySchedule: getWeeklyScheduleFromForm(),
+    recurringSchedule: existingStudent?.recurringSchedule || [],
+    billingItems: existingStudent?.billingItems || [],
+    billingDayOfMonth: existingStudent?.billingDayOfMonth || null,
+    monthlyLessonCount: existingStudent?.monthlyLessonCount || null,
+    batchImportId: existingStudent?.batchImportId || "",
     billingType: billingTypeInput?.value || "fixed",
     classValue: classValueInput?.value.trim() || "",
     value: valueInput?.value.trim() || "",
@@ -2878,6 +2985,142 @@ function setSelectedBillingDays(days) {
   const selected = normalizeBillingDays(days);
   Array.from(billingDayInputs || []).forEach((input) => {
     input.checked = selected.includes(Number(input.value));
+  });
+}
+
+function renderAdditionalBillingItems(items = []) {
+  if (!additionalBillingItemsContainer) return;
+  additionalBillingItemsContainer.replaceChildren();
+
+  normalizeListData(items).forEach((item, index) => {
+    const itemId = String(item.id || createId());
+    const card = document.createElement("article");
+    card.className = "student-billing-item";
+    card.dataset.billingItemId = itemId;
+
+    const header = document.createElement("div");
+    header.className = "student-billing-item-header";
+    const title = document.createElement("strong");
+    title.textContent = `Cobrança adicional ${index + 1}`;
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "secondary";
+    removeButton.dataset.removeBillingItem = "";
+    removeButton.textContent = "Remover";
+    header.append(title, removeButton);
+
+    const modalityLabel = document.createElement("label");
+    modalityLabel.textContent = "Modalidade ou serviço";
+    const modalityInput = document.createElement("input");
+    modalityInput.type = "text";
+    modalityInput.value = String(item.modality || item.name || "");
+    modalityInput.dataset.billingItemField = "modality";
+    modalityInput.placeholder = "Ex: Assessoria online de musculação";
+    modalityLabel.append(modalityInput);
+
+    const typeLabel = document.createElement("label");
+    typeLabel.textContent = "Tipo de cobrança";
+    const typeSelect = document.createElement("select");
+    typeSelect.dataset.billingItemField = "billingType";
+    [
+      ["fixed", "Mensalidade fixa"],
+      ["per_class", "Por aula"],
+    ].forEach(([value, label]) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      typeSelect.append(option);
+    });
+    typeSelect.value = normalizeBillingType(item.billingType);
+    typeLabel.append(typeSelect);
+
+    const amountFields = document.createElement("div");
+    amountFields.className = "student-billing-item-amounts";
+    const monthlyLabel = document.createElement("label");
+    monthlyLabel.textContent = "Valor mensal";
+    const monthlyInput = document.createElement("input");
+    monthlyInput.type = "text";
+    monthlyInput.value = String(item.value || "");
+    monthlyInput.dataset.billingItemField = "value";
+    monthlyInput.placeholder = "R$ 250,00";
+    monthlyLabel.append(monthlyInput);
+
+    const classLabel = document.createElement("label");
+    classLabel.textContent = "Valor por aula";
+    const classInput = document.createElement("input");
+    classInput.type = "text";
+    classInput.value = String(item.classValue || "");
+    classInput.dataset.billingItemField = "classValue";
+    classInput.placeholder = "R$ 60,00";
+    classLabel.append(classInput);
+    amountFields.append(monthlyLabel, classLabel);
+
+    const daysFieldset = document.createElement("fieldset");
+    daysFieldset.className = "weekday-picker student-billing-item-days";
+    const daysLegend = document.createElement("legend");
+    daysLegend.textContent = "Dias da semana cobrados por aula";
+    daysFieldset.append(daysLegend);
+    const selectedDays = normalizeBillingDays(item.billingDays || []);
+    [
+      [1, "Seg"], [2, "Ter"], [3, "Qua"], [4, "Qui"], [5, "Sex"], [6, "Sab"], [0, "Dom"],
+    ].forEach(([day, label]) => {
+      const dayLabel = document.createElement("label");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = String(day);
+      checkbox.dataset.billingItemDay = "";
+      checkbox.checked = selectedDays.includes(day);
+      dayLabel.append(checkbox, document.createTextNode(label));
+      daysFieldset.append(dayLabel);
+    });
+
+    const notesLabel = document.createElement("label");
+    notesLabel.textContent = "Observações desta cobrança";
+    const notesInput = document.createElement("textarea");
+    notesInput.value = String(item.notes || "");
+    notesInput.dataset.billingItemField = "notes";
+    notesInput.placeholder = "Detalhes específicos desta modalidade";
+    notesLabel.append(notesInput);
+
+    card.append(header, modalityLabel, typeLabel, amountFields, daysFieldset, notesLabel);
+    additionalBillingItemsContainer.append(card);
+    updateAdditionalBillingItemVisibility(card);
+  });
+}
+
+function updateAdditionalBillingItemVisibility(card) {
+  const isPerClass = normalizeBillingType(card.querySelector('[data-billing-item-field="billingType"]')?.value) === "per_class";
+  const amountFields = card.querySelector(".student-billing-item-amounts");
+  const monthlyInput = card.querySelector('[data-billing-item-field="value"]');
+  const classInput = card.querySelector('[data-billing-item-field="classValue"]');
+  const daysFieldset = card.querySelector(".student-billing-item-days");
+  if (amountFields) {
+    amountFields.children[0].hidden = isPerClass;
+    amountFields.children[1].hidden = !isPerClass;
+  }
+  if (monthlyInput) monthlyInput.required = !isPerClass;
+  if (classInput) classInput.required = isPerClass;
+  if (daysFieldset) daysFieldset.hidden = !isPerClass;
+}
+
+function getAdditionalBillingItemsFromForm(existingItems = []) {
+  if (!additionalBillingItemsContainer) return [];
+  const previousItems = new Map(normalizeListData(existingItems).map((item) => [String(item.id), item]));
+  return Array.from(additionalBillingItemsContainer.querySelectorAll(".student-billing-item")).map((card) => {
+    const id = card.dataset.billingItemId;
+    const existing = previousItems.get(id) || {};
+    const billingType = normalizeBillingType(card.querySelector('[data-billing-item-field="billingType"]')?.value);
+    const billingDays = Array.from(card.querySelectorAll("[data-billing-item-day]:checked")).map((input) => Number(input.value));
+    return {
+      ...existing,
+      id,
+      modality: card.querySelector('[data-billing-item-field="modality"]')?.value.trim() || "",
+      billingType,
+      value: card.querySelector('[data-billing-item-field="value"]')?.value.trim() || "",
+      classValue: card.querySelector('[data-billing-item-field="classValue"]')?.value.trim() || "",
+      billingDays: billingType === "per_class" ? normalizeBillingDays(billingDays) : normalizeBillingDays(existing.billingDays || []),
+      notes: card.querySelector('[data-billing-item-field="notes"]')?.value.trim() || "",
+    };
   });
 }
 
@@ -2973,7 +3216,7 @@ function countBillingLessonsForMonth(monthKey, weekdays, settings) {
   const days = normalizeBillingDays(weekdays);
   if (!days.length) return 0;
   const { start, end } = getMonthBounds(monthKey);
-  const holidaySet = settings?.countHolidays === false ? new Set(settings.holidayKeys || []) : new Set();
+  const holidaySet = new Set([...(settings?.countHolidays === false ? settings.holidayKeys || [] : []), ...(settings?.ignoreGlobalHolidays ? [] : getGlobalHolidayKeys())]);
   let total = 0;
   const cursor = new Date(start);
   while (cursor <= end) {
@@ -2987,7 +3230,7 @@ function countBillingLessonsForMonth(monthKey, weekdays, settings) {
 function countBillingLessonsBetweenDates(startDate, endDate, weekdays, settings = loadBillingSettings()) {
   const days = normalizeBillingDays(weekdays);
   if (!startDate || !endDate || !days.length) return 0;
-  const holidaySet = settings?.countHolidays === false ? new Set(settings.holidayKeys || []) : new Set();
+  const holidaySet = new Set([...(settings?.countHolidays === false ? settings.holidayKeys || [] : []), ...(settings?.ignoreGlobalHolidays ? [] : getGlobalHolidayKeys())]);
   let total = 0;
   const cursor = new Date(startDate);
   cursor.setHours(0, 0, 0, 0);
@@ -3015,14 +3258,15 @@ function getStudentInitialPackagePreview(student, settings = loadBillingSettings
   startDate.setHours(0, 0, 0, 0);
   const monthKey = monthKeyOverride || `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}`;
   const { start, end } = getMonthBounds(monthKey);
-  const remainingLessons = countBillingLessonsBetweenDates(startDate, end, student.billingDays, settings);
-  const fullMonthLessons = countBillingLessonsBetweenDates(start, end, student.billingDays, settings);
   const billingType = normalizeBillingType(student.billingType);
+  const countSettings = { ...settings, ignoreGlobalHolidays: true };
+  const remainingLessons = countBillingLessonsBetweenDates(startDate, end, student.billingDays, countSettings);
+  const fullMonthLessons = countBillingLessonsBetweenDates(start, end, student.billingDays, countSettings);
   const perClassValue = parseCurrencyValue(student.classValue);
   const monthlyValue = parseCurrencyValue(student.value);
   const proportional = startDate > start;
   const totalValue = billingType === "per_class"
-    ? remainingLessons * perClassValue
+    ? countBillingLessonsBetweenDates(startDate, end, student.billingDays, settings) * perClassValue
     : fullMonthLessons > 0
       ? (monthlyValue / fullMonthLessons) * remainingLessons
       : monthlyValue;
@@ -3044,14 +3288,19 @@ function getStudentInitialPackagePreview(student, settings = loadBillingSettings
 function getBillingDueDate(student, monthKey) {
   const { year, month } = getMonthBounds(monthKey);
   const due = parseBrazilianDate(student?.due || "");
-  const day = due?.getDate() || Number(String(student?.due || "").match(/\d{1,2}/)?.[0]) || 5;
+  const day = due?.getDate()
+    || Number(String(student?.due || "").match(/\d{1,2}/)?.[0])
+    || normalizeOptionalDay(student?.billingDayOfMonth);
+  if (!day) return null;
   const lastDay = new Date(year, month, 0).getDate();
   return new Date(year, month - 1, Math.min(day, lastDay));
 }
 
 function getBillingStatusForStudent(student, monthKey) {
+  if (student?.payment === "Não informado") return "Não informado";
   if (student?.payment === "Em dia") return "Pago";
   const dueDate = getBillingDueDate(student, monthKey);
+  if (!dueDate) return "Não informado";
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return dueDate < today || student?.payment === "Atrasado" ? "Vencido" : "Pendente";
@@ -3076,14 +3325,20 @@ function getStudentBillingProjection(student, monthKey, settings = loadBillingSe
     && ((student.id && item.studentId === student.id) || item.studentName === student.name)
   );
   const predictedLessons = automaticPackage
-    ? Number(automaticPackage.total) || 0
+    ? Math.max(0, (Number(automaticPackage.total) || 0) - (billingType === "per_class" ? generatePackageSchedule(automaticPackage).filter((lesson) => isGlobalHoliday(lesson.dateKey)).length : 0))
     : countBillingLessonsForMonth(monthKey, student.billingDays, settings);
   const completedLessons = getStudentCompletedLessonsForMonth(student, monthKey);
   const perClassValue = parseCurrencyValue(student.classValue);
   const monthlyValue = parseCurrencyValue(student.value);
-  const totalValue = automaticPackage
-    ? parseCurrencyValue(automaticPackage.value || automaticPackage.expectedValue)
-    : billingType === "per_class" ? predictedLessons * perClassValue : monthlyValue;
+  const baseValue = billingType === "per_class" ? predictedLessons * perClassValue
+    : automaticPackage ? parseCurrencyValue(automaticPackage.value || automaticPackage.expectedValue) : monthlyValue;
+  const additionalValue = normalizeBillingItems(student.billingItems).reduce((total, item) => {
+    if (item.billingType === "per_class") {
+      return total + countBillingLessonsForMonth(monthKey, item.billingDays, settings) * parseCurrencyValue(item.classValue);
+    }
+    return total + parseCurrencyValue(item.value);
+  }, 0);
+  const totalValue = baseValue + additionalValue;
   const attendance = predictedLessons > 0 ? Math.round((completedLessons / predictedLessons) * 1000) / 10 : 0;
   const status = getBillingStatusForStudent(student, monthKey);
 
@@ -3128,7 +3383,7 @@ function markStudentBillingAsPaid(studentId, monthKey = getDefaultBillingMonthKe
 
 function createAutomaticBillingMessage(projection) {
   const { student, predictedLessons, billingType, individualValue, totalValue, dueDate } = projection;
-  const dueText = dueDate.toLocaleDateString("pt-BR");
+  const dueText = dueDate?.toLocaleDateString("pt-BR") || "não informado";
   if (billingType === "per_class") {
     return `Ola, ${student.name}.\n\nSua programacao para o proximo mes sera de ${predictedLessons} aulas, realizadas nos dias cadastrados em seu plano.\n\nQuantidade de aulas previstas: ${predictedLessons}\nValor por aula: ${formatCurrencyNumber(individualValue)}\nValor total do mes: ${formatCurrencyNumber(totalValue)}\nVencimento: ${dueText}\n\nQualquer duvida estou a disposicao.`;
   }
@@ -3929,7 +4184,7 @@ function renderBillingList() {
     const details = document.createElement("span");
     details.textContent = `${student.plan || "Plano"} | ${student.frequency || "frequencia nao informada"} | ${projection.daysLabel} | ${projection.predictedLessons} aulas previstas`;
     const statusText = document.createElement("small");
-    statusText.textContent = `${projection.billingType === "per_class" ? `Por aula: ${formatCurrencyNumber(projection.individualValue)}` : `Mensalidade: ${formatCurrencyNumber(projection.totalValue)}`} | Total: ${formatCurrencyNumber(projection.totalValue)} | Vence ${projection.dueDate.toLocaleDateString("pt-BR")} | ${projection.status}`;
+    statusText.textContent = `${projection.billingType === "per_class" ? `Por aula: ${formatCurrencyNumber(projection.individualValue)}` : `Mensalidade: ${formatCurrencyNumber(projection.totalValue)}`} | Total: ${formatCurrencyNumber(projection.totalValue)} | Vence ${projection.dueDate?.toLocaleDateString("pt-BR") || "não informado"} | ${projection.status}`;
     const attendance = document.createElement("small");
     attendance.textContent = `Realizadas: ${projection.completedLessons}/${projection.predictedLessons} | Frequencia: ${projection.attendance}%`;
     info.append(title, details, statusText);
@@ -4532,16 +4787,18 @@ function normalizeAgendaEvents(events) {
       dateKey: item.dateKey || (parseBrazilianDate(item.date) ? getDateKey(parseBrazilianDate(item.date)) : ""),
       time: normalizeTimeText(item.time || ""),
       duration: Number(item.duration) || 60,
+      holidayActive: item.holidayActive === true,
       type: item.type || "extra",
       modality: item.modality || "Aula",
       location: item.location || "",
-      status: item.status || "confirmada",
+      status: item.holidayOriginalStatus || item.status || "confirmada",
       value: item.value || "",
       note: item.note || "",
       source: item.source || "manual",
       packageId: item.packageId || "",
       google_event_id: item.google_event_id || item.googleEventId || "",
       google_recurring_event_id: item.google_recurring_event_id || "",
+      officialCancellationId: item.officialCancellationId || "",
       cancelado_por: item.cancelado_por || "",
       cancelado_em: item.cancelado_em || "",
       origem_da_alteracao: item.origem_da_alteracao || item.source || "aplicativo",
@@ -4598,17 +4855,36 @@ function normalizeClassGroups(groups) {
       const resolvedParticipants = Array.from(resolvedIds)
         .map((id) => students.find((student) => student.id === id))
         .filter(Boolean);
+      const participantCounts = {};
+      resolvedParticipants.forEach((student) => {
+        participantCounts[student.id] = Math.max(1, Number(item.participantCounts?.[student.id]) || 1);
+      });
+      const participantMonthlyFees = {};
+      resolvedParticipants.forEach((student) => {
+        const amount = Number(item.participantMonthlyFees?.[student.id]);
+        if (Number.isFinite(amount) && amount >= 0) participantMonthlyFees[student.id] = amount;
+      });
       return {
         id: item.id || createId(),
         name: String(item.name || "Grupo sem nome").trim(),
         participantIds: resolvedParticipants.map((student) => student.id),
         participantNames: resolvedParticipants.map((student) => student.name),
+        modality: String(item.modality || "").trim(),
+        recurringSchedule: normalizeRecurringSchedule(item.recurringSchedule || []),
+        participantCounts,
+        participantMonthlyFees,
+        monthlyFee: item.monthlyFee === null || item.monthlyFee === undefined || item.monthlyFee === ""
+          ? null
+          : Number.isFinite(Number(item.monthlyFee)) ? Number(item.monthlyFee) : null,
+        financeOnly: item.financeOnly === true,
+        payerNotes: String(item.payerNotes || "").trim(),
+        batchImportId: String(item.batchImportId || "").trim(),
         notes: String(item.notes || "").trim(),
         createdAt: item.createdAt || Date.now(),
         updatedAt: item.updatedAt || item.createdAt || Date.now(),
       };
     })
-    .filter((item) => item.name && item.participantIds.length);
+    .filter((item) => item.name && (item.participantIds.length || item.financeOnly || item.recurringSchedule.length));
 }
 
 function loadClassGroups() {
@@ -4756,7 +5032,18 @@ function renderClassGroupsList(container) {
     const title = document.createElement("strong");
     title.textContent = group.name;
     const detail = document.createElement("small");
-    detail.textContent = group.participantNames.join(", ");
+    const scheduleText = group.recurringSchedule.map((item) =>
+      `${getWeekdayName(item.day)} ${item.startTime}${item.endTime ? `–${item.endTime}` : ""}`
+    ).join(", ");
+    const feeText = group.monthlyFee === null
+      ? group.payerNotes
+      : `R$ ${group.monthlyFee.toFixed(2).replace(".", ",")}/mês`;
+    detail.textContent = [
+      group.participantNames.length ? group.participantNames.join(", ") : "Integrantes pendentes",
+      scheduleText,
+      feeText,
+      group.notes,
+    ].filter(Boolean).join(" | ");
     info.append(title, detail);
 
     const actions = document.createElement("div");
@@ -5905,6 +6192,7 @@ function createStudentRow(student) {
   details.className = "student-list-card-grid";
   [
     ["Plano", student.plan || "-"],
+    ["Modalidades/cobranças", (student.billingItems || []).map(describeBillingItem).join("; ") || student.plan || "-"],
     ["Vencimento", student.due || "-"],
     ["Status", isPaymentBlocked(student) ? "Bloqueado" : "Ativo"],
     ["Aplicativo", hasStudentAppAccess(student) ? "✔ Acesso criado" : "⚠ Sem acesso ao aplicativo"],
@@ -6319,6 +6607,9 @@ function renderAdminStudentProfile(studentName) {
       createAdminMetric("Nascimento", student.birthDate || "Não informado"),
       createAdminMetric("Login", hasStudentAppAccess(student) ? "✔ Acesso criado" : "⚠ Sem acesso ao aplicativo"),
       createAdminMetric("Valor", student.value),
+      createAdminMetric("Outras modalidades/cobranças", (student.billingItems || []).map(describeBillingItem).join("; ") || "Nenhuma"),
+      createAdminMetric("Horários recorrentes", (student.recurringSchedule || []).map((item) => `${item.activity} — ${getWeekdayName(item.day)} ${item.startTime}${item.endTime ? `–${item.endTime}` : ""}`).join("; ") || "Não informados"),
+      createAdminMetric("Aulas do pacote/mês", student.monthlyLessonCount || "Não informado"),
       createAdminMetric("Vencimento", student.due),
       createAdminMetric("Pagamento", student.payment),
     ], [createActionButton("Editar aluno", "edit", student.name)]),
@@ -6963,6 +7254,7 @@ function currentMonthKey() {
 }
 
 function getDateKey(date = new Date()) {
+  if (!arguments.length) return CalendarRules.today();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
@@ -7005,15 +7297,18 @@ function parseLessonDateTime(dateKey, timeText) {
 }
 
 function getLessonRecord(packageId, lessonDateKey) {
+  if (isGlobalHoliday(lessonDateKey)) return { packageId, dateKey: lessonDateKey, status: "feriado", statusLabel: "Feriado", consumed: false, generatedMakeup: false };
   return loadCheckins().find((checkin) => checkin.packageId === packageId && checkin.dateKey === lessonDateKey && (checkin.lessonType || "package") === "package");
 }
 
 function isConsumedLesson(checkin) {
+  if (isGlobalHoliday(checkin?.dateKey || CalendarRules.dateKey(checkin?.date))) return false;
   if (checkin?.lessonType === "makeup" || checkin?.lessonType === "dropin") return false;
   return checkin?.status === "realizado" || checkin?.status === "aula-dada" || checkin?.consumed === true || checkin?.status === "cancelada-fora-prazo" || checkin?.status === "falta";
 }
 
 function getCheckinStatusLabel(checkin) {
+  if (isGlobalHoliday(checkin?.dateKey || CalendarRules.dateKey(checkin?.date))) return "Feriado";
   if (checkin?.statusLabel) return checkin.statusLabel;
   if (checkin?.status === "falta") return "Falta - aula contabilizada";
   if (checkin?.status === "aula-dada") return "Aula dada";
@@ -7058,8 +7353,8 @@ function parsePackageDays(daysText) {
 }
 
 function generatePackageSchedule(classPackage) {
-  const start = parseBrazilianDate(classPackage.startDate);
-  const end = parseBrazilianDate(classPackage.endDate);
+  const start = parseBrazilianDate(CalendarRules.dateKey(classPackage.startDate));
+  const end = parseBrazilianDate(CalendarRules.dateKey(classPackage.endDate));
   const weekdays = parsePackageDays(classPackage.days);
   const total = Number(classPackage.total) || 0;
   if (!start || !end || !weekdays.length || !total) return [];
@@ -7097,6 +7392,13 @@ function formatCurrencyNumber(value) {
   return Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function describeBillingItem(item) {
+  const amount = item.billingType === "per_class"
+    ? `${item.classValue}/aula`
+    : `${item.value}/mês`;
+  return `${item.modality}: ${amount}`;
+}
+
 function getStudentMakeupCredits(studentName) {
   const credits = loadMakeupCredits();
   let changed = false;
@@ -7108,7 +7410,7 @@ function getStudentMakeupCredits(studentName) {
     return credit;
   });
   if (changed) saveMakeupCredits(refreshed);
-  return refreshed.filter((credit) => credit.studentName === studentName);
+  return refreshed.filter((credit) => credit.studentName === studentName && !isGlobalHoliday(CalendarRules.dateKey(credit.sourceLessonDate)));
 }
 
 function getAvailableMakeupCredits(studentName) {
@@ -7143,7 +7445,7 @@ function getStudentDropIns(studentName) {
 
 function getPendingDropInValue(studentName) {
   return getStudentDropIns(studentName)
-    .filter((item) => item.status === "pendente")
+    .filter((item) => item.status === "pendente" && !isGlobalHoliday(CalendarRules.dateKey(item.date)))
     .reduce((total, item) => total + parseCurrencyValue(item.value), 0);
 }
 
@@ -7328,7 +7630,7 @@ function getAgendaEventsForRange(view = "week", referenceDate = new Date()) {
     const date = event.dateKey ? new Date(`${event.dateKey}T00:00:00`) : parseBrazilianDate(event.date);
     if (date && date >= start && date <= end) items.push(event);
   });
-  return items.sort((a, b) => (a.dateKey || "").localeCompare(b.dateKey || "") || (getMinutesFromTime(a.time) ?? 0) - (getMinutesFromTime(b.time) ?? 0));
+  return items.filter((item) => item.type !== "global-holiday").map((item) => CalendarRules.overlay(item, getGlobalHolidayKeys())).sort((a, b) => (a.dateKey || "").localeCompare(b.dateKey || "") || (getMinutesFromTime(a.time) ?? 0) - (getMinutesFromTime(b.time) ?? 0));
 }
 
 function hasAgendaConflict(dateText, timeText, duration = 60, ignoreId = "") {
@@ -7408,6 +7710,14 @@ function renderAdminAgenda() {
     const title = document.createElement("h3");
     title.textContent = `${getWeekdayName(day.getDay())} ${day.toLocaleDateString("pt-BR")}`;
     column.appendChild(title);
+    if (isGlobalHoliday(dayKey)) {
+      const holiday = document.createElement("article");
+      holiday.className = "agenda-event-card status-feriado";
+      holiday.textContent = "Feriado";
+      column.appendChild(holiday);
+      adminAgendaGrid.appendChild(column);
+      return;
+    }
     const dayEvents = events.filter((event) => event.dateKey === dayKey);
     const renderedEventIds = new Set();
     hours.forEach((minutes) => {
@@ -7463,7 +7773,8 @@ function getActivePackage(studentName) {
     .find((classPackage) => {
       const end = parseBrazilianDate(classPackage.endDate);
       const completed = getCompletedLessons(classPackage);
-      return completed < classPackage.total && (!end || end >= today);
+      const start = CalendarRules.dateKey(classPackage.startDate);
+      return completed < classPackage.total && classPackage.status !== "encerrado" && (!start || start <= CalendarRules.today()) && (!end || CalendarRules.dateKey(classPackage.endDate) >= CalendarRules.today());
     }) || null;
 }
 
@@ -7473,7 +7784,8 @@ function getPackageStatus(classPackage) {
   return {
     completed,
     remaining,
-    label: remaining <= 0 ? "Pacote finalizado" : `${completed}/${classPackage.total} aulas realizadas`,
+    state: CalendarRules.packageState(classPackage, completed),
+    label: `${CalendarRules.packageState(classPackage, completed)} | ${completed}/${classPackage.total} aulas utilizadas`,
   };
 }
 
@@ -7586,6 +7898,7 @@ function getTodayStudentCheckin(studentName, packageId = "") {
 
 function registerPackageCheckin(studentName, classPackage, markedBy = "aluno") {
   if (!studentName || !classPackage) return false;
+  if (!validateLessonDate(CalendarRules.today(), classPackage)) return false;
 
   const status = getPackageStatus(classPackage);
   if (status.remaining <= 0) return false;
@@ -7601,6 +7914,8 @@ function registerPackageCheckin(studentName, classPackage, markedBy = "aluno") {
 
 function registerFlexibleLessonCheckin(studentName, lessonType = "package", classPackage = null, markedBy = "personal", options = {}) {
   if (!studentName) return { ok: false, message: "Selecione um aluno." };
+  const dateError = CalendarRules.schedulingError(CalendarRules.today(), getGlobalHolidayKeys(), classPackage);
+  if (dateError) return { ok: false, message: dateError };
 
   if (lessonType === "makeup") {
     const credits = loadMakeupCredits();
@@ -7658,110 +7973,47 @@ function registerFlexibleLessonCheckin(studentName, lessonType = "package", clas
     : { ok: false, message: "Presença não registrada: pacote finalizado ou aula de hoje já possui registro." };
 }
 
-function registerLessonCancellation(studentName, classPackage, lesson) {
-  if (!studentName || !classPackage || !lesson) return { ok: false, message: "Nao foi possivel cancelar esta aula." };
-  if (getLessonRecord(classPackage.id, lesson.dateKey)) return { ok: false, message: "Esta aula ja possui registro." };
-
-  const cancellation = getCancellationStatus(lesson);
-  const status = getPackageStatus(classPackage);
-  if (cancellation.consumed && status.remaining <= 0) return { ok: false, message: "Pacote sem saldo para contabilizar cancelamento." };
-  const generated = cancellation.status === "cancelada-no-prazo";
-  const validUntil = generated ? addDaysToBrazilianDate(lesson.date, 10) : "";
-  const checkinId = createId();
-
-  const checkins = loadCheckins();
-  checkins.push({
-    id: checkinId,
-    studentName,
-    studentId: getStudentIdByName(studentName),
-    packageId: classPackage.id,
-    packageName: classPackage.name,
-    date: lesson.date,
-    dateKey: lesson.dateKey,
-    time: lesson.time,
-    type: "cancelamento de aula",
-    status: cancellation.status,
-    statusLabel: cancellation.label,
-    consumed: cancellation.consumed,
-    generatedMakeup: generated,
-    makeupValidUntil: validUntil,
-    reason: generated ? "Cancelamento dentro do prazo. Reposição gerada." : "Fora do prazo mínimo de 2 horas.",
-    markedBy: "aluno",
-    cancellationDate: formatToday(),
-    cancellationTime: formatCurrentTime(),
-    month: currentMonthKey(),
-    timestamp: Date.now(),
-  });
-  saveCheckins(checkins);
-
-  let credit = null;
-  if (generated) {
-    credit = {
-      id: createId(),
-      studentName,
-      studentId: getStudentIdByName(studentName),
-      packageId: classPackage.id,
-      packageName: classPackage.name,
-      sourceLessonDate: lesson.date,
-      lessonTime: lesson.time,
-      noticeDate: formatToday(),
-      noticeTime: formatCurrentTime(),
-      validUntil,
-      status: "available",
-      generated: true,
-      reason: "Cancelamento do aluno dentro do prazo.",
-      sourceCheckinId: checkinId,
-      note: "",
-      timestamp: Date.now(),
-      createdAt: Date.now(),
-    };
-    const credits = loadMakeupCredits();
-    credits.push(credit);
-    saveMakeupCredits(credits);
+async function registerLessonCancellation(studentName, classPackage, lesson) {
+  if (isGlobalHoliday(lesson?.dateKey)) return { ok: false, message: "Feriado: não há aula para cancelar." };
+  const client = getSupabaseClient();
+  if (!client || !currentSupabaseUser) return { ok: false, message: "Entre novamente para cancelar a aula." };
+  if (!classPackage?.id || !lesson?.dateKey) return { ok: false, message: "Aula invalida." };
+  const key = ["lesson-cancellation", currentSupabaseUser.id, classPackage.id, lesson.dateKey].join(":");
+  let requestId;
+  try {
+    requestId = localStorage.getItem(key) || crypto.randomUUID();
+    localStorage.setItem(key, requestId);
+  } catch { requestId = crypto.randomUUID(); }
+  try {
+    const { data, error } = await client.functions.invoke("lesson-cancellation", {
+      body: { action: "cancel", packageId: classPackage.id, dateKey: lesson.dateKey, time: lesson.time, requestId },
+    });
+    if (error) {
+      const details = await error.context?.json?.().catch(() => null);
+      throw new Error(details?.error || error.message);
+    }
+    if (!data?.ok) throw new Error(data?.error || "Cancelamento nao confirmado pelo servidor.");
+    // Apply only a committed receipt; never send Google changes from the student.
+    const snapshot = getAppStateSnapshot();
+    snapshot.checkins = (snapshot.checkins || []).filter((item) => !(item.packageId === classPackage.id && item.dateKey === lesson.dateKey && (item.lessonType || "package") === "package"));
+    snapshot.checkins.push(data.checkin);
+    snapshot.agendaEvents = (snapshot.agendaEvents || []).filter((item) => item.id !== data.event.id);
+    snapshot.agendaEvents.push(data.event);
+    if (data.credit) {
+      snapshot.makeupCredits = (snapshot.makeupCredits || []).filter((item) => item.id !== data.credit.id);
+      snapshot.makeupCredits.push(data.credit);
+    }
+    const cached = writeAppStateToLocalStorage(preserveOfficialCancellationReceipts(snapshot, {
+      checkins: [data.checkin], agendaEvents: [data.event], makeupCredits: data.credit ? [data.credit] : [],
+    }));
+    return { ...data, message: cached ? "Cancelamento confirmado." : "Cancelamento confirmado no servidor. Recarregue para atualizar a tela." };
+  } catch (error) {
+    return { ok: false, message: "Nao foi possivel confirmar o cancelamento. " + (error.message || "Confira a conexao e tente novamente.") };
   }
-
-  const agendaId = `${classPackage.id}-${lesson.dateKey}`;
-  const agendaEvents = loadAgendaEvents();
-  const existingIndex = agendaEvents.findIndex((event) => event.id === agendaId || (
-    event.packageId === classPackage.id && event.dateKey === lesson.dateKey && event.time === lesson.time
-  ));
-  const existing = existingIndex >= 0 ? agendaEvents[existingIndex] : {};
-  const cancellationEvent = {
-    ...existing,
-    id: existing.id || agendaId,
-    studentName,
-    studentId: getStudentIdByName(studentName),
-    packageId: classPackage.id,
-    date: lesson.date,
-    dateKey: lesson.dateKey,
-    time: lesson.time,
-    duration: Number(lesson.duration) || 60,
-    type: "package",
-    modality: classPackage.name || "Aula",
-    status: cancellation.label,
-    source: existing.source || "package",
-    cancelado_por: studentName,
-    cancelado_em: new Date().toISOString(),
-    origem_da_alteracao: "aplicativo_aluno",
-    syncHistory: [...(existing.syncHistory || []), { action: "cancelled", origin: "app", at: new Date().toISOString(), by: studentName }].slice(-20),
-    createdAt: existing.createdAt || Date.now(),
-    updatedAt: Date.now(),
-  };
-  if (existingIndex >= 0) agendaEvents[existingIndex] = cancellationEvent;
-  else agendaEvents.push(cancellationEvent);
-  saveAgendaEvents(agendaEvents);
-
-  return {
-    ok: true,
-    generated,
-    credit,
-    message: generated
-      ? "Cancelamento realizado. Você tem direito a uma reposição."
-      : "Cancelamento realizado, mas sem direito a reposição por estar fora do prazo mínimo de 2 horas.",
-  };
 }
 
 function registerStudentRescheduleNotice({ studentName, classPackage, date, lessonTime, noticeTime, note = "" }) {
+  if (!validateLessonDate(CalendarRules.dateKey(date), classPackage)) return false;
   if (!studentName || !date || !lessonTime || !noticeTime) {
     return { ok: false, message: "Preencha aluno, data, horário da aula e horário do aviso." };
   }
@@ -7855,6 +8107,7 @@ function registerStudentRescheduleNotice({ studentName, classPackage, date, less
 }
 
 function registerPersonalLessonReschedule({ studentName, classPackage, date, lessonTime, reason = "" }) {
+  if (!validateLessonDate(CalendarRules.dateKey(date), classPackage)) return false;
   if (!studentName || !date || !lessonTime) {
     return { ok: false, message: "Preencha aluno, data e horário original da aula." };
   }
@@ -7921,6 +8174,7 @@ function registerPersonalLessonReschedule({ studentName, classPackage, date, les
 }
 
 function registerLessonAbsence(studentName, classPackage, lesson) {
+  if (!validateLessonDate(lesson.dateKey, classPackage)) return false;
   if (!studentName || !classPackage || !lesson) return false;
   if (getLessonRecord(classPackage.id, lesson.dateKey)) return false;
 
@@ -9909,7 +10163,7 @@ function createPackageSummaryCard(classPackage) {
     ["Realizadas", status.completed],
     ["Restantes", status.remaining],
     ["Valor", classPackage.value || "-"],
-    ["Periodo", `${classPackage.startDate} a ${classPackage.endDate}`],
+    ["Período", `${classPackage.startDate || "Início não informado"} a ${classPackage.endDate || "Término não informado"}`],
   ].forEach(([label, value]) => {
     const item = document.createElement("span");
     const strong = document.createElement("strong");
@@ -9984,7 +10238,8 @@ function renderPackageAdminList() {
       createAdminMetric("Usadas / total", `${status.completed}/${classPackage.total}`),
       createAdminMetric("Restantes", status.remaining),
       createAdminMetric("Valor", classPackage.value || "-"),
-      createAdminMetric("Status", status.remaining <= 0 ? "Finalizado" : "Ativo"),
+      createAdminMetric("Status", status.state),
+      createAdminMetric("Validade", `${classPackage.startDate || "Início não informado"} a ${classPackage.endDate || "Término não informado"}`),
       createAdminMetric("Proxima aula", nextLesson ? `${nextLesson.date} | ${nextLesson.time}` : "Sem aula"),
     );
 
@@ -10150,6 +10405,8 @@ function defineMakeupReplacementDate(creditId) {
   if (!credit) return false;
   const replacementDate = window.prompt("Nova data da aula (DD/MM/AAAA):", credit.replacementDate || "");
   if (!replacementDate) return false;
+  const classPackage = loadClassPackages().find((item) => item.id === credit.packageId);
+  if (!validateLessonDate(CalendarRules.dateKey(replacementDate), classPackage)) return false;
   const replacementTime = window.prompt("Novo horário:", credit.replacementTime || credit.lessonTime || "");
   if (!replacementTime) return false;
   return updateMakeupCreditStatus(creditId, "approved", {
@@ -10160,10 +10417,12 @@ function defineMakeupReplacementDate(creditId) {
 }
 
 function useMakeupCreditById(creditId, markedBy = "personal") {
+  if (!validateLessonDate(CalendarRules.today())) return false;
   const credits = loadMakeupCredits();
   const index = credits.findIndex((credit) => credit.id === creditId && credit.status === "approved");
   if (index < 0) return false;
   const credit = credits[index];
+  if (isGlobalHoliday(CalendarRules.dateKey(credit.sourceLessonDate))) return false;
   credits[index] = {
     ...credit,
     status: "used",
@@ -10521,6 +10780,7 @@ function renderStudentPackagePanel() {
     .filter((classPackage) => classPackage.studentName === studentName)
     .sort((a, b) => b.createdAt - a.createdAt)[0];
   studentPackagePanel.innerHTML = "";
+  if (activePackage || latestPackage) studentPackagePanel.appendChild(createPackageSummaryCard(activePackage || latestPackage));
 
   if (!activePackage) {
     if (latestPackage && getPackageStatus(latestPackage).remaining <= 0) {
@@ -10618,6 +10878,7 @@ function createStudentAgendaNavCard(icon, title, description, action) {
 function createStudentLessonCard(lesson, classPackage, mode = "view") {
   const item = document.createElement("article");
   item.className = "package-lesson";
+  if (isGlobalHoliday(lesson.dateKey)) { item.textContent = "Feriado"; return item; }
   const info = document.createElement("div");
   const title = document.createElement("strong");
   title.textContent = lesson.date;
@@ -11161,7 +11422,7 @@ function fillWorkoutTemplateSelect() {
 function resetStudentForm() {
   if (!studentForm) return;
   studentForm.reset();
-  if (paymentInput) paymentInput.value = "Em dia";
+  if (paymentInput) paymentInput.value = "Não informado";
   if (emailInput) emailInput.value = "";
   if (tempPasswordInput) tempPasswordInput.value = "";
   if (phoneInput) phoneInput.value = "";
@@ -11182,6 +11443,7 @@ function resetStudentForm() {
   }
   if (paymentMethodInput) paymentMethodInput.value = "";
   if (studentBillingNotesInput) studentBillingNotesInput.value = "";
+  renderAdditionalBillingItems([]);
   editingStudentIndex = null;
   safeSetText(saveStudentButton, "Salvar aluno");
   if (createStudentAccessButton) createStudentAccessButton.hidden = true;
@@ -11216,6 +11478,7 @@ function startEditingStudent(index, message = "Editando aluno. Altere os campos 
   if (paymentMethodInput) paymentMethodInput.value = student.paymentMethod || "";
   paymentInput.value = student.payment;
   if (studentBillingNotesInput) studentBillingNotesInput.value = student.billingNotes || "";
+  renderAdditionalBillingItems(student.billingItems || []);
   renderStudentPackagePreview();
   saveStudentButton.textContent = "Salvar alteracao";
   if (createStudentAccessButton) createStudentAccessButton.hidden = hasStudentAppAccess(student);
@@ -11240,6 +11503,22 @@ studentForm?.addEventListener("submit", async (event) => {
 
   const students = loadStudents();
   const previousName = editingStudentIndex === null ? "" : students[editingStudentIndex]?.name;
+  const billingItems = getAdditionalBillingItemsFromForm(students[editingStudentIndex]?.billingItems || []);
+  for (const item of billingItems) {
+    if (!item.modality) {
+      showMessage("Informe a modalidade ou remova a cobrança adicional vazia.", "error");
+      return;
+    }
+    const amount = item.billingType === "per_class" ? parseCurrencyValue(item.classValue) : parseCurrencyValue(item.value);
+    if (amount <= 0) {
+      showMessage(`Informe um valor válido para a cobrança de ${item.modality}.`, "error");
+      return;
+    }
+    if (item.billingType === "per_class" && !item.billingDays.length) {
+      showMessage(`Selecione os dias cobrados por aula para ${item.modality}.`, "error");
+      return;
+    }
+  }
   let student = {
     id: editingStudentIndex === null ? createId() : students[editingStudentIndex]?.id || createId(),
     supabaseUserId: students[editingStudentIndex]?.supabaseUserId || "",
@@ -11257,6 +11536,11 @@ studentForm?.addEventListener("submit", async (event) => {
     frequency: frequencyInput?.value || "3x",
     billingDays: getSelectedBillingDays(),
     weeklySchedule: getWeeklyScheduleFromForm(),
+    recurringSchedule: students[editingStudentIndex]?.recurringSchedule || [],
+    billingItems,
+    billingDayOfMonth: students[editingStudentIndex]?.billingDayOfMonth || null,
+    monthlyLessonCount: students[editingStudentIndex]?.monthlyLessonCount || null,
+    batchImportId: students[editingStudentIndex]?.batchImportId || "",
     billingType: billingTypeInput?.value || "fixed",
     classValue: classValueInput?.value.trim() || "",
     paymentMethod: paymentMethodInput?.value.trim() || "",
@@ -12038,11 +12322,7 @@ packageName?.addEventListener("change", () => {
   applyPackageModelByName(packageName.value);
 });
 
-packageStart?.addEventListener("change", () => {
-  if (packageEnd && packageStart.value && !editingPackageId) {
-    packageEnd.value = getSameDayNextMonth(packageStart.value) || packageEnd.value;
-  }
-});
+
 
 packageModuleMenu?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-package-page-target]");
@@ -12077,6 +12357,11 @@ agendaMakeupForm?.addEventListener("submit", async (event) => {
     showMessage("Selecione pelo menos um aluno.", "error");
     return;
   }
+  for (const student of participants) {
+    const pack = getActivePackage(student.name) || loadClassPackages().filter((item) => item.studentName === student.name).sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (!validateLessonDate(CalendarRules.dateKey(date), pack)) return;
+  }
+  if (!validateLessonDate(CalendarRules.dateKey(date))) return;
   if (hasAgendaConflict(date, time, duration)) {
     showMessage("Esse horario ja esta ocupado.", "error");
     return;
@@ -12121,6 +12406,7 @@ agendaDropinForm?.addEventListener("submit", async (event) => {
     showMessage("Selecione pelo menos um aluno.", "error");
     return;
   }
+  if (!validateLessonDate(CalendarRules.dateKey(date))) return;
   if (hasAgendaConflict(date, time, duration)) {
     showMessage("Esse horario ja esta ocupado.", "error");
     return;
@@ -12177,6 +12463,7 @@ agendaCancelForm?.addEventListener("submit", async (event) => {
   const eventId = agendaCancelEvent?.value || "";
   const currentEvent = getAgendaEventsForRange(adminAgendaView?.value || "week", parseBrazilianDate(adminAgendaDate?.value || "") || new Date()).find((item) => item.id === eventId);
   if (!currentEvent) return;
+  if (isGlobalHoliday(currentEvent.dateKey)) { showMessage("Feriado: não há aula para cancelar.", "error"); return; }
   if (currentEvent.source === "package" && currentEvent.packageId && agendaCancelMakeup?.value === "yes") {
     const classPackage = loadClassPackages().find((item) => item.id === currentEvent.packageId);
     if (classPackage) {
@@ -12276,7 +12563,12 @@ packageForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const packages = loadClassPackages();
+  const startKey = CalendarRules.dateKey(packageStart?.value.trim());
+  const endKey = CalendarRules.dateKey(packageEnd?.value.trim());
+  if ((packageStart?.value && !startKey) || (packageEnd?.value && !endKey) || (startKey && endKey && endKey < startKey)) { showMessage("Informe datas válidas com ano; o término deve ser igual ou posterior ao início.", "error"); return; }
+  const previous = packages.find((item) => item.id === editingPackageId);
   const packageData = {
+    ...previous,
     id: editingPackageId || createId(),
     studentName: packageStudent?.value || "",
     studentId: getStudentIdByName(packageStudent?.value || ""),
@@ -12437,6 +12729,34 @@ Array.from(billingDayInputs || []).forEach((input) => {
 
 studentWeeklySchedule?.addEventListener("input", renderStudentPackagePreview);
 
+addBillingItemButton?.addEventListener("click", () => {
+  const items = getAdditionalBillingItemsFromForm(editingStudentIndex === null ? [] : loadStudents()[editingStudentIndex]?.billingItems || []);
+  items.push({
+    id: createId(),
+    modality: "",
+    billingType: "fixed",
+    value: "",
+    classValue: "",
+    billingDays: [],
+    notes: "",
+  });
+  renderAdditionalBillingItems(items);
+  additionalBillingItemsContainer?.lastElementChild?.querySelector('[data-billing-item-field="modality"]')?.focus();
+});
+
+additionalBillingItemsContainer?.addEventListener("click", (event) => {
+  const removeButton = event.target.closest("[data-remove-billing-item]");
+  if (!removeButton) return;
+  const items = getAdditionalBillingItemsFromForm(editingStudentIndex === null ? [] : loadStudents()[editingStudentIndex]?.billingItems || []);
+  const itemId = removeButton.closest(".student-billing-item")?.dataset.billingItemId;
+  renderAdditionalBillingItems(items.filter((item) => item.id !== itemId));
+});
+
+additionalBillingItemsContainer?.addEventListener("change", (event) => {
+  if (!event.target.matches('[data-billing-item-field="billingType"]')) return;
+  updateAdditionalBillingItemVisibility(event.target.closest(".student-billing-item"));
+});
+
 studentCheckinButton?.addEventListener("click", () => {
   const studentName = workoutViewStudent?.value;
   const activePackage = getActivePackage(studentName);
@@ -12475,6 +12795,7 @@ manualCheckinForm?.addEventListener("submit", (event) => {
 
 dropInForm?.addEventListener("submit", (event) => {
   event.preventDefault();
+  if (!validateLessonDate(CalendarRules.dateKey(dropInDate?.value.trim() || formatToday()))) return;
   const dropIns = loadDropInClasses();
   dropIns.push({
     id: createId(),
@@ -12768,8 +13089,22 @@ studentPackagePanel?.addEventListener("click", async (event) => {
     const lesson = generatePackageSchedule(classPackage || {}).find((item) => item.dateKey === confirmCancelButton.dataset.lessonDate);
     if (!studentName || !classPackage || !lesson || getLessonRecord(classPackage.id, lesson.dateKey)) return;
 
-    const result = registerLessonCancellation(studentName, classPackage, lesson);
-    await supabaseSyncPromise;
+    if (confirmCancelButton.disabled) return;
+    confirmCancelButton.disabled = true;
+    const result = await registerLessonCancellation(studentName, classPackage, lesson);
+    confirmCancelButton.disabled = false;
+    if (!result.ok) {
+      showMessage(result.message, "error");
+      let failure = studentPackagePanel?.querySelector("[data-cancellation-error]");
+      if (!failure) {
+        failure = document.createElement("p");
+        failure.dataset.cancellationError = "";
+        failure.setAttribute("role", "alert");
+        confirmCancelButton.parentElement?.appendChild(failure);
+      }
+      failure.textContent = result.message;
+      return;
+    }
     renderStudentCheckinStatus();
     renderStudentCancelSuccess(result);
     renderCheckinHistory();
@@ -13193,6 +13528,441 @@ adminAlertsList?.addEventListener("click", (event) => {
 
 adminAlertFilter?.addEventListener("change", renderAdminAlerts);
 
+const batchImportProfileSpecs = [
+  { key: "renata-luiz", name: "Renata e Luiz", aliases: ["Renata Foscarini"], plan: "Personal — casal", billingType: "per_class", classValue: 85, days: [{ day: 1, time: "06:00" }, { day: 5, time: "06:00" }], notes: "R$ 85 por aula do casal inteiro; valor não é por integrante." },
+  { key: "marcela-luiz", name: "Marcela e Luiz", plan: "Personal — casal", billingType: "per_class", classValue: 80, days: [{ day: 2, time: "07:00" }, { day: 5, time: "07:00" }], notes: "R$ 80 por aula do casal inteiro; valor não é por integrante." },
+  { key: "fernanda", name: "Fernanda", plan: "Personal", billingType: "per_class", classValue: 60, days: [{ day: 1, time: "08:00" }, { day: 3, time: "08:00" }, { day: 5, time: "08:00" }] },
+  { key: "norberto", name: "Norberto", aliases: ["Norberto"], plan: "Personal", billingType: "per_class", classValue: 45, days: [{ day: 1, time: "14:00" }, { day: 4, time: "14:00" }] },
+  { key: "bernardo", name: "Bernardo", plan: "Personal", billingType: "per_class", classValue: 85, days: [{ day: 1, time: "17:00" }] },
+  { key: "gislayne", name: "Gislayne", aliases: ["Gislane", "Gislene"], plan: "Personal", billingType: "per_class", classValue: 50, days: [{ day: 1, time: "18:30" }, { day: 2, time: "18:00" }, { day: 3, time: "18:00" }] },
+  { key: "mateus-family", name: "Mateus e família", aliases: ["Mateus"], plan: "Personal — família", billingType: "fixed", value: 700, days: [{ day: 1, time: "20:00" }, { day: 3, time: "20:00" }, { day: 4, time: "20:00" }], notes: "Mensalidade total familiar: R$ 700. Valor fixo, não multiplicado pelos horários." },
+  { key: "mariane", name: "Mariane Santos", aliases: ["Mariane  Santos", "Mariane"], plan: "Musculação", billingType: "per_class", classValue: 40, days: [{ day: 1, time: "21:00" }, { day: 3, time: "21:00" }] },
+  { key: "eric", name: "Eric", aliases: ["Éric", "Érico"], plan: "Personal", billingType: "per_class", classValue: 50, days: [{ day: 1, time: "21:00" }, { day: 3, time: "21:00" }] },
+  { key: "pedro", name: "Pedro Riguetto", aliases: ["Pedro"], plan: "Personal", billingType: "per_class", classValue: 50, days: [{ day: 2, time: "14:00" }, { day: 5, time: "14:00" }] },
+  { key: "gael-bento", name: "Gael e Bento", aliases: ["Bento"], plan: "Personal e turmas", billingType: "fixed", value: 0, days: [{ day: 4, time: "11:00", activity: "Personal" }], billingItems: [{ modality: "Personal", billingType: "per_class", classValue: "R$ 85,00", value: "R$ 0,00", billingDays: [4], weeklySchedule: { 4: { time: "11:00", duration: 60, location: "" } }, recurringSchedule: [{ day: 4, activity: "Personal", startTime: "11:00", duration: 60 }] }], notes: "Cadastro conjunto dos irmãos Gael e Bento; o valor de R$ 85 por aula de quinta é referente a esta aula individual." },
+  { key: "fabiani", name: "Fabiani", aliases: ["Fabiane"], plan: "Pacote de 8 aulas", billingType: "fixed", value: 480, classValue: 60, monthlyLessonCount: 8, days: [], billingDayOfMonth: 15, notes: "Pacote de 8 aulas por mês (R$ 480; R$ 60 por aula). Horários flexíveis, a combinar. Pagamento no dia 15." },
+  { key: "apoio", name: "Colégio Apoio", aliases: ["apoio"], plan: "Natação e Pickleball", billingType: "fixed", value: 2300, days: [], recurringSchedule: [{ day: 1, activity: "Natação", startTime: "15:30", endTime: "17:00", duration: 90 }, { day: 5, activity: "Natação", startTime: "15:30", endTime: "17:00", duration: 90 }, { day: 2, activity: "Pickleball", startTime: "15:00", endTime: "17:00", duration: 120 }, { day: 4, activity: "Pickleball", startTime: "15:00", endTime: "17:00", duration: 120 }, { day: 3, activity: "Pickleball", startTime: "15:30", endTime: "16:20", duration: 50 }], notes: "Uma mensalidade de R$ 2.300 por todas as atividades; cadastro interno para agenda e controle financeiro, sem criar ou disponibilizar acesso para a empresa." },
+  { key: "leo", name: "Leo", plan: "Funcional Kids e Beach Tennis Kids", billingType: "fixed", value: 0, days: [] },
+  { key: "heitor", name: "Heitor", plan: "Funcional Kids e Beach Tennis Kids", billingType: "fixed", value: 0, days: [] },
+  { key: "davi", name: "Davi", plan: "Funcional Kids e Beach Tennis Kids", billingType: "fixed", value: 0, days: [] },
+  { key: "herica", name: "Herica", plan: "Beach Tennis", billingType: "fixed", value: 0, days: [] },
+  { key: "larissa", name: "Larissa", plan: "Beach Tennis", billingType: "fixed", value: 0, days: [] },
+  { key: "maria-gloria", name: "Maria Gloria", plan: "Tênis Kids", billingType: "fixed", value: 0, days: [] },
+  { key: "alice", name: "Alice", plan: "Tênis Kids", billingType: "fixed", value: 0, days: [] },
+  { key: "oto", name: "Oto", plan: "Tênis Kids", billingType: "fixed", value: 0, days: [] },
+  { key: "thomas", name: "Thomas", plan: "Tênis Kids", billingType: "fixed", value: 0, days: [] },
+  { key: "daniela-camargo", name: "Daniela Camargo", plan: "Beach Tennis", billingType: "fixed", value: 0, days: [] },
+  { key: "guilherme", name: "Guilherme", plan: "Beach Tennis", billingType: "fixed", value: 0, days: [] },
+  { key: "daniela-vital", name: "Daniela Vital", plan: "Beach Tennis", billingType: "fixed", value: 0, days: [] },
+  { key: "ana-caroline", name: "Ana Caroline", plan: "Beach Tennis", billingType: "fixed", value: 0, days: [] },
+];
+
+function cloneImportData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function batchImportSchedule(activity, day, time, duration = 60) {
+  const [hours, minutes] = time.split(":").map(Number);
+  const endMinutes = hours * 60 + minutes + duration;
+  return {
+    id: createId(),
+    activity,
+    modality: activity,
+    day,
+    startTime: time,
+    endTime: `${String(Math.floor(endMinutes / 60) % 24).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`,
+    duration,
+    location: "",
+    notes: "",
+  };
+}
+
+function batchImportGroup(spec, profiles, importId, existingGroups) {
+  const groupSchedule = spec.schedule.map((item) => batchImportSchedule(spec.modality, item.day, item.time, item.duration || 60));
+  const participantIds = spec.members.map((key) => profiles[key].id);
+  const participantCounts = {};
+  const participantMonthlyFees = {};
+  spec.members.forEach((key) => {
+    const profile = profiles[key];
+    participantCounts[profile.id] = key === "gael-bento" ? 2 : 1;
+    participantMonthlyFees[profile.id] = spec.fees[key];
+    const fee = spec.fees[key] * participantCounts[profile.id];
+    profile.billingItems.push({
+      id: `${importId}-${spec.key}-${key}`,
+      modality: spec.name,
+      plan: spec.modality,
+      billingType: "fixed",
+      value: formatCurrencyNumber(fee),
+      classValue: "",
+      billingDays: groupSchedule.map((item) => item.day),
+      weeklySchedule: {},
+      recurringSchedule: groupSchedule.map((item) => ({ ...item })),
+      notes: key === "gael-bento" ? "R$ 125 por aluno; dois irmãos em um cadastro conjunto." : "",
+    });
+    profile.recurringSchedule.push(...groupSchedule.map((item) => ({ ...item })));
+  });
+  const aliases = spec.aliases || [];
+  const match = existingGroups.filter((group) =>
+    [spec.name, ...aliases].some((name) => normalizeSearchText(name) === normalizeSearchText(group.name))
+  );
+  if (match.length > 1) throw new Error(`Mais de um grupo existente corresponde a “${spec.name}”.`);
+  const previous = match[0];
+  return {
+    ...(previous || {}),
+    id: previous?.id || createId(),
+    name: spec.name,
+    modality: spec.modality,
+    participantIds,
+    participantNames: spec.members.map((key) => profiles[key].name),
+    participantCounts,
+    participantMonthlyFees,
+    monthlyFee: spec.members.reduce((sum, key) => sum + spec.fees[key] * (key === "gael-bento" ? 2 : 1), 0),
+    recurringSchedule: groupSchedule,
+    financeOnly: false,
+    notes: spec.notes || "",
+    batchImportId: importId,
+    createdAt: previous?.createdAt || Date.now(),
+    updatedAt: Date.now(),
+  };
+}
+
+const batchImportGroupSpecs = [
+  { key: "functional-kids", name: "Funcional Kids", modality: "Funcional Kids", members: ["gael-bento", "leo", "heitor", "davi"], fees: { "gael-bento": 125, leo: 125, heitor: 125, davi: 125 }, schedule: [{ day: 2, time: "10:00" }] },
+  { key: "beach-tennis-kids", name: "Beach Tennis Kids", modality: "Beach Tennis Kids", members: ["gael-bento", "leo", "heitor", "davi"], fees: { "gael-bento": 125, leo: 125, heitor: 125, davi: 125 }, schedule: [{ day: 4, time: "09:00" }] },
+  { key: "beach-wednesday", name: "Beach Tennis — quarta", modality: "Beach Tennis", members: ["herica", "larissa"], fees: { herica: 155, larissa: 155 }, schedule: [{ day: 3, time: "07:00" }] },
+  { key: "beach-thursday", name: "Beach Tennis — quinta 19:00", aliases: ["BEACH QUINTA 19H AYAT"], modality: "Beach Tennis", members: ["mariane"], fees: { mariane: 140 }, schedule: [{ day: 4, time: "19:00" }] },
+  { key: "tennis-kids", name: "Tênis Kids", modality: "Tênis Kids", members: ["maria-gloria", "alice", "oto", "thomas"], fees: { "maria-gloria": 140, alice: 140, oto: 150, thomas: 150 }, schedule: [{ day: 5, time: "09:00" }] },
+  { key: "beach-friday", name: "Beach Tennis — sexta 18:00", modality: "Beach Tennis", members: ["daniela-camargo", "guilherme", "daniela-vital", "ana-caroline"], fees: { "daniela-camargo": 140, guilherme: 140, "daniela-vital": 140, "ana-caroline": 140 }, schedule: [{ day: 5, time: "18:00" }] },
+];
+
+function resolveBatchImportStudent(spec, students) {
+  const aliases = [spec.name, ...(spec.aliases || [])].map(normalizeSearchText);
+  const matches = students.filter((student) => aliases.includes(normalizeSearchText(student.name)));
+  if (matches.length > 1) {
+    throw new Error(`Há mais de um cadastro correspondente a “${spec.name}”. Nenhuma alteração foi gravada.`);
+  }
+  const previous = matches[0] || null;
+  return {
+    ...(previous || {}),
+    id: previous?.id || createId(),
+    name: spec.name,
+    email: previous?.email || "",
+    email_login: previous?.email_login || "",
+    phone: previous?.phone || "",
+    birthDate: previous?.birthDate || "",
+    plan: spec.plan,
+    modality: previous?.modality || "presencial",
+    startDate: previous?.startDate || "",
+    frequency: spec.days.length ? `${spec.days.length}x` : previous?.frequency || "custom",
+    billingDays: spec.days.length
+      ? spec.days.map((item) => item.day)
+      : spec.recurringSchedule?.length
+        ? [...new Set(spec.recurringSchedule.map((item) => item.day))]
+        : previous?.billingDays || [],
+    weeklySchedule: spec.days.length
+      ? Object.fromEntries(spec.days.map((item) => [item.day, { time: item.time, duration: item.duration || 60, location: "" }]))
+      : spec.recurringSchedule?.length
+        ? Object.fromEntries(spec.recurringSchedule.map((item) => [item.day, { time: item.startTime, duration: item.duration, location: "" }]))
+      : previous?.weeklySchedule || {},
+    recurringSchedule: spec.recurringSchedule
+      ? spec.recurringSchedule.map((item) => batchImportSchedule(item.activity, item.day, item.startTime, item.duration))
+      : spec.days.map((item) => batchImportSchedule(item.activity || spec.plan, item.day, item.time, item.duration || 60)),
+    billingType: spec.billingType,
+    classValue: spec.classValue ? formatCurrencyNumber(spec.classValue) : "",
+    value: spec.value !== undefined
+      ? formatCurrencyNumber(spec.value)
+      : String(previous?.value || formatCurrencyNumber(0)),
+    due: previous?.due || "",
+    billingDayOfMonth: spec.billingDayOfMonth || previous?.billingDayOfMonth || null,
+    monthlyLessonCount: spec.monthlyLessonCount || previous?.monthlyLessonCount || null,
+    payment: previous?.payment || "Não informado",
+    billingNotes: [previous?.billingNotes, spec.notes].filter(Boolean).join(" | "),
+    billingItems: [...cloneImportData(previous?.billingItems || []), ...cloneImportData(spec.billingItems || [])],
+    makeupLimit: previous?.makeupLimit || 0,
+    batchImportId: "",
+    _previous: previous,
+  };
+}
+
+function createBatchImportBackupDownload(backup) {
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `backup-importacao-jv-personal-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function setBatchImportMessage(message, isError = false) {
+  if (!batchImportMessage) return;
+  batchImportMessage.textContent = message;
+  batchImportMessage.dataset.state = isError ? "error" : "success";
+}
+
+function downloadSavedBatchImportBackup() {
+  const backup = getLocalJson(batchImportStorageKey, null);
+  if (!backup?.importId) {
+    setBatchImportMessage("Não há backup de importação disponível neste app.", true);
+    return;
+  }
+  createBatchImportBackupDownload(backup);
+  setBatchImportMessage("Backup da importação baixado novamente.");
+}
+
+function isUnchangedSinceBatchImport(record, previousRecord) {
+  if (!record || !previousRecord) return false;
+  const clean = (value) => {
+    if (Array.isArray(value)) return value.map(clean);
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(Object.keys(value)
+      .filter((key) => !["syncStatus", "syncError", "syncUpdatedAt", "batchImportId"].includes(key))
+      .sort()
+      .map((key) => [key, clean(value[key])]));
+  };
+  return JSON.stringify(clean(record)) === JSON.stringify(clean(previousRecord));
+}
+
+async function executeBatchImport() {
+  const metadata = getLocalJson(batchImportStorageKey, null);
+  if (metadata?.importId) {
+    setBatchImportMessage("Já existe uma importação com opção de desfazer. Desfaça-a antes de executar outra.", true);
+    return;
+  }
+  if (getPendingSupabaseSync()?.pending || getPendingStudentIdsFromLocalCache().length) {
+    setBatchImportMessage("Há alterações locais ainda não sincronizadas. Sincronize-as antes de importar; nada foi alterado.", true);
+    return;
+  }
+  if (!currentSupabaseUser || getSupabaseUserRole(currentSupabaseUser) !== "admin" || currentUserType !== "admin") {
+    setBatchImportMessage("É necessário estar autenticado no app como administrador para importar. Nada foi alterado.", true);
+    return;
+  }
+  batchImportButton.disabled = true;
+  try {
+    const online = await fetchSupabaseAppStateData();
+    if (!online.ok || !online.data) throw new Error(`Não foi possível ler a fonte online: ${getStepErrorMessage(online.error)}.`);
+    if (online.data.batchImportMetadata?.importId) {
+      localStorage.setItem(batchImportStorageKey, JSON.stringify(online.data.batchImportMetadata));
+      undoBatchImportButton.hidden = false;
+      throw new Error("Já existe uma importação reversível salva online. Desfaça-a antes de iniciar outra.");
+    }
+    const freshState = mergeAppStateForSupabase(online.data, getAppStateSnapshot(), { includeLocalChanges: false });
+    if (!writeAppStateToLocalStorage(freshState)) throw new Error("Não foi possível atualizar a cópia local com o estado online.");
+
+    const originalStudents = loadStudents().map(cloneImportData);
+    const originalGroups = loadClassGroups().map(cloneImportData);
+    const changedStudents = new Map();
+    const proposedStudents = originalStudents.map(cloneImportData);
+    const resolvedProfiles = {};
+    for (const spec of batchImportProfileSpecs) {
+      const proposed = resolveBatchImportStudent(spec, proposedStudents);
+      if (proposed._previous) changedStudents.set(proposed.id, cloneImportData(proposed._previous));
+      delete proposed._previous;
+      proposed.batchImportId = "";
+      const index = proposedStudents.findIndex((item) => item.id === proposed.id);
+      if (index < 0) proposedStudents.push(proposed);
+      else proposedStudents[index] = proposed;
+      resolvedProfiles[spec.key] = proposed;
+    }
+    for (const spec of batchImportProfileSpecs) {
+      resolvedProfiles[spec.key].batchImportId = "";
+      resolvedProfiles[spec.key].recurringSchedule ||= [];
+      resolvedProfiles[spec.key].billingItems ||= [];
+    }
+
+    const proposedGroups = originalGroups.map(cloneImportData);
+    const updatedGroups = batchImportGroupSpecs.map((spec) => batchImportGroup(spec, resolvedProfiles, "pending", proposedGroups));
+    updatedGroups.forEach((group) => {
+      const index = proposedGroups.findIndex((item) => item.id === group.id);
+      if (index >= 0) proposedGroups[index] = group;
+      else proposedGroups.push(group);
+    });
+    const corridaId = resolvedProfiles.corrida?.id;
+    if (corridaId) throw new Error("A turma de corrida não deve criar perfil de aluno.");
+
+    const corridaMatches = proposedStudents.filter((student) =>
+      ["corrida uic", "grupo de corrida"].includes(normalizeSearchText(student.name))
+    );
+    if (corridaMatches.length !== 1) throw new Error("O cadastro interno existente do grupo de corrida não foi identificado de forma única.");
+    const corrida = corridaMatches[0];
+    const existingCorrida = originalStudents.find((student) => student.id === corrida.id);
+    if (!existingCorrida) throw new Error("Não foi encontrado o cadastro de corrida online a preservar.");
+    changedStudents.set(corrida.id, cloneImportData(existingCorrida));
+    corrida.batchImportId = "";
+    corrida.billingNotes = [
+      corrida.billingNotes,
+      "R$ 50 por aula do grupo pagos pelo clube ao profissional; não cobrar dos alunos.",
+    ].filter(Boolean).join(" | ");
+    const corridaSchedule = [2, 4].map((day) => batchImportSchedule("Corrida", day, "06:30", 60));
+    const corridaGroupMatches = proposedGroups.filter((group) => normalizeSearchText(group.name) === "grupo de corrida");
+    if (corridaGroupMatches.length > 1) throw new Error("Há mais de um grupo de corrida existente.");
+    const previousCorridaGroup = corridaGroupMatches[0] || null;
+    const corridaGroup = {
+      ...(previousCorridaGroup || {}),
+      id: previousCorridaGroup?.id || createId(),
+      name: "Grupo de corrida",
+      modality: "Corrida",
+      participantIds: [],
+      participantNames: [],
+      participantCounts: {},
+      participantMonthlyFees: {},
+      monthlyFee: null,
+      recurringSchedule: corridaSchedule,
+      financeOnly: true,
+      payerNotes: "R$ 50 por aula do grupo, pagos pelo clube ao profissional; não cobrar dos alunos.",
+      notes: "Agenda e controle financeiro interno. Não disponibilizar perfil para empresa nem criar acesso.",
+      createdAt: previousCorridaGroup?.createdAt || Date.now(),
+      updatedAt: Date.now(),
+      batchImportId: "pending",
+    };
+    const corridaGroupIndex = proposedGroups.findIndex((group) => group.id === corridaGroup.id);
+    if (corridaGroupIndex >= 0) proposedGroups[corridaGroupIndex] = corridaGroup;
+    else proposedGroups.push(corridaGroup);
+
+    const importId = createId();
+    const importedStudentIds = new Set([
+      ...Object.values(resolvedProfiles).map((student) => student.id),
+      corrida.id,
+    ]);
+    proposedStudents.forEach((student) => {
+      if (importedStudentIds.has(student.id)) student.batchImportId = importId;
+    });
+    [...updatedGroups, corridaGroup].forEach((group) => { group.batchImportId = importId; });
+    const beforeGroups = new Map();
+    [...updatedGroups.map((group) => group.id), corridaGroup.id].forEach((id) => {
+      const prior = originalGroups.find((group) => group.id === id);
+      beforeGroups.set(id, prior ? cloneImportData(prior) : null);
+    });
+    const backup = {
+      version: 1,
+      importId,
+      capturedAt: new Date().toISOString(),
+      onlineUpdatedAt: online.updatedAt,
+      beforeStudents: [...changedStudents].map(([id, record]) => ({ id, record })),
+      createdStudentIds: proposedStudents.filter((student) => student.batchImportId === importId && !originalStudents.some((prior) => prior.id === student.id)).map((student) => student.id),
+      beforeGroups: [...beforeGroups].map(([id, record]) => ({ id, record })),
+      createdGroupIds: proposedGroups.filter((group) => group.batchImportId === importId && !originalGroups.some((prior) => prior.id === group.id)).map((group) => group.id),
+      instructions: "Para desfazer com segurança, use “Desfazer última importação” no app antes de editar os registros importados. O app recusa desfazer qualquer registro alterado depois desta gravação.",
+    };
+    createBatchImportBackupDownload(backup);
+
+    saveStudents(proposedStudents);
+    saveClassGroups(proposedGroups);
+    localStorage.setItem(batchImportStorageKey, JSON.stringify(backup));
+    const syncResult = await flushAppStateSyncNow("importação em lote de cadastros, turmas e cobranças");
+    if (!syncResult?.ok) {
+      writeAppStateToLocalStorage({
+        ...getAppStateSnapshot(),
+        students: originalStudents,
+        classGroups: originalGroups,
+        batchImportMetadata: null,
+      });
+      throw new Error(`A gravação online falhou (${getStepErrorMessage(syncResult.error)}); os dados locais foram restaurados e nenhuma importação foi confirmada.`);
+    }
+
+    renderStudents();
+    renderClassGroupsList(document.querySelector("#class-group-list"));
+    undoBatchImportButton.hidden = false;
+    setBatchImportMessage(`Importação salva no app online. ${proposedStudents.length - originalStudents.length} novos cadastros; ${updatedGroups.length + 1} grupos/recorrências atualizados. Backup baixado. Nenhum pacote, presença, cobrança histórica, pagamento ou aula datada foi criado.`);
+  } catch (error) {
+    console.error("Falha na importação em lote.", error);
+    setBatchImportMessage(error.message || "Falha na importação; consulte o registro de erros.", true);
+  } finally {
+    batchImportButton.disabled = false;
+  }
+}
+
+async function undoLastBatchImport() {
+  const backup = getLocalJson(batchImportStorageKey, null);
+  if (!backup?.importId) {
+    setBatchImportMessage("Não há importação reversível neste app.", true);
+    undoBatchImportButton.hidden = true;
+    return;
+  }
+  undoBatchImportButton.disabled = true;
+  try {
+    const online = await fetchSupabaseAppStateData();
+    if (!online.ok || !online.data) throw new Error(`Não foi possível conferir os registros online: ${getStepErrorMessage(online.error)}.`);
+    const state = mergeAppStateForSupabase(online.data, getAppStateSnapshot(), { includeLocalChanges: false });
+    const currentStudents = normalizeStudentsData(state.students || []);
+    const currentGroups = normalizeClassGroups(state.classGroups || []);
+    const beforeStudentsById = new Map((backup.beforeStudents || []).map((entry) => [entry.id, entry.record]));
+    const beforeGroupsById = new Map((backup.beforeGroups || []).map((entry) => [entry.id, entry.record]));
+    const studentIds = new Set([
+      ...(backup.beforeStudents || []).map((entry) => entry.id),
+      ...(backup.createdStudentIds || []),
+    ]);
+    const groupIds = new Set([
+      ...(backup.beforeGroups || []).map((entry) => entry.id),
+      ...(backup.createdGroupIds || []),
+    ]);
+    const changedAfterImport = [
+      ...currentStudents.filter((student) => studentIds.has(student.id)
+        && student.batchImportId !== backup.importId
+        && !isUnchangedSinceBatchImport(student, beforeStudentsById.get(student.id))).map((student) => student.name),
+      ...currentGroups.filter((group) => groupIds.has(group.id)
+        && group.batchImportId !== backup.importId
+        && !isUnchangedSinceBatchImport(group, beforeGroupsById.get(group.id))).map((group) => group.name),
+      ...(backup.beforeStudents || []).filter((entry) => entry.record && !currentStudents.some((student) => student.id === entry.id)).map((entry) => entry.record.name),
+      ...(backup.beforeGroups || []).filter((entry) => entry.record && !currentGroups.some((group) => group.id === entry.id)).map((entry) => entry.record.name),
+    ];
+    if (changedAfterImport.length) {
+      throw new Error(`Desfazer cancelado: estes registros foram alterados após a importação: ${changedAfterImport.join(", ")}. Nenhum registro foi sobrescrito.`);
+    }
+    const previousStudents = new Map((backup.beforeStudents || []).map((entry) => [entry.id, entry.record]));
+    const previousGroups = new Map((backup.beforeGroups || []).map((entry) => [entry.id, entry.record]));
+    const restoredStudents = currentStudents
+      .filter((student) => !backup.createdStudentIds?.includes(student.id))
+      .map((student) => previousStudents.has(student.id) ? previousStudents.get(student.id) : student);
+    const restoredGroups = currentGroups
+      .filter((group) => !backup.createdGroupIds?.includes(group.id))
+      .map((group) => previousGroups.has(group.id) ? previousGroups.get(group.id) : group);
+    const rollbackTombstones = [
+      ...(backup.createdStudentIds || []).map((id) => {
+        const student = currentStudents.find((item) => item.id === id);
+        return student && createTombstoneEntry("students", student, { reason: "desfazer_importacao_em_lote" });
+      }),
+      ...(backup.createdGroupIds || []).map((id) => {
+        const group = currentGroups.find((item) => item.id === id);
+        return group && createTombstoneEntry("classGroups", group, { reason: "desfazer_importacao_em_lote" });
+      }),
+    ].filter(Boolean);
+    addDeletionTombstones(rollbackTombstones);
+    saveStudents(restoredStudents);
+    saveClassGroups(restoredGroups);
+    localStorage.removeItem(batchImportStorageKey);
+    const result = await flushAppStateSyncNow("desfazer importação em lote");
+    if (!result?.ok) {
+      localStorage.setItem(batchImportStorageKey, JSON.stringify(backup));
+      throw new Error(`O desfazer não foi salvo online: ${getStepErrorMessage(result.error)}.`);
+    }
+    const verified = await fetchSupabaseAppStateData();
+    if (!verified.ok || !verified.data
+      || backup.createdStudentIds?.some((id) => verified.data.students?.some((student) => student.id === id))
+      || backup.createdGroupIds?.some((id) => verified.data.classGroups?.some((group) => group.id === id))
+      || verified.data.batchImportMetadata?.importId === backup.importId) {
+      localStorage.setItem(batchImportStorageKey, JSON.stringify(backup));
+      throw new Error("A releitura online não confirmou o desfazer. O backup foi mantido para nova tentativa; consulte os registros antes de prosseguir.");
+    }
+    renderStudents();
+    renderClassGroupsList(document.querySelector("#class-group-list"));
+    undoBatchImportButton.hidden = true;
+    setBatchImportMessage("Importação desfeita no app online. Os registros anteriores foram restaurados; as criações da importação foram removidas.");
+  } catch (error) {
+    console.error("Falha ao desfazer a importação em lote.", error);
+    setBatchImportMessage(error.message || "Falha ao desfazer; consulte o registro de erros.", true);
+  } finally {
+    undoBatchImportButton.disabled = false;
+  }
+}
+
+batchImportButton?.addEventListener("click", executeBatchImport);
+downloadBatchImportBackupButton?.addEventListener("click", downloadSavedBatchImportBackup);
+undoBatchImportButton?.addEventListener("click", undoLastBatchImport);
+downloadBatchImportBackupButton && (downloadBatchImportBackupButton.hidden = !getLocalJson(batchImportStorageKey, null)?.importId);
+undoBatchImportButton && (undoBatchImportButton.hidden = !getLocalJson(batchImportStorageKey, null)?.importId);
 exportDataButton?.addEventListener("click", exportAppData);
 
 document.addEventListener("click", (event) => {
@@ -13585,3 +14355,33 @@ if (window.JV_SKIP_AUTO_INIT) {
 } else {
   initializeApp();
 }
+
+function getGlobalHolidayKeys() { return CalendarRules.holidayKeys(loadAgendaEvents()); }
+function isGlobalHoliday(key) { return getGlobalHolidayKeys().has(key); }
+function validateLessonDate(key, pack = null) {
+  const error = CalendarRules.schedulingError(key, getGlobalHolidayKeys(), pack);
+  if (error) showMessage(error, "error");
+  return !error;
+}
+document.querySelector("#global-holiday-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (currentUserType !== "admin" || !currentSupabaseUser) { showMessage("Entre como administrador para marcar feriados.", "error"); return; }
+  const key = document.querySelector("#global-holiday-date").value;
+  if (!CalendarRules.validKey(key)) return;
+  const active = event.submitter?.value !== "remove";
+  const events = [...loadAgendaEvents()];
+  const existing = events.findIndex((item) => item.type === "global-holiday" && item.dateKey === key);
+  if (existing >= 0 && events[existing].holidayActive === active) { showMessage(active ? "Feriado já marcado." : "Feriado já removido."); return; }
+  const marker = { ...(existing >= 0 ? events[existing] : {}), id: existing >= 0 ? events[existing].id : "holiday-" + key, date: formatDateKey(key), dateKey: key, time: "00:00", type: "global-holiday", holidayActive: active, status: "feriado", source: "admin", createdAt: existing >= 0 ? events[existing].createdAt : Date.now(), updatedAt: Date.now() };
+  if (existing >= 0) events[existing] = marker; else events.push(marker);
+  saveAgendaEvents(events);
+  const monthKey = key.slice(0, 7);
+  updateFinancialHistoryFromProjections(loadStudents().map((student) => getStudentBillingProjection(student, monthKey)), monthKey);
+  const result = await flushAppStateSyncNow("feriado global");
+  if (!result?.ok || result.skipped) { showMessage("Feriado pendente de sincronização: " + (result?.error?.message || "Confira a conexão e a migration."), "error"); return; }
+  refreshAppAfterRemoteState();
+  renderAdminAgenda(); renderBillingList(); renderStudentPackagePanel();
+  try { await window.GoogleCalendarIntegration?.synchronizeNow(); }
+  catch { showMessage("Feriado salvo; sincronização com Google pendente. Use Sincronizar agenda.", "error"); return; }
+  showMessage(active ? "Feriado marcado." : "Feriado removido. Aulas e cálculos restaurados.");
+});

@@ -487,6 +487,19 @@
             </div>
             <button type="button" class="secondary" id="export-data-button">Exportar dados</button>
           </section>
+          <section class="backup-panel">
+            <div>
+              <p class="eyebrow">Importação em lote</p>
+              <h3>Cadastros, turmas e recorrências</h3>
+              <span>Cria uma cópia de segurança antes de salvar e permite desfazer esta importação enquanto os registros não forem alterados depois.</span>
+              <p class="save-message" id="batch-import-message" role="status"></p>
+            </div>
+            <div class="workout-actions">
+              <button type="button" id="run-batch-import-button">Preparar e importar cadastros</button>
+              <button type="button" class="secondary" id="download-batch-import-backup-button" hidden>Baixar backup da importação</button>
+              <button type="button" class="secondary" id="undo-batch-import-button" hidden>Desfazer última importação</button>
+            </div>
+          </section>
           <form class="manual-payment" id="student-form">
             <div>
               <p class="eyebrow">Valores flexiveis</p>
@@ -539,10 +552,11 @@
             </label>
             <label>Valor por aula<input id="student-class-value" placeholder="R$ 60,00" /></label>
             <label>Valor mensal<input id="student-value" required placeholder="R$ 250,00" /></label>
-            <label>Vencimento<input id="student-due" required placeholder="05/06" /></label>
+            <label>Vencimento<input id="student-due" placeholder="Não informado" /></label>
             <label>Forma de pagamento<input id="student-payment-method" placeholder="Pix, dinheiro, cartao..." /></label>
             <label>Status
               <select id="student-payment">
+                <option>Não informado</option>
                 <option>Em dia</option>
                 <option>Pendente</option>
                 <option>Atrasado</option>
@@ -550,6 +564,14 @@
             </label>
             <div class="student-package-preview" id="student-package-preview" hidden></div>
             <label class="student-billing-notes-field">Observacoes de cobranca<textarea id="student-billing-notes" placeholder="Ex: cobrar todo dia 5, plano familiar, desconto combinado..."></textarea></label>
+            <section class="student-additional-billing" aria-labelledby="student-additional-billing-title">
+              <div>
+                <h4 id="student-additional-billing-title">Outras cobranças deste perfil</h4>
+                <p>Cadastre cada modalidade ou serviço separadamente. Mensalidades fixas entram uma vez por mês; cobranças por aula usam os dias selecionados.</p>
+              </div>
+              <div id="student-additional-billing-items"></div>
+              <button type="button" class="secondary" id="add-student-billing-item">Adicionar cobrança</button>
+            </section>
             <button type="submit" id="save-student-button">Salvar aluno</button>
             <button type="button" class="secondary" id="cancel-edit-button" hidden>Cancelar</button>
           </form>
@@ -617,6 +639,14 @@
                   <button type="button" class="secondary" id="google-calendar-disconnect" hidden>Desconectar</button>
                 </div>
                 <p class="save-message" id="google-calendar-message" role="status"></p>
+                <details id="cancellation-catalog-panel">
+                  <summary>Autorizar cancelamentos dos alunos</summary>
+                  <p>Revise os vínculos de login, pacotes e aulas antes de confirmar. Publique novamente após alterar pacotes, horários ou registros de presença.</p>
+                  <button type="button" class="secondary" id="cancellation-catalog-review">Revisar cadastro de aulas</button>
+                  <pre id="cancellation-catalog-preview" style="white-space: pre-wrap; overflow-wrap: anywhere;"></pre>
+                  <button type="button" id="cancellation-catalog-publish" hidden>Confirmar vínculos e aulas revisados</button>
+                  <p id="cancellation-catalog-message" role="status"></p>
+                </details>
                 <div class="google-calendar-notifications" id="google-calendar-notifications" hidden>
                   <div class="google-calendar-notifications-head">
                     <strong>Alterações recebidas</strong>
@@ -633,6 +663,7 @@
                     <option value="month">Mês</option>
                   </select>
                 </label>
+                <form id="global-holiday-form" class="form-grid"><label>Data do feriado<input id="global-holiday-date" type="date" required /></label><button class="primary" type="submit" value="mark">Marcar feriado</button><button class="secondary" type="submit" value="remove">Remover feriado</button></form>
                 <label>Data de referência<input id="admin-agenda-date" placeholder="Ex: 10/06/2026" /></label>
                 <div class="agenda-actions">
                   <button type="button" class="secondary" data-agenda-action="makeup">Adicionar reposição</button>
@@ -860,10 +891,10 @@
                   <input id="package-value" placeholder="R$ 600,00" />
                 </label>
                 <label>Data de início
-                  <input id="package-start" required placeholder="Ex: 01/06" />
+                  <input id="package-start" placeholder="DD/MM/AAAA (opcional)" />
                 </label>
                 <label>Data de vencimento
-                  <input id="package-end" required placeholder="Ex: 30/06" />
+                  <input id="package-end" placeholder="DD/MM/AAAA (opcional)" />
                 </label>
                 <label>Limite de reposições
                   <input id="package-makeup-limit" inputmode="numeric" placeholder="Ex: 3" />
@@ -1099,7 +1130,9 @@
       </main>
     </div>
 
-    <script src="script.js?v=20260901-1"></script>
+    <script src="calendar-rules.js?v=20261007"></script>
+    <script src="script.js?v=20261007"></script>
     <script src="google-calendar.js?v=20260901-1"></script>
+    <script src="server-cancellations.js?v=20261001-1"></script>
   </body>
 </html>

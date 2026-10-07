@@ -1,5 +1,10 @@
 # Google Calendar: configuracao e homologacao
 
+Para cancelamento autenticado pelo aluno e processamento Google no servidor,
+siga tambem [SERVER_CANCELLATIONS_SETUP.md](SERVER_CANCELLATIONS_SETUP.md).
+Essa etapa exige uma nova migration, cadastro revisado pelo personal e worker
+agendado; nao reaplique as migrations anteriores.
+
 ## Arquitetura de seguranca
 
 O navegador usa apenas a chave publica `anon` ja existente e o JWT da sessao Supabase. O `client secret`, o refresh token, a service role e a chave de criptografia ficam somente nas Edge Functions. O refresh token e cifrado com AES-GCM antes de ser salvo.

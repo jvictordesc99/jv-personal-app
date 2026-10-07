@@ -6,3 +6,10 @@ verify_jwt = false
 
 [functions.google-calendar-renew]
 verify_jwt = false
+
+[functions.lesson-cancellation]
+verify_jwt = true
+
+# Internal cron endpoint; validates its dedicated bearer secret before any work.
+[functions.calendar-cancellation-worker]
+verify_jwt = false
